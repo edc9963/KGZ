@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "supabase": "^2.110.0"
+  },
+  "dependencies": {
+    "@tesseract.js-data/chi_tra": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "tesseract.js": "7.0.0"
+  }
+}

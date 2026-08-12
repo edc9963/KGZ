@@ -1,0 +1,24 @@
+{
+  "name": "quick-ledger-ocr-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "sharp": "0.35.3",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3"
+  }
+}

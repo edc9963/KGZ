@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">快記帳</title>
+  <desc id="description">青藍與暖黃色的借貸方塊扣合成完成勾號</desc>
+  <rect width="512" height="512" fill="#2B2F33"/>
+  <path
+    d="M148 246 L235 333"
+    fill="none"
+    stroke="#27C2D4"
+    stroke-width="76"
+    stroke-linecap="round"
+  />
+  <path
+    d="M235 333 L370 176"
+    fill="none"
+    stroke="#FFC83D"
+    stroke-width="76"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M218 316 L237 335 L255 314"
+    fill="none"
+    stroke="#2B2F33"
+    stroke-width="18"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+</svg>

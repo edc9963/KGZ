@@ -1,0 +1,7 @@
+project_id = "quick-ledger"
+
+[functions.line-userinfo]
+verify_jwt = false
+
+[functions.line-webhook]
+verify_jwt = false
