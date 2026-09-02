@@ -25,7 +25,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final settings = store.data.settings;
     final mask = settings.maskBalances;
     final desktop = MediaQuery.sizeOf(context).width >= 1100;
-    _otherExpanded ??= desktop;
+    _otherExpanded ??= false;
     final records = transactionDisplayRecords(store);
 
     return Column(
@@ -97,6 +97,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.netWorthMinor,
+                currency: settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.auto_graph_rounded,
               tone: AppColors.asset,
               onTap: () => context.go('/reports'),
@@ -104,6 +109,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             SummaryCard(
               label: '本月收入',
               value: moneyText(
+                store.currentMonthIncomeDefaultMinor,
+                currency: settings.defaultCurrency,
+                mask: mask,
+              ),
+              compactValue: compactMoneyText(
                 store.currentMonthIncomeDefaultMinor,
                 currency: settings.defaultCurrency,
                 mask: mask,
@@ -119,14 +129,23 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.currentMonthExpenseDefaultMinor,
+                currency: settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.north_east_rounded,
               tone: AppColors.expense,
-              caption: '不含投資與信用卡繳款',
               onTap: () => context.go('/expenses'),
             ),
             SummaryCard(
               label: '信用卡待繳',
               value: moneyText(
+                store.pendingCardDefaultMinor,
+                currency: settings.defaultCurrency,
+                mask: mask,
+              ),
+              compactValue: compactMoneyText(
                 store.pendingCardDefaultMinor,
                 currency: settings.defaultCurrency,
                 mask: mask,
@@ -160,6 +179,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
+                    compactValue: compactMoneyText(
+                      store.depositTotalMinor,
+                      currency: settings.defaultCurrency,
+                      mask: mask,
+                    ),
                     icon: Icons.account_balance_wallet_outlined,
                     tone: const Color(0xFF568EAE),
                     onTap: () => context.go('/accounts'),
@@ -167,6 +191,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   SummaryCard(
                     label: '投資現值',
                     value: moneyText(
+                      store.investmentValueMinor,
+                      currency: settings.defaultCurrency,
+                      mask: mask,
+                    ),
+                    compactValue: compactMoneyText(
                       store.investmentValueMinor,
                       currency: settings.defaultCurrency,
                       mask: mask,
@@ -182,6 +211,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
+                    compactValue: compactMoneyText(
+                      store.receivablesDefaultMinor,
+                      currency: settings.defaultCurrency,
+                      mask: mask,
+                    ),
                     icon: Icons.handshake_outlined,
                     tone: const Color(0xFFA36F5A),
                     onTap: () => context.go('/orders'),
@@ -191,6 +225,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ? '本月代收收益'
                         : '本月代收損失',
                     value: moneyText(
+                      store.currentMonthCollectionResultDefaultMinor.abs(),
+                      currency: settings.defaultCurrency,
+                      mask: mask,
+                    ),
+                    compactValue: compactMoneyText(
                       store.currentMonthCollectionResultDefaultMinor.abs(),
                       currency: settings.defaultCurrency,
                       mask: mask,
@@ -239,10 +278,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 children: [
                   const Icon(Icons.tips_and_updates_outlined),
                   const SizedBox(width: 14),
-                  const Expanded(child: Text('尚無資料。可前往設定產生一組完整測試資料。')),
+                  const Expanded(child: Text('新增第一個帳戶，開始掌握收支與資產。')),
                   FilledButton.tonal(
-                    onPressed: () => context.go('/settings'),
-                    child: const Text('前往設定'),
+                    onPressed: () => context.go('/accounts'),
+                    child: const Text('新增帳戶'),
                   ),
                 ],
               ),

@@ -122,19 +122,16 @@ ImportedOrder parseUberEatsOcrPages(
   final parsed = candidates.first.$1;
   final participants = <ImportedParticipant>[];
   for (final participant in parsed.participants) {
-    final matching = participant.itemName
-        .split('、')
-        .map(
-          (name) => participantConfidence.entries
-              .where((entry) => entry.key.startsWith('item:$name:'))
-              .map((entry) => entry.value)
-              .firstOrNull,
+    final matching = participantConfidence.entries
+        .where(
+          (entry) =>
+              entry.key.endsWith(':${participant.itemAmountMinor}') ||
+              participant.itemName
+                  .split('、')
+                  .any((name) => entry.key.startsWith('item:$name:')),
         )
-        .whereType<(double, double, double)>()
+        .map((entry) => entry.value)
         .toList();
-    final itemConfidence = matching.isEmpty
-        ? _plausibleItemConfidence(participant.itemName)
-        : matching.map((value) => value.$2).reduce((a, b) => a < b ? a : b);
     final amountConfidence = matching.isEmpty
         ? 0.65
         : matching.map((value) => value.$3).reduce((a, b) => a < b ? a : b);
@@ -142,12 +139,12 @@ ImportedOrder parseUberEatsOcrPages(
       ImportedParticipant(
         name: participant.name,
         isSelf: participant.isSelf,
-        itemName: participant.itemName,
+        itemName: '餐點',
         itemAmountMinor: participant.itemAmountMinor,
         nameConfidence: participant.name == '本人' || participant.name == '待確認'
             ? 0.35
             : _plausibleNameConfidence(participant.name),
-        itemConfidence: itemConfidence,
+        itemConfidence: 1,
         amountConfidence: amountConfidence,
       ),
     );
@@ -157,7 +154,6 @@ ImportedOrder parseUberEatsOcrPages(
   if (participants.any(
     (participant) =>
         participant.nameConfidence < 0.75 ||
-        participant.itemConfidence < 0.75 ||
         participant.amountConfidence < 0.75,
   )) {
     warnings.add('黃色欄位為低信心辨識結果，請對照原圖確認');
@@ -219,9 +215,6 @@ int _receiptCandidateScore(ImportedOrder order) {
         participant.name == '本人') {
       score += 300;
     }
-    if (_plausibleItemConfidence(participant.itemName) < 0.75) {
-      score += 150;
-    }
   }
   final itemTotal = order.participants.fold<int>(
     0,
@@ -242,7 +235,6 @@ ImportedOrder parseUberEatsReceiptText(
   final warnings = <String>['使用瀏覽器本機 OCR，請逐項確認辨識結果'];
   final participants = <_ParticipantBuffer>[];
   _ParticipantBuffer? current;
-  _ParsedItem? lastItem;
   var pageBoundary = false;
   var totalMinor = 0;
   var priorityDeliveryFeeMinor = 0;
@@ -364,9 +356,7 @@ ImportedOrder parseUberEatsReceiptText(
           continue;
         }
         if (pageBoundary &&
-            lastItem != null &&
-            lastItem.name == item.name &&
-            lastItem.amountMinor == item.amountMinor) {
+            participants.any((participant) => participant.contains(item))) {
           pageBoundary = false;
           continue;
         }
@@ -375,7 +365,6 @@ ImportedOrder parseUberEatsReceiptText(
           continue;
         }
         current.add(item);
-        lastItem = item;
         pageBoundary = false;
         continue;
       }
@@ -518,7 +507,7 @@ ImportedOrder parseUberEatsReceiptText(
         ImportedParticipant(
           name: participant.name,
           isSelf: participant.isSelf,
-          itemName: participant.items.map((item) => item.name).join('、'),
+          itemName: '餐點',
           itemAmountMinor: participant.amountMinor,
         ),
     ],
@@ -580,27 +569,6 @@ double _plausibleNameConfidence(String value) {
     return 0.3;
   }
   return 0.85;
-}
-
-double _plausibleItemConfidence(String value) {
-  final trimmed = value.trim();
-  if (trimmed.length < 2 ||
-      RegExp(r'^[^\p{L}]+$', unicode: true).hasMatch(trimmed)) {
-    return 0.25;
-  }
-  final compact = trimmed.replaceAll(' ', '');
-  if (compact.contains('電子明細') ||
-      compact.contains('訂單頁面') ||
-      compact.contains('如需詳細') ||
-      compact.contains('JCB') ||
-      compact.contains('++++') ||
-      trimmed.contains('©')) {
-    return 0.15;
-  }
-  final codeTokens = RegExp(r'\b[A-Z]{1,4}\b').allMatches(trimmed).length;
-  final hasHan = RegExp(r'[\u3400-\u9FFF]').hasMatch(trimmed);
-  if (hasHan && codeTokens >= 2) return 0.3;
-  return 0.8;
 }
 
 List<String> _normalizedLines(String source) => source
@@ -765,11 +733,15 @@ String _participantName(String line, {String fallback = '待確認'}) {
 }
 
 bool _looksLikeParticipantHeader(String line, List<String> lines, int index) {
-  if (line.length > 30 ||
+  final trimmed = line.trim();
+  final compact = trimmed.replaceAll(' ', '');
+  if (trimmed.length > 30 ||
       _moneyFromLine(line) != null ||
       _isSummaryLine(line) ||
       _hasLabel(line, '明細') ||
       RegExp(r'\d').hasMatch(line) ||
+      _looksLikeModifierText(trimmed) ||
+      _looksLikeMenuText(compact) ||
       const ['電子明細', '款項', '搜尋'].any((label) => _hasLabel(line, label))) {
     return false;
   }
@@ -777,6 +749,35 @@ bool _looksLikeParticipantHeader(String line, List<String> lines, int index) {
     if (_itemFromLine(lines[next]) != null) return true;
   }
   return false;
+}
+
+bool _looksLikeModifierText(String line) {
+  final compact = line.replaceAll(' ', '').toLowerCase();
+  if (RegExp(r'^[\(（\[].*[\)）\]]$').hasMatch(compact)) return true;
+  const labels = [
+    'medium',
+    'combo',
+    'frenchfries',
+    'pepsi',
+    'greentea',
+    '7up',
+    '百事',
+    '可樂',
+    '綠茶',
+    '七喜',
+    '中薯',
+    '大薯',
+    '套餐',
+    '選項',
+  ];
+  return labels.any(compact.contains);
+}
+
+bool _looksLikeMenuText(String compact) {
+  final hanCount = RegExp(r'[\u3400-\u9FFF]').allMatches(compact).length;
+  if (hanCount <= 6) return false;
+  const menuTerms = ['餐', '堡', '肉', '蝦', '薯', '圈', '飯', '麵', '餃', '湯'];
+  return menuTerms.any(compact.contains);
 }
 
 String? _lastFour(String line) {
@@ -877,12 +878,13 @@ class _ParticipantBuffer {
     );
   }
 
-  bool contains(_ParsedItem candidate) => items.any(
-    (item) =>
-        item.amountMinor == candidate.amountMinor &&
-        _itemNamesMatch(item.name, candidate.name),
-  );
+  bool contains(_ParsedItem candidate) =>
+      items.any((item) => _itemsMatch(item, candidate));
 }
+
+bool _itemsMatch(_ParsedItem left, _ParsedItem right) =>
+    left.amountMinor == right.amountMinor &&
+    _itemNamesMatch(left.name, right.name);
 
 bool _itemNamesMatch(String left, String right) {
   final leftKey = _itemKey(_withoutModifiers(left));

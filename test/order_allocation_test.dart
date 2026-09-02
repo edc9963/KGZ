@@ -59,6 +59,33 @@ void main() {
       expect(result.suggestedDues, const [15000, 16300, 16300, 16300, 16300]);
     });
 
+    test(
+      'keeps ceil-each collection rule for twenty dollars and six people',
+      () {
+        final result = allocateWholeTwd(
+          itemAmountsMinor: const [0, 0, 0, 0, 0, 0],
+          isSelf: const [false, false, false, false, false, false],
+          deliveryFeeMinor: 0,
+          serviceFeeMinor: 2000,
+          discountMinor: 0,
+          includeSelfInDeliveryFee: false,
+          includeSelfInServiceFee: false,
+          discountEligible: const [false, false, false, false, false, false],
+        );
+
+        expect(result.feeShares, const [400, 400, 300, 300, 300, 300]);
+        expect(result.collectionFeeShares, const [
+          400,
+          400,
+          400,
+          400,
+          400,
+          400,
+        ]);
+        expect(result.collectionFeeShares.reduce((a, b) => a + b), 2400);
+      },
+    );
+
     test('including self immediately changes suggested collection shares', () {
       AllocationResult allocate(bool includeSelf) => allocateWholeTwd(
         itemAmountsMinor: const [10000, 10000, 10000],
@@ -148,6 +175,47 @@ void main() {
           discountEligible: const [true, true],
           participantCount: 2,
           fixedSharesMinor: const [600, null],
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('redistributes around fixed fee shares with stable remainder', () {
+      final result = redistributeFixedSharesWholeTwd(
+        totalMinor: 2000,
+        fixedSharesMinor: const [0, null, 300, null, null, null],
+      );
+
+      expect(result.fixedTotalMinor, 300);
+      expect(result.automaticTotalMinor, 1700);
+      expect(result.shares, const [0, 500, 300, 400, 400, 400]);
+      expect(result.shares.reduce((a, b) => a + b), 2000);
+    });
+
+    test('keeps every manual fee unchanged', () {
+      final result = redistributeFixedSharesWholeTwd(
+        totalMinor: 1200,
+        fixedSharesMinor: const [200, null, 500],
+      );
+
+      expect(result.shares, const [200, 500, 500]);
+    });
+
+    test('rejects fixed fees above the allocation target', () {
+      expect(
+        () => redistributeFixedSharesWholeTwd(
+          totalMinor: 500,
+          fixedSharesMinor: const [300, 300, null],
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('requires an automatic participant when a remainder exists', () {
+      expect(
+        () => redistributeFixedSharesWholeTwd(
+          totalMinor: 500,
+          fixedSharesMinor: const [200, 200],
         ),
         throwsFormatException,
       );

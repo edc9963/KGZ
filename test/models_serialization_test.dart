@@ -6,6 +6,34 @@ import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 
 void main() {
+  test(
+    'payment card type round-trips and legacy cards remain credit cards',
+    () {
+      const debit = CreditCard(
+        id: 'debit',
+        userId: 'user',
+        name: '金融卡',
+        bank: '銀行',
+        lastFour: '1234',
+        closingDay: 1,
+        dueDay: 1,
+        autoDebitDay: 1,
+        debitAccountId: 'bank',
+        isActive: true,
+        note: '',
+        cardType: PaymentCardType.debit,
+      );
+
+      expect(
+        CreditCard.fromJson(debit.toJson()).cardType,
+        PaymentCardType.debit,
+      );
+      final legacyJson = Map<String, dynamic>.from(debit.toJson())
+        ..remove('cardType');
+      expect(CreditCard.fromJson(legacyJson).cardType, PaymentCardType.credit);
+    },
+  );
+
   test('AppData round-trips versioned JSON', () {
     final now = DateTime(2026, 7, 28);
     final original = AppData(
@@ -85,7 +113,7 @@ void main() {
     final restored = AppData.fromJson(
       jsonDecode(jsonEncode(original.toJson())) as Json,
     );
-    expect(restored.schemaVersion, 7);
+    expect(restored.schemaVersion, 9);
     expect(restored.accounts.single.name, '帳戶');
     expect(restored.accounts.single.openingBalanceMinor, 12345);
     expect(restored.settings.fxRates.single.rateMicros, 32680000);
@@ -101,6 +129,39 @@ void main() {
     });
     expect(restored.accounts, isEmpty);
     expect(restored.orders, isEmpty);
+  });
+
+  test('v8 bills migrate actual totals and reconciliation metadata', () {
+    final migrated = migrateLocalFinanceJson({
+      'schemaVersion': 8,
+      'settings': <String, dynamic>{},
+      'transactions': <dynamic>[],
+      'accounts': <dynamic>[],
+      'cards': <dynamic>[],
+      'expenses': [
+        {'id': 'expense', 'amountMinor': 10000},
+      ],
+      'orders': <dynamic>[],
+      'bills': [
+        {
+          'id': 'bill',
+          'userId': 'user',
+          'cardId': 'card',
+          'month': '2026-08',
+          'chargeIds': ['expense:expense'],
+          'manualAdjustmentMinor': -500,
+          'paidMinor': 0,
+          'dueDate': '2026-09-15T00:00:00.000',
+          'autoDebitDate': '2026-09-15T00:00:00.000',
+          'note': '舊回饋',
+        },
+      ],
+    });
+    final bill = (migrated['bills'] as List).single as Map;
+    expect(migrated['schemaVersion'], 9);
+    expect(bill['statementAmountMinor'], 9500);
+    expect(bill['reconciliationReason'], 'legacyAdjustment');
+    expect(bill['reconciliationNote'], '舊回饋');
   });
 
   test(
@@ -192,7 +253,7 @@ void main() {
     });
     final data = AppData.fromJson(migrated);
 
-    expect(data.schemaVersion, 7);
+    expect(data.schemaVersion, 9);
     expect(
       data.accounts.singleWhere((item) => item.id == 'bank').openingBalanceDate,
       DateTime.utc(2026, 1, 1),
@@ -209,7 +270,7 @@ void main() {
         jsonEncode({'accounts': <dynamic>[]}),
       );
       final repository = LocalFinanceRepository(persistence);
-      expect((await repository.load()).data.schemaVersion, 7);
+      expect((await repository.load()).data.schemaVersion, 9);
 
       persistence.value = '{broken json';
       expect((await repository.load()).data.accounts, isEmpty);
@@ -286,7 +347,7 @@ void main() {
       final data = AppData.fromJson(first);
 
       expect(jsonEncode(second), jsonEncode(first));
-      expect(data.schemaVersion, 7);
+      expect(data.schemaVersion, 9);
       expect(data.categories.any((item) => item.name == '寵物'), isTrue);
       expect(
         data.settings.defaultExpenseCategoryId,

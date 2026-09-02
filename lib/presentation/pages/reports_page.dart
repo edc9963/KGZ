@@ -99,15 +99,27 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         const SizedBox(height: 20),
         _periodControls(),
         const SizedBox(height: 14),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SegmentedButton<_ReportTab>(
+        LayoutBuilder(
+          builder: (context, constraints) => SegmentedButton<_ReportTab>(
             segments: const [
               ButtonSegment(value: _ReportTab.summary, label: Text('總覽')),
               ButtonSegment(value: _ReportTab.balance, label: Text('資產負債')),
               ButtonSegment(value: _ReportTab.profitLoss, label: Text('收支損益')),
               ButtonSegment(value: _ReportTab.cashFlow, label: Text('現金流')),
             ],
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: constraints.maxWidth < AppBreakpoints.mobile
+                  ? VisualDensity.compact
+                  : null,
+              padding: WidgetStatePropertyAll(
+                EdgeInsets.symmetric(
+                  horizontal: constraints.maxWidth < AppBreakpoints.mobile
+                      ? 6
+                      : 12,
+                ),
+              ),
+            ),
             selected: {_tab},
             onSelectionChanged: (value) => setState(() => _tab = value.first),
           ),
@@ -132,12 +144,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     );
   }
 
-  Widget _periodControls() => Wrap(
-    spacing: 10,
-    runSpacing: 10,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      DropdownMenu<_PeriodPreset>(
+  Widget _periodControls() => LayoutBuilder(
+    builder: (context, constraints) {
+      final mobile = constraints.maxWidth < AppBreakpoints.mobile;
+      final periodMenu = DropdownMenu<_PeriodPreset>(
+        width: mobile ? constraints.maxWidth : null,
         initialSelection: _preset,
         label: const Text('報表期間'),
         dropdownMenuEntries: const [
@@ -154,24 +165,59 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         onSelected: (value) {
           if (value != null) setState(() => _preset = value);
         },
-      ),
-      if (_preset == _PeriodPreset.custom) ...[
-        OutlinedButton.icon(
-          onPressed: () => _pickDate(start: true),
-          icon: const Icon(Icons.calendar_today_outlined),
-          label: Text('起 ${dateText(_customStart)}'),
-        ),
-        OutlinedButton.icon(
-          onPressed: () => _pickDate(start: false),
-          icon: const Icon(Icons.event_outlined),
-          label: Text('迄 ${dateText(_customEnd)}'),
-        ),
-      ],
-      Text(
+      );
+      final startButton = OutlinedButton.icon(
+        onPressed: () => _pickDate(start: true),
+        icon: const Icon(Icons.calendar_today_outlined),
+        label: Text('起 ${dateText(_customStart)}'),
+      );
+      final endButton = OutlinedButton.icon(
+        onPressed: () => _pickDate(start: false),
+        icon: const Icon(Icons.event_outlined),
+        label: Text('迄 ${dateText(_customEnd)}'),
+      );
+      final cutoff = Text(
         '資產負債截止 ${dateText(_period.end)}',
         style: const TextStyle(color: Colors.black54),
-      ),
-    ],
+      );
+      if (!mobile) {
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            periodMenu,
+            if (_preset == _PeriodPreset.custom) startButton,
+            if (_preset == _PeriodPreset.custom) endButton,
+            cutoff,
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          periodMenu,
+          if (_preset == _PeriodPreset.custom) ...[
+            const SizedBox(height: 10),
+            if (constraints.maxWidth >= 300)
+              Row(
+                children: [
+                  Expanded(child: startButton),
+                  const SizedBox(width: 10),
+                  Expanded(child: endButton),
+                ],
+              )
+            else ...[
+              startButton,
+              const SizedBox(height: 10),
+              endButton,
+            ],
+          ],
+          const SizedBox(height: 8),
+          cutoff,
+        ],
+      );
+    },
   );
 
   Future<void> _pickDate({required bool start}) async {
@@ -222,12 +268,22 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           SummaryCard(
             label: '淨資產',
             value: moneyText(data.netWorth, currency: currency, mask: mask),
+            compactValue: compactMoneyText(
+              data.netWorth,
+              currency: currency,
+              mask: mask,
+            ),
             icon: Icons.account_balance_wallet_outlined,
             tone: AppColors.asset,
           ),
           SummaryCard(
             label: '本期收入',
             value: moneyText(data.totalIncome, currency: currency, mask: mask),
+            compactValue: compactMoneyText(
+              data.totalIncome,
+              currency: currency,
+              mask: mask,
+            ),
             icon: Icons.south_west_rounded,
             tone: AppColors.income,
           ),
@@ -238,12 +294,22 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               currency: currency,
               mask: mask,
             ),
+            compactValue: compactMoneyText(
+              data.totalExpenses,
+              currency: currency,
+              mask: mask,
+            ),
             icon: Icons.north_east_rounded,
             tone: AppColors.expense,
           ),
           SummaryCard(
             label: '本期餘絀',
             value: moneyText(data.netIncome, currency: currency, mask: mask),
+            compactValue: compactMoneyText(
+              data.netIncome,
+              currency: currency,
+              mask: mask,
+            ),
             icon: Icons.balance_outlined,
             tone: data.netIncome >= 0 ? AppColors.asset : AppColors.expense,
           ),
@@ -327,28 +393,49 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final title = Text(
                   '淨資產趨勢',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const Spacer(),
-                if (points.isNotEmpty)
-                  Text(
-                    moneyText(
-                      points.last.amountMinor,
-                      currency: currency,
-                      mask: mask,
-                    ),
-                    style: const TextStyle(
-                      color: AppColors.asset,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-              ],
+                );
+                final latest = points.isEmpty
+                    ? null
+                    : Text(
+                        constraints.maxWidth < AppBreakpoints.mobile
+                            ? compactMoneyText(
+                                points.last.amountMinor,
+                                currency: currency,
+                                mask: mask,
+                              )
+                            : moneyText(
+                                points.last.amountMinor,
+                                currency: currency,
+                                mask: mask,
+                              ),
+                        style: const TextStyle(
+                          color: AppColors.asset,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      );
+                if (constraints.maxWidth < AppBreakpoints.mobile) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      if (latest != null) ...[
+                        const SizedBox(height: 4),
+                        latest,
+                      ],
+                    ],
+                  );
+                }
+                return Row(
+                  children: [title, const Spacer(), if (latest != null) latest],
+                );
+              },
             ),
             const SizedBox(height: 6),
             const Row(
@@ -363,7 +450,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               label:
                   '近 6 個月淨資產：${points.map((item) => '${item.month.month} 月 ${moneyText(item.amountMinor, currency: currency, mask: mask)}').join('，')}',
               child: SizedBox(
-                height: 300,
+                height: MediaQuery.sizeOf(context).width < AppBreakpoints.mobile
+                    ? 240
+                    : 300,
                 child: LineChart(
                   LineChartData(
                     minX: 0,
@@ -464,6 +553,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       1,
       (value, row) => row.$2.abs() > value ? row.$2.abs() : value,
     );
+    final mobile = MediaQuery.sizeOf(context).width < AppBreakpoints.mobile;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -482,8 +572,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 padding: const EdgeInsets.only(bottom: 18),
                 child: Row(
                   children: [
-                    SizedBox(width: 74, child: Text(row.$1)),
-                    const SizedBox(width: 10),
+                    SizedBox(width: mobile ? 64 : 74, child: Text(row.$1)),
+                    SizedBox(width: mobile ? 8 : 10),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, constraints) => Align(
@@ -500,13 +590,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: mobile ? 8 : 12),
                     SizedBox(
-                      width: 112,
+                      width: mobile ? 82 : 112,
                       child: Text(
                         mask
                             ? '$currency ••••••'
-                            : '${row.$2 >= 0 ? '+' : '-'}${moneyText(row.$2.abs(), currency: currency)}',
+                            : '${row.$2 >= 0 ? '+' : '-'}${mobile ? compactMoneyText(row.$2.abs(), currency: currency) : moneyText(row.$2.abs(), currency: currency)}',
                         textAlign: TextAlign.end,
                         style: TextStyle(
                           color: row.$2 >= 0
@@ -562,6 +652,74 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         : categoryVisual(slices[index].label).color;
     final total = slices.fold(0, (sum, item) => sum + item.amountMinor);
     final touched = asset ? _assetTouched : _expenseTouched;
+    Widget chart() => PieChart(
+      PieChartData(
+        centerSpaceRadius: 44,
+        sectionsSpace: 2,
+        pieTouchData: PieTouchData(
+          touchCallback: (event, response) {
+            final next = event.isInterestedForInteractions
+                ? response?.touchedSection?.touchedSectionIndex ?? -1
+                : -1;
+            if (next == touched) return;
+            setState(() {
+              if (asset) {
+                _assetTouched = next;
+              } else {
+                _expenseTouched = next;
+              }
+            });
+          },
+        ),
+        sections: [
+          for (var i = 0; i < slices.length; i++)
+            PieChartSectionData(
+              color: sliceColor(i),
+              value: slices[i].amountMinor.toDouble(),
+              radius: touched == i ? 80 : 72,
+              title: '${(slices[i].amountMinor / total * 100).round()}%',
+              titleStyle: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+        ],
+      ),
+    );
+    Widget legendRow(int i, {required bool compact}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: sliceColor(i),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(slices[i].label, overflow: TextOverflow.ellipsis),
+          ),
+          Text(
+            compact
+                ? compactMoneyText(
+                    slices[i].amountMinor,
+                    currency: currency,
+                    mask: mask,
+                  )
+                : moneyText(
+                    slices[i].amountMinor,
+                    currency: currency,
+                    mask: mask,
+                  ),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -588,92 +746,36 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               Semantics(
                 label:
                     '$title：${slices.map((item) => '${item.label} ${moneyText(item.amountMinor, currency: currency, mask: mask)}').join('，')}',
-                child: SizedBox(
-                  height: 260,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: PieChart(
-                          PieChartData(
-                            centerSpaceRadius: 44,
-                            sectionsSpace: 2,
-                            pieTouchData: PieTouchData(
-                              touchCallback: (event, response) {
-                                final next = event.isInterestedForInteractions
-                                    ? response
-                                              ?.touchedSection
-                                              ?.touchedSectionIndex ??
-                                          -1
-                                    : -1;
-                                if (next == touched) return;
-                                setState(() {
-                                  if (asset) {
-                                    _assetTouched = next;
-                                  } else {
-                                    _expenseTouched = next;
-                                  }
-                                });
-                              },
-                            ),
-                            sections: [
-                              for (var i = 0; i < slices.length; i++)
-                                PieChartSectionData(
-                                  color: sliceColor(i),
-                                  value: slices[i].amountMinor.toDouble(),
-                                  radius: touched == i ? 80 : 72,
-                                  title:
-                                      '${(slices[i].amountMinor / total * 100).round()}%',
-                                  titleStyle: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: slices.length,
-                          itemBuilder: (context, i) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 5),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    color: sliceColor(i),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    slices[i].label,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Text(
-                                  moneyText(
-                                    slices[i].amountMinor,
-                                    currency: currency,
-                                    mask: mask,
-                                  ),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final mobile = constraints.maxWidth < AppBreakpoints.mobile;
+                    if (mobile) {
+                      return Column(
+                        children: [
+                          SizedBox(height: 210, child: chart()),
+                          const SizedBox(height: 10),
+                          for (var i = 0; i < slices.length; i++)
+                            legendRow(i, compact: true),
+                        ],
+                      );
+                    }
+                    return SizedBox(
+                      height: 260,
+                      child: Row(
+                        children: [
+                          Expanded(child: chart()),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: slices.length,
+                              itemBuilder: (context, i) =>
+                                  legendRow(i, compact: false),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             if (touched >= 0 && touched < slices.length) ...[
@@ -730,7 +832,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             ),
             const SizedBox(height: 18),
             SizedBox(
-              height: 300,
+              height: MediaQuery.sizeOf(context).width < AppBreakpoints.mobile
+                  ? 240
+                  : 300,
               child: BarChart(
                 BarChartData(
                   maxY: maxValue <= 0 ? 1 : maxValue * 1.2,
@@ -970,21 +1074,45 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     if (line.children.isEmpty) {
       return ListTile(
         dense: true,
+        visualDensity: VisualDensity.compact,
+        minVerticalPadding: 4,
         contentPadding: EdgeInsets.zero,
-        title: Text('${line.label}${line.estimated ? ' ・ 推估' : ''}'),
-        trailing: Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        title: Text(
+          '${line.label}${line.estimated ? ' ・ 推估' : ''}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
         ),
       );
     }
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
       childrenPadding: const EdgeInsets.only(left: 18),
-      title: Text('${line.label}${line.estimated ? ' ・ 推估' : ''}'),
-      trailing: Text(
-        value,
-        style: const TextStyle(fontWeight: FontWeight.w700),
+      title: Text(
+        '${line.label}${line.estimated ? ' ・ 推估' : ''}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 160),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
       ),
       children: [
         for (final child in line.children)
@@ -1020,11 +1148,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
-          Text(
-            moneyText(value, currency: currency, mask: mask),
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                moneyText(value, currency: currency, mask: mask),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              ),
+            ),
           ),
         ],
       ),

@@ -9,9 +9,51 @@ import 'package:quick_ledger/application/providers.dart';
 import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/app_shell.dart';
+import 'package:quick_ledger/presentation/pages/cards_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
 
 void main() {
+  testWidgets('cards page renders inside the scrollable workspace shell', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = AppStore(
+      authRepository: _Auth(),
+      financeRepository: _Finance(),
+      csvExportService: _Csv(),
+    );
+    await store.initialize();
+    final router = GoRouter(
+      initialLocation: '/cards',
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) => AppShell(child: child),
+          routes: [
+            GoRoute(
+              path: '/cards',
+              builder: (context, state) => const CardsPage(),
+            ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('還沒有卡片'), findsOneWidget);
+    expect(find.textContaining('目前待扣款'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [
     const Size(360, 800),
     const Size(768, 1024),
@@ -63,7 +105,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('趨勢與財務報表'), findsOneWidget);
+      expect(find.text('報表'), findsOneWidget);
+      final workspaceLabel = tester.widget<Text>(find.text('報表'));
+      expect(workspaceLabel.maxLines, 1);
+      expect(workspaceLabel.softWrap, isFalse);
+      final workspaceTabs = tester.widget<SegmentedButton<String>>(
+        find.byType(SegmentedButton<String>),
+      );
+      expect(
+        workspaceTabs.style?.minimumSize?.resolve(<WidgetState>{}),
+        const Size(116, 48),
+      );
       expect(tester.takeException(), isNull);
       if (size.width < 600) {
         expect(find.byType(NavigationBar), findsOneWidget);
@@ -77,6 +129,59 @@ void main() {
       }
     });
   }
+
+  testWidgets('quick entry opens from the global action button', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = AppStore(
+      authRepository: _Auth(),
+      financeRepository: _Finance(),
+      csvExportService: _Csv(),
+    );
+    await store.initialize();
+    final router = GoRouter(
+      initialLocation: '/dashboard',
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) => AppShell(child: child),
+          routes: [
+            for (final path in const [
+              '/dashboard',
+              '/reports',
+              '/expenses',
+              '/cards',
+              '/accounts',
+              '/investments',
+              '/orders',
+              '/settings',
+            ])
+              GoRoute(path: path, builder: (context, state) => Text(path)),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('快速記帳'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('快速記帳'), findsNWidgets(2));
+    expect(find.text('支出'), findsWidgets);
+    expect(find.text('收入'), findsOneWidget);
+    expect(find.text('更多選項'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _Auth implements AuthRepository {
@@ -85,6 +190,8 @@ class _Auth implements AuthRepository {
   Stream<bool> get authStateChanges => _controller.stream;
   @override
   String? get currentUserId => 'user';
+  @override
+  String? get currentUserDisplayName => '測試使用者';
   @override
   bool get isSignedIn => true;
   @override

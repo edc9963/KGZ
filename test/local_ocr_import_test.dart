@@ -3,6 +3,130 @@ import 'package:quick_ledger/data/local_ocr_import_repository.dart';
 import 'package:quick_ledger/data/ocr_models.dart';
 
 void main() {
+  test(
+    'keeps Aug 26 modifiers under the owner and preserves equal-price meals',
+    () {
+      final order = parseUberEatsReceiptText(const [
+        r'''
+電子明細
+均維（您）
+勁濃安格斯牛肉堡超值餐 $249.00
+百事無糖可樂（中） Pepsi Zero Sugar (Medium)
+(Medium)
+大份洋蔥圈 $75.00
+Ray
+勁濃安格斯牛肉堡超值餐 $249.00
+綠茶（中） Green Tea (Medium)
+Jack
+芒果Q彈海老堡餐 $225.00
+A 套餐（中薯＋中杯百事可樂）
+Airwind
+勁濃安格斯牛肉堡超值餐 $249.00
+百事可樂（中） Pepsi (Medium)
+David
+勁濃安格斯牛肉堡超值餐 $249.00
+綠茶（中） Green Tea (Medium)
+''',
+        r'''
+David
+勁濃安格斯牛肉堡超值餐 $249.00
+綠茶（中） Green Tea (Medium)
+Jacob
+捲捲德腸烤牛堡套餐 $224.00
+A 套餐（中薯＋中杯百事可樂）
+餐點小計金額 $1,520.00
+外送費 $55.00
+服務費 $65.00
+Uber One 點數 -$12.00
+優惠 -$395.00
+外送費優惠 -$55.00
+會員獎勵 -$50.00
+JCB ••••4936 $1,128.00
+2026/8/26 下午 12:22
+''',
+      ], fallbackDate: DateTime(2026, 8, 26));
+
+      expect(order.participants.map((person) => person.name), [
+        '均維',
+        'Ray',
+        'Jack',
+        'Airwind',
+        'David',
+        'Jacob',
+      ]);
+      expect(order.participants.map((person) => person.itemAmountMinor), [
+        32400,
+        24900,
+        22500,
+        24900,
+        24900,
+        22400,
+      ]);
+      expect(order.reconciliationDifferenceMinor, 0);
+    },
+  );
+
+  test(
+    'parses Aug 25 mobile screenshots without duplicating Airwind overlap',
+    () {
+      final order = parseUberEatsReceiptText(const [
+        r'''
+電子明細
+總計 $868.00
+均維（您）
+高麗菜豬肉手工水餃 $137.00
+Jacob
+高麗菜豬肉手工水餃 $137.00
+YURU
+綜合水餃 $100.00
+燙青菜 $61.00
+David
+高麗菜豬肉手工水餃 $92.00
+Jack
+綜合水餃 $100.00
+三拚 $68.00
+Airwind
+韭菜酸辣湯餃 $138.00
+''',
+        r'''
+三拚 $68.00
+Airwind
+韭菜酸辣湯餃 $138.00
+餐點小計金額 $833.00
+外送費 $25.00
+服務費 $65.00
+Uber One 點數 -$3.00
+外送費優惠 -$25.00
+會員獎勵 -$27.00
+JCB •••4936 $868.00
+2026/8/25 下午 12:15
+''',
+      ], fallbackDate: DateTime(2026, 8, 25));
+
+      expect(order.totalMinor, 86800);
+      expect(order.participants.map((person) => person.name), [
+        '均維',
+        'Jacob',
+        'YURU',
+        'David',
+        'Jack',
+        'Airwind',
+      ]);
+      expect(order.participants.map((person) => person.itemAmountMinor), [
+        13700,
+        13700,
+        16100,
+        9200,
+        16800,
+        13800,
+      ]);
+      expect(order.participants.map((person) => person.itemName).toSet(), {
+        '餐點',
+      });
+      expect(order.reconciliationDifferenceMinor, 0);
+    },
+  );
+
   test('parses and reconciles adjacent Uber Eats receipt screenshots', () {
     final order = parseUberEatsReceiptText(const [
       '''
@@ -140,7 +264,7 @@ JCB ••••4936
     },
   );
 
-  test('symbol-only OCR item is retained but marked low confidence', () {
+  test('symbol-only OCR item keeps only its amount', () {
     final order = parseUberEatsOcrPages(const [
       OcrPage(
         pageIndex: 0,
@@ -177,8 +301,8 @@ JCB ••••4936
       ),
     ], fallbackDate: DateTime(2026, 7, 28));
 
-    expect(order.participants.single.itemName, '&');
-    expect(order.participants.single.itemConfidence, lessThan(.75));
+    expect(order.participants.single.itemName, '餐點');
+    expect(order.participants.single.itemConfidence, 1);
     expect(order.warnings.join(), contains('低信心'));
   });
 
@@ -583,9 +707,7 @@ JCB ••••3245 (合庫jcb) $428.00
       order.participants.map((participant) => participant.itemAmountMinor),
       const [17500, 14000, 13000],
     );
-    expect(order.participants.first.itemName, contains('中杯奶茶'));
-    expect(order.participants.first.itemName, contains('吐司'));
-    expect(order.participants.last.itemName, contains('加一顆蛋蛋'));
+    expect(order.participants.map((person) => person.itemName).toSet(), {'餐點'});
     expect(order.totalMinor, 42800);
     expect(order.deliveryFeeMinor, 0);
     expect(order.serviceFeeMinor, 1300);

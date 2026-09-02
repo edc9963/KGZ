@@ -31,8 +31,10 @@ npx supabase link --project-ref <project-ref>
 npx supabase db push
 ```
 
-schema v7 以統一交易與帳戶影響保存資產、負債及應收款，並保留 v6
-固定支出、產生紀錄與電信帳單付款資料。遷移會啟用
+schema v9 延續 v8 的市場報價功能，並加入信用卡實際帳單核對、差額原因、
+自動扣款狀態及逐筆部分繳款；既有人工調整與已繳帳單會自動轉換並保留。
+v8 延續 v7 的統一交易與帳戶影響，並加入證交所商品目錄、收盤價歷史及
+使用者商品連結。遷移會啟用
 `pg_cron`，並在每日台北時間 00:15 補入到期支出。請先完成
 `npx supabase db push`，再發布新版 Web App；使用者完成 v7 升級後，新 RPC
 會拒絕舊版寫入，避免舊瀏覽器覆蓋統一帳務與分類資料。
@@ -58,6 +60,34 @@ schema v7 以統一交易與帳戶影響保存資產、負債及應收款，並�
 supabase functions deploy line-userinfo --no-verify-jwt
 ```
 
+### 上市股票與 ETF 收盤價
+
+投資商品搜尋與估值使用證交所 OpenAPI 的最近有效交易日收盤價。套用
+`202608200002_investment_quotes_v8.sql` 後，設定同一組排程密鑰、Vault
+與 Edge Function secrets：
+
+```powershell
+$quoteCronSecret = '<產生一組高熵隨機字串>'
+npx supabase secrets set INVESTMENT_QUOTE_CRON_SECRET=$quoteCronSecret
+npx supabase functions deploy investment-quotes --no-verify-jwt
+```
+
+再於 Supabase SQL Editor 執行（值須與上方相同）：
+
+```sql
+select vault.create_secret(
+  'https://<project-ref>.supabase.co',
+  'project_url'
+);
+select vault.create_secret(
+  '<同一組高熵隨機字串>',
+  'investment_quote_cron_secret'
+);
+```
+
+排程會在週一至週五台北時間 18:30 更新；登入後開啟 App 時，若共用
+報價超過 24 小時未成功更新也會補抓。密鑰不可提交到 Git 或放進 Flutter。
+
 截圖辨識不需要 `OPENAI_API_KEY`。固定版本的 Tesseract.js、WASM、
 繁體中文與英文模型都鎖定在 `web` 並隨網站部署；截圖只在瀏覽器內
 分區辨識，不會上傳到 OCR API 或外部 CDN。
@@ -73,8 +103,7 @@ npx supabase secrets set `
   LINE_CHANNEL_SECRET=... `
   LINE_CHANNEL_ACCESS_TOKEN=... `
   LINE_BOT_USER_ID=... ` # 選用；須為 U 開頭的 Bot User ID，不是 @Basic ID
-  APP_PUBLIC_URL=https://你的網域 `
-  OCR_ENABLED=false
+  APP_PUBLIC_URL=https://你的網域
 npx supabase db push
 npx supabase functions deploy line-webhook --no-verify-jwt
 ```
@@ -104,15 +133,9 @@ LINE OAuth，不會作為身分證明；取消或失敗後必須由使用者按�
 
 Bot 使用 service-role 專用 RPC 寫入，每次支出或收款都會在同一交易內
 遞增雲端 revision，因此開著舊資料的網頁會收到 conflict，而不會蓋掉
-LINE 新增的資料。Secret 不得放入 Flutter 或提交到專案。
-
-### 第二階段 OCR 與 Firebase
-
-`ocr-worker` 已包含 Cloud Run Dockerfile、HMAC 驗證、Sharp 前處理、
-Tesseract.js 與 Uber Eats 草稿解析器；`firebase.json` 已設定 Flutter SPA
-rewrite。兩者目前不部署，`OCR_ENABLED` 必須維持 `false`。建立 GCP 專案
-後再複製 `.firebaserc.example` 為 `.firebaserc`、設定公開網址及 Worker
-Secret，並一起啟用圖片 session、短效 review token 與清除排程。
+LINE 新增的資料。待收款會從同一組雲端代訂資料載入完整清單，因此手動
+建立與 Uber Eats 截圖匯入的未收款項目會同步顯示。Secret 不得放入
+Flutter 或提交到專案。
 
 ### PWA
 
@@ -134,6 +157,10 @@ flutter run -d chrome \
 所有分攤與最終收款皆以整數新台幣計算；外送費、服務費預設不包含本人。
 折扣改由每位參與者勾選，預設全不勾；勾選者平均分配，也可固定個別金額，
 其餘折扣會由尚未固定的勾選者自動補平。
+代訂的人員卡片可用 `－／＋` 逐次調整 1 元附加費；手動調整者會固定，
+按「重新分配」只會將差額分給其他自動人員。向他人收取的外送費與服務費
+維持逐人無條件進位，真實刷卡成本與進位差額仍分別計入代墊與代收結果。
+新增代訂可選手動輸入或 Uber Eats 截圖辨識，兩者共用相同的人員與分攤操作。
 
 ## 驗證
 
@@ -156,5 +183,5 @@ Supabase SQL 測試需要已啟動的 Docker Desktop 或 Podman 本機 stack。
 ## 原型限制
 
 - 離線時可查看最後成功同步的快取，但不能新增、修改或刪除資料。
-- QR 圖片以文字形式模擬設定；尚未串接銀行、LINE Pay 或任何付款 API。
-- LINE 官方帳號圖片 OCR、Cloud Run 與 Firebase Hosting 預設停用。
+- 銀行 QR 內容由使用者自行設定；尚未串接銀行或任何付款 API。
+- LINE 官方帳號不處理圖片；Uber Eats 截圖辨識只在網頁瀏覽器內執行。

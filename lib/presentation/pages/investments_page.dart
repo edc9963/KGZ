@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/app_store.dart';
 import '../../application/providers.dart';
+import '../../data/repositories.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
 
@@ -25,6 +27,85 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 3, vsync: this);
   bool _editorOpened = false;
+  bool _marketUpgradeChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prepareMarketDataAndOfferLinks();
+    });
+  }
+
+  Future<void> _prepareMarketDataAndOfferLinks() async {
+    if (_marketUpgradeChecked || !mounted) return;
+    _marketUpgradeChecked = true;
+    final store = ref.read(appStoreProvider);
+    await store.ensureMarketCatalog();
+    if (!mounted) return;
+    final candidates = store.existingMarketLinkCandidates;
+    if (candidates.isEmpty) return;
+    final selected = candidates.keys.toSet();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('連結證交所自動報價'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('只會接管商品名稱與收盤價，不會更動庫存數量、成本或交易紀錄。'),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final entry in candidates.entries)
+                        CheckboxListTile(
+                          value: selected.contains(entry.key),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            '${entry.value.symbol} ${entry.value.name}',
+                          ),
+                          subtitle: Text(
+                            '${entry.value.type}・最近收盤 ${moneyText(entry.value.closePriceMinor)}',
+                          ),
+                          onChanged: (value) => setState(() {
+                            value == true
+                                ? selected.add(entry.key)
+                                : selected.remove(entry.key);
+                          }),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('維持手動'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () async {
+                      await store.linkMarketProducts({
+                        for (final id in selected) id: candidates[id]!,
+                      });
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    },
+              child: const Text('連結所選商品'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -101,6 +182,12 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       store.investmentValueMinor,
                       mask: store.data.settings.maskBalances,
                     ),
+              compactValue: pricedHoldingCount == 0 && unpricedHoldingCount > 0
+                  ? '尚未定價'
+                  : compactMoneyText(
+                      store.investmentValueMinor,
+                      mask: store.data.settings.maskBalances,
+                    ),
               icon: Icons.trending_up,
               tone: const Color(0xFF3578E5),
               caption: unpricedHoldingCount == 0
@@ -156,13 +243,12 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
 
   Future<void> _showCreateHoldingDialog(BuildContext context) async {
     final store = ref.read(appStoreProvider);
+    await store.ensureMarketCatalog();
+    if (!context.mounted) return;
     var mode = _HoldingCreationMode.snapshot;
     var createProduct = store.data.products.isEmpty;
     String? productId = store.data.products.firstOrNull?.id;
-    String? accountId = store.data.accounts
-        .where((item) => item.isActive)
-        .firstOrNull
-        ?.id;
+    String? accountId = store.activeAssetAccounts.firstOrNull?.id;
     var productType = 'ETF';
     var currency = 'TWD';
     var date = DateTime.now();
@@ -173,6 +259,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     final unitCost = TextEditingController();
     final fee = TextEditingController(text: '0');
     final tax = TextEditingController(text: '0');
+    MarketInstrument? selectedMarketInstrument;
 
     void loadExistingProduct(String? id) {
       productId = id;
@@ -209,9 +296,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               parsedQuantity > 0 &&
               parsedUnitCost > 0 &&
               (mode == _HoldingCreationMode.snapshot || accountId != null);
-          final activeAccounts = store.data.accounts
-              .where((item) => item.isActive)
-              .toList();
+          final activeAccounts = store.activeAssetAccounts;
 
           return AlertDialog(
             title: Text(isUpdating ? '更新庫存' : '建立庫存'),
@@ -279,12 +364,23 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       Row(
                         children: [
                           Expanded(
-                            child: TextField(
+                            child: _MarketAutocomplete(
                               key: const ValueKey('holding-product-symbol'),
-                              controller: symbol,
-                              decoration: const InputDecoration(
-                                labelText: '商品代號',
-                              ),
+                              store: store,
+                              initialText: symbol.text,
+                              onChanged: (value) {
+                                symbol.text = value;
+                                selectedMarketInstrument = null;
+                                setState(() {});
+                              },
+                              onSelected: (instrument) {
+                                selectedMarketInstrument = instrument;
+                                symbol.text = instrument.symbol;
+                                name.text = instrument.name;
+                                productType = instrument.type;
+                                currency = instrument.currency;
+                                setState(() {});
+                              },
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -344,9 +440,17 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         ],
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        '目前價格可稍後到商品資料補上；未設定前不顯示市值與損益。',
-                        style: TextStyle(color: Colors.black54),
+                      Text(
+                        selectedMarketInstrument == null
+                            ? symbol.text.trim().length >= 2 &&
+                                      store
+                                          .searchMarketCatalog(symbol.text)
+                                          .isEmpty
+                                  ? '找不到上市股票或 ETF；仍可填寫名稱建立手動商品。'
+                                  : '輸入至少 2 個字元搜尋上市股票或 ETF；查無結果仍可手動建立。'
+                            : '證交所自動報價・收盤 ${moneyText(selectedMarketInstrument!.closePriceMinor)}'
+                                  '${selectedMarketInstrument!.quoteDate == null ? '' : '・${dateText(selectedMarketInstrument!.quoteDate!)}'}',
+                        style: const TextStyle(color: Colors.black54),
                       ),
                     ] else
                       DropdownButtonFormField<String>(
@@ -508,6 +612,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                 key: const ValueKey('save-holding'),
                 onPressed: canSave
                     ? () async {
+                        final marketInstrument = selectedMarketInstrument;
                         final product = createProduct
                             ? InvestmentProduct(
                                 id: store.newId(),
@@ -516,9 +621,19 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                                 name: name.text.trim(),
                                 type: productType,
                                 currency: currency,
-                                currentPriceMinor: 0,
-                                priceUpdatedAt: date,
+                                currentPriceMinor:
+                                    marketInstrument?.closePriceMinor ?? 0,
+                                priceUpdatedAt:
+                                    marketInstrument?.quoteDate ?? date,
                                 note: '',
+                                priceSource: marketInstrument == null
+                                    ? 'manual'
+                                    : 'twse',
+                                market: marketInstrument?.market,
+                                marketSymbol: marketInstrument?.symbol,
+                                quoteLinkedAt: marketInstrument == null
+                                    ? null
+                                    : DateTime.now(),
                               )
                             : store.productById(productId!)!;
                         final quantityMicros = (parsedQuantity * 1000000)
@@ -582,6 +697,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     InvestmentProduct? existing,
   ]) async {
     final store = ref.read(appStoreProvider);
+    await store.ensureMarketCatalog();
+    if (!context.mounted) return;
     final symbol = TextEditingController(text: existing?.symbol);
     final name = TextEditingController(text: existing?.name);
     final price = TextEditingController(
@@ -592,6 +709,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     final note = TextEditingController(text: existing?.note);
     var type = existing?.type ?? 'ETF';
     var currency = existing?.currency ?? 'TWD';
+    MarketInstrument? selectedMarketInstrument;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -605,9 +723,24 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: symbol,
-                        decoration: const InputDecoration(labelText: '商品代號'),
+                      child: _MarketAutocomplete(
+                        store: store,
+                        initialText: symbol.text,
+                        onChanged: (value) {
+                          symbol.text = value;
+                          selectedMarketInstrument = null;
+                          setState(() {});
+                        },
+                        onSelected: (instrument) {
+                          selectedMarketInstrument = instrument;
+                          symbol.text = instrument.symbol;
+                          name.text = instrument.name;
+                          price.text = (instrument.closePriceMinor / 100)
+                              .toString();
+                          type = instrument.type;
+                          currency = instrument.currency;
+                          setState(() {});
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -660,6 +793,11 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                 const SizedBox(height: 12),
                 TextField(
                   controller: price,
+                  readOnly:
+                      selectedMarketInstrument != null ||
+                      ((existing?.usesAutomaticQuote ?? false) &&
+                          symbol.text.trim().toUpperCase() ==
+                              existing!.symbol.trim().toUpperCase()),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -682,6 +820,12 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               onPressed: name.text.trim().isEmpty
                   ? null
                   : () async {
+                      final marketInstrument = selectedMarketInstrument;
+                      final keepsExistingMarket =
+                          marketInstrument == null &&
+                          (existing?.usesAutomaticQuote ?? false) &&
+                          symbol.text.trim().toUpperCase() ==
+                              existing!.symbol.trim().toUpperCase();
                       await store.upsertProduct(
                         InvestmentProduct(
                           id: existing?.id ?? store.newId(),
@@ -690,10 +834,31 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                           name: name.text.trim(),
                           type: type,
                           currency: currency,
-                          currentPriceMinor: parseMoney(price.text),
-                          priceUpdatedAt: DateTime.now(),
+                          currentPriceMinor:
+                              marketInstrument?.closePriceMinor ??
+                              parseMoney(price.text),
+                          priceUpdatedAt:
+                              marketInstrument?.quoteDate ?? DateTime.now(),
                           note: note.text.trim(),
                           origin: existing?.origin ?? DataOrigin.user,
+                          priceSource: marketInstrument != null
+                              ? 'twse'
+                              : keepsExistingMarket
+                              ? 'twse'
+                              : 'manual',
+                          market:
+                              marketInstrument?.market ??
+                              (keepsExistingMarket ? existing.market : null),
+                          marketSymbol:
+                              marketInstrument?.symbol ??
+                              (keepsExistingMarket
+                                  ? existing.marketSymbol
+                                  : null),
+                          quoteLinkedAt: marketInstrument != null
+                              ? DateTime.now()
+                              : keepsExistingMarket
+                              ? existing.quoteLinkedAt
+                              : null,
                         ),
                       );
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
@@ -717,11 +882,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     var type = existing?.type ?? InvestmentTransactionType.buy;
     var date = existing?.date ?? DateTime.now();
     var debitId =
-        existing?.debitAccountId ??
-        (store.data.accounts.isEmpty ? null : store.data.accounts.first.id);
+        existing?.debitAccountId ?? store.activeAssetAccounts.firstOrNull?.id;
     var creditId =
-        existing?.creditAccountId ??
-        (store.data.accounts.isEmpty ? null : store.data.accounts.first.id);
+        existing?.creditAccountId ?? store.activeAssetAccounts.firstOrNull?.id;
     final quantity = TextEditingController(
       text: existing == null ? '' : existing.quantity.toString(),
     );
@@ -830,35 +993,48 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Row(
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: const Text('手續費與稅費'),
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: fee,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: fee,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: '手續費',
+                                ),
+                              ),
                             ),
-                            decoration: const InputDecoration(labelText: '手續費'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: tax,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: tax,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: '稅費',
+                                ),
+                              ),
                             ),
-                            decoration: const InputDecoration(labelText: '稅費'),
-                          ),
+                          ],
                         ),
+                        const SizedBox(height: 12),
                       ],
                     ),
                     if (needsDebit || needsCredit) ...[
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         initialValue:
-                            store.data.accounts.any(
+                            store.activeAssetAccounts.any(
                               (item) =>
                                   item.id == (needsDebit ? debitId : creditId),
                             )
@@ -867,7 +1043,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         decoration: InputDecoration(
                           labelText: needsDebit ? '扣款帳戶' : '入款帳戶',
                         ),
-                        items: store.data.accounts
+                        items: store.activeAssetAccounts
                             .map(
                               (account) => DropdownMenuItem(
                                 value: account.id,
@@ -1268,7 +1444,9 @@ class _ProductsList extends ConsumerWidget {
           leading: const CircleAvatar(child: Icon(Icons.show_chart)),
           title: Text('${item.symbol} ${item.name}'),
           subtitle: Text(
-            '${item.type}・${item.currency}・更新 ${dateText(item.priceUpdatedAt)}',
+            '${item.type}・${item.currency}・'
+            '${item.usesAutomaticQuote ? '證交所自動報價' : '手動價格'}・'
+            '更新 ${dateText(item.priceUpdatedAt)}',
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1279,15 +1457,20 @@ class _ProductsList extends ConsumerWidget {
               ),
               PopupMenuButton<String>(
                 onSelected: (value) async {
-                  if (value == 'edit') onEdit(item);
-                  if (value == 'delete' &&
+                  if (value == 'edit') {
+                    onEdit(item);
+                  } else if (value == 'unlink') {
+                    await store.unlinkMarketProduct(item.id);
+                  } else if (value == 'delete' &&
                       await confirmDelete(context, '投資商品及其交易')) {
                     await store.deleteProduct(item.id);
                   }
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'edit', child: Text('編輯')),
-                  PopupMenuItem(value: 'delete', child: Text('刪除')),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'edit', child: Text('編輯')),
+                  if (item.usesAutomaticQuote)
+                    const PopupMenuItem(value: 'unlink', child: Text('取消自動報價')),
+                  const PopupMenuItem(value: 'delete', child: Text('刪除')),
                 ],
               ),
             ],
@@ -1296,4 +1479,74 @@ class _ProductsList extends ConsumerWidget {
       },
     );
   }
+}
+
+class _MarketAutocomplete extends StatelessWidget {
+  const _MarketAutocomplete({
+    super.key,
+    required this.store,
+    required this.initialText,
+    required this.onChanged,
+    required this.onSelected,
+  });
+
+  final AppStore store;
+  final String initialText;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<MarketInstrument> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Autocomplete<MarketInstrument>(
+    initialValue: TextEditingValue(text: initialText),
+    displayStringForOption: (option) => option.symbol,
+    optionsBuilder: (value) => store.searchMarketCatalog(value.text),
+    onSelected: onSelected,
+    fieldViewBuilder: (context, controller, focusNode, onSubmitted) =>
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          onChanged: onChanged,
+          onSubmitted: (_) => onSubmitted(),
+          textCapitalization: TextCapitalization.characters,
+          decoration: InputDecoration(
+            labelText: '商品代號或名稱',
+            suffixIcon: store.isLoadingMarketCatalog
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.search),
+          ),
+        ),
+    optionsViewBuilder: (context, onSelectedOption, options) {
+      final items = options.toList();
+      return Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320, maxWidth: 420),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return ListTile(
+                  dense: true,
+                  title: Text('${item.symbol} ${item.name}'),
+                  subtitle: Text(
+                    '${item.type}・${item.quoteDate == null ? '尚無收盤價' : dateText(item.quoteDate!)}',
+                  ),
+                  onTap: () => onSelectedOption(item),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }

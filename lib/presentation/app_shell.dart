@@ -7,6 +7,7 @@ import '../application/providers.dart';
 import '../data/repositories.dart';
 import '../data/supabase_finance_repository.dart';
 import 'design_tokens.dart';
+import 'quick_entry.dart';
 import 'widgets/brand_icon.dart';
 
 class _Destination {
@@ -17,21 +18,21 @@ class _Destination {
 }
 
 const _destinations = [
-  _Destination('/dashboard', '財務總覽', Icons.space_dashboard_outlined),
-  _Destination('/expenses', '日常帳務', Icons.receipt_long_outlined),
-  _Destination('/accounts', '資產管理', Icons.account_balance_wallet_outlined),
-  _Destination('/orders', '代訂收款', Icons.groups_outlined),
+  _Destination('/dashboard', '總覽', Icons.space_dashboard_outlined),
+  _Destination('/expenses', '帳務', Icons.receipt_long_outlined),
+  _Destination('/accounts', '資產', Icons.account_balance_wallet_outlined),
+  _Destination('/orders', '代訂', Icons.groups_outlined),
   _Destination('/settings', '設定', Icons.settings_outlined),
 ];
 
 const _workspaceTabs = <int, List<_Destination>>{
   0: [
-    _Destination('/dashboard', '概況', Icons.dashboard_outlined),
-    _Destination('/reports', '趨勢與財務報表', Icons.assessment_outlined),
+    _Destination('/dashboard', '總覽', Icons.dashboard_outlined),
+    _Destination('/reports', '報表', Icons.assessment_outlined),
   ],
   1: [
-    _Destination('/expenses', '交易與固定支出', Icons.receipt_long_outlined),
-    _Destination('/cards', '信用卡', Icons.credit_card_outlined),
+    _Destination('/expenses', '交易', Icons.receipt_long_outlined),
+    _Destination('/cards', '卡片', Icons.credit_card_outlined),
   ],
   2: [
     _Destination('/accounts', '帳戶', Icons.account_balance_outlined),
@@ -189,7 +190,7 @@ class AppShell extends ConsumerWidget {
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: store.canWrite ? () => _showQuickEntry(context) : null,
+          onPressed: store.canWrite ? () => showQuickEntry(context) : null,
           icon: const Icon(Icons.add),
           label: const Text('快速新增'),
         ),
@@ -212,10 +213,19 @@ class AppShell extends ConsumerWidget {
           _destinations[selected].label,
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          Tooltip(
+            message: _syncLabel(store),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Icon(_syncIcon(store), size: 20),
+            ),
+          ),
+        ],
       ),
       body: _withSyncState(context, store, content),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: store.canWrite ? () => _showQuickEntry(context) : null,
+        onPressed: store.canWrite ? () => showQuickEntry(context) : null,
         icon: const Icon(Icons.add),
         label: const Text('快速記帳'),
       ),
@@ -233,80 +243,6 @@ class AppShell extends ConsumerWidget {
       ),
     );
   }
-
-  Future<void> _showQuickEntry(BuildContext context) async {
-    final target = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.north_east_rounded),
-                ),
-                title: const Text('新增支出'),
-                subtitle: const Text('現金、轉帳或信用卡消費'),
-                onTap: () => Navigator.pop(context, 'expense'),
-              ),
-              ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.south_west_rounded),
-                ),
-                title: const Text('新增收入'),
-                subtitle: const Text('薪資、獎金、利息或其他收入'),
-                onTap: () => Navigator.pop(context, 'income'),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.swap_horiz_rounded),
-                ),
-                title: const Text('帳戶轉帳／調整'),
-                subtitle: const Text('在帳戶明細建立資金異動'),
-                onTap: () => Navigator.pop(context, 'accounts'),
-              ),
-              ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.credit_card_outlined),
-                ),
-                title: const Text('信用卡帳單'),
-                subtitle: const Text('查看帳單或進行繳款'),
-                onTap: () => Navigator.pop(context, 'cards'),
-              ),
-              ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.trending_up_outlined),
-                ),
-                title: const Text('投資交易'),
-                subtitle: const Text('買入、賣出、配息或盤點'),
-                onTap: () => Navigator.pop(context, 'investments'),
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.groups_outlined)),
-                title: const Text('代訂收款'),
-                subtitle: const Text('新增訂單或從截圖匯入'),
-                onTap: () => Navigator.pop(context, 'orders'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (target != null && context.mounted) {
-      context.go(switch (target) {
-        'expense' || 'income' => '/expenses?create=$target',
-        'accounts' => '/accounts',
-        'cards' => '/cards',
-        'investments' => '/investments',
-        'orders' => '/orders',
-        _ => '/dashboard',
-      });
-    }
-  }
 }
 
 class _WorkspaceNavigation extends StatelessWidget {
@@ -323,12 +259,21 @@ class _WorkspaceNavigation extends StatelessWidget {
     scrollDirection: Axis.horizontal,
     child: SegmentedButton<String>(
       showSelectedIcon: false,
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(116, 48)),
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+      ),
       segments: [
         for (final destination in destinations)
           ButtonSegment(
             value: destination.path,
             icon: Icon(destination.icon),
-            label: Text(destination.label),
+            label: Text(
+              destination.label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+            ),
           ),
       ],
       selected: {
@@ -482,6 +427,28 @@ class _DesktopSidebar extends StatelessWidget {
                 endIndent: 20,
               ),
               Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      _syncIcon(store),
+                      size: 16,
+                      color: const Color(0xFFDCE5E8),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _syncLabel(store),
+                        style: const TextStyle(
+                          color: Color(0xFFDCE5E8),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
                 child: ListTile(
                   shape: RoundedRectangleBorder(
@@ -512,6 +479,27 @@ class _DesktopSidebar extends StatelessWidget {
       ),
     );
   }
+}
+
+IconData _syncIcon(AppStore store) {
+  if (store.isSaving) return Icons.sync;
+  if (store.isOffline) return Icons.cloud_off_outlined;
+  if (store.hasConflict) return Icons.sync_problem_outlined;
+  if (store.lastSyncError != null) return Icons.error_outline;
+  return Icons.cloud_done_outlined;
+}
+
+String _syncLabel(AppStore store) {
+  if (store.isSaving) return '同步中';
+  if (store.isOffline) return '離線・僅可查看';
+  if (store.hasConflict) return '資料衝突・請重新載入';
+  if (store.lastSyncError != null) return '同步失敗';
+  final updated = store.cloudUpdatedAt;
+  if (updated == null) return '已連線';
+  final difference = DateTime.now().difference(updated.toLocal());
+  if (difference.inMinutes < 1) return '已同步・剛剛';
+  if (difference.inHours < 1) return '已同步・${difference.inMinutes} 分鐘前';
+  return '已同步・${updated.toLocal().hour.toString().padLeft(2, '0')}:${updated.toLocal().minute.toString().padLeft(2, '0')}';
 }
 
 class _SidebarItem extends StatelessWidget {

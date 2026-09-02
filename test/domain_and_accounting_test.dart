@@ -102,6 +102,208 @@ void main() {
     );
 
     test(
+      'debit-card expense immediately debits the card linked account',
+      () async {
+        final now = DateTime(2026, 8, 19);
+        final store = await _store(
+          AppData(
+            accounts: [
+              Account(
+                id: 'linked-bank',
+                userId: 'user',
+                name: '金融卡扣款帳戶',
+                institution: '測試銀行',
+                type: '銀行帳戶',
+                currency: 'TWD',
+                openingBalanceMinor: 100000,
+                isActive: true,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+              ),
+              Account(
+                id: 'wrong-bank',
+                userId: 'user',
+                name: '不應扣款帳戶',
+                institution: '其他銀行',
+                type: '銀行帳戶',
+                currency: 'TWD',
+                openingBalanceMinor: 50000,
+                isActive: true,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            ],
+          ),
+        );
+
+        await store.upsertCard(
+          const CreditCard(
+            id: 'debit-card',
+            userId: 'user',
+            name: '測試金融卡',
+            bank: '測試銀行',
+            lastFour: '5678',
+            closingDay: 1,
+            dueDay: 1,
+            autoDebitDay: 1,
+            debitAccountId: 'linked-bank',
+            isActive: true,
+            note: '',
+            cardType: PaymentCardType.debit,
+          ),
+        );
+        expect(store.cardById('debit-card')?.liabilityAccountId, isNull);
+        expect(
+          store.data.accounts.where(
+            (account) => account.id == 'card-liability-debit-card',
+          ),
+          isEmpty,
+        );
+
+        await store.upsertExpense(
+          Expense(
+            id: 'debit-expense',
+            userId: 'user',
+            date: now,
+            amountMinor: 12500,
+            paymentMethod: PaymentMethod.debitCard,
+            item: '午餐',
+            category: '餐飲',
+            accountId: 'wrong-bank',
+            cardId: 'debit-card',
+            merchant: '',
+            note: '',
+            isNecessary: true,
+          ),
+        );
+
+        expect(store.data.expenses.single.accountId, 'linked-bank');
+        expect(store.accountBalance('linked-bank'), 87500);
+        expect(store.accountBalance('wrong-bank'), 50000);
+        expect(store.pendingCardMinor, 0);
+        expect(
+          store.data.transactions
+              .singleWhere((item) => item.id == 'expense:debit-expense')
+              .impacts
+              .single
+              .amountMinor,
+          -12500,
+        );
+      },
+    );
+
+    test(
+      'account selectors expose assets but not internal ledger accounts',
+      () async {
+        final now = DateTime(2026, 8, 20);
+        final store = await _store(
+          AppData(
+            accounts: [
+              Account(
+                id: 'bank',
+                userId: 'user',
+                name: '銀行',
+                institution: '測試銀行',
+                type: '銀行帳戶',
+                currency: 'TWD',
+                openingBalanceMinor: 0,
+                isActive: true,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+              ),
+              Account(
+                id: 'liability',
+                userId: 'user',
+                name: '測試卡未繳',
+                institution: '測試銀行',
+                type: '信用卡負債',
+                currency: 'TWD',
+                openingBalanceMinor: 0,
+                isActive: true,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+                kind: FinancialAccountKind.liability,
+                subtype: 'creditCard',
+              ),
+              Account(
+                id: 'deleted-bank',
+                userId: 'user',
+                name: '已刪除舊帳戶',
+                institution: '舊銀行',
+                type: '銀行帳戶',
+                currency: 'TWD',
+                openingBalanceMinor: 0,
+                isActive: false,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            ],
+          ),
+        );
+
+        expect(store.activeAssetAccounts.map((item) => item.id), [
+          systemCashAccountId,
+          'bank',
+        ]);
+      },
+    );
+
+    test(
+      'deleting a card also deletes its internal liability account',
+      () async {
+        final now = DateTime(2026, 8, 20);
+        final store = await _store(
+          AppData(
+            accounts: [
+              Account(
+                id: 'bank',
+                userId: 'user',
+                name: '銀行',
+                institution: '測試銀行',
+                type: '銀行帳戶',
+                currency: 'TWD',
+                openingBalanceMinor: 0,
+                isActive: true,
+                note: '',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            ],
+            cards: const [
+              CreditCard(
+                id: 'card-to-delete',
+                userId: 'user',
+                name: '測試卡',
+                bank: '測試銀行',
+                lastFour: '1234',
+                closingDay: 15,
+                dueDay: 28,
+                autoDebitDay: 28,
+                debitAccountId: 'bank',
+                isActive: true,
+                note: '',
+              ),
+            ],
+          ),
+        );
+        final liabilityId = store
+            .cardById('card-to-delete')!
+            .liabilityAccountId!;
+        expect(store.accountById(liabilityId), isNotNull);
+
+        await store.deleteCard('card-to-delete');
+
+        expect(store.cardById('card-to-delete'), isNull);
+        expect(store.accountById(liabilityId), isNull);
+      },
+    );
+
+    test(
       'telecom purchases debit only when the carrier bill is paid',
       () async {
         final now = DateTime(2026, 8, 10);
@@ -812,6 +1014,198 @@ void main() {
       expect(store.data.balanceAdjustments.single.amountMinor, 25000);
       expect(store.accountBalance('bank'), 125000);
     });
+
+    test('merging accounts preserves balance and moves references', () async {
+      final now = DateTime.utc(2026, 1, 1);
+      Account account(String id, String name, int openingBalance) => Account(
+        id: id,
+        userId: 'user',
+        name: name,
+        institution: '彰化銀行',
+        type: '銀行帳戶',
+        currency: 'TWD',
+        openingBalanceMinor: openingBalance,
+        isActive: true,
+        note: '',
+        createdAt: now,
+        updatedAt: now,
+      );
+      final store = await _store(
+        AppData(
+          settings: const UserSettings(defaultCollectionAccountId: 'duplicate'),
+          accounts: [
+            account('kept', '彰銀主帳戶', 100000),
+            account('duplicate', '彰銀舊帳戶', 20000),
+          ],
+          transactions: [
+            FinancialTransaction(
+              id: 'transfer-between-duplicates',
+              userId: 'user',
+              date: now,
+              type: FinancialTransactionType.transfer,
+              label: '內部轉帳',
+              amountMinor: 5000,
+              currency: 'TWD',
+              impacts: const [
+                AccountImpact(
+                  accountId: 'duplicate',
+                  amountMinor: -5000,
+                  currency: 'TWD',
+                ),
+                AccountImpact(
+                  accountId: 'kept',
+                  amountMinor: 5000,
+                  currency: 'TWD',
+                ),
+              ],
+            ),
+          ],
+          balanceAdjustments: [
+            BalanceAdjustment(
+              id: 'adjustment',
+              userId: 'user',
+              accountId: 'duplicate',
+              amountMinor: 3000,
+              date: now,
+              reason: '盤點',
+            ),
+          ],
+          incomes: [
+            IncomeEntry(
+              id: 'income',
+              userId: 'user',
+              date: now,
+              amountMinor: 4000,
+              item: '收入',
+              category: '其他收入',
+              accountId: 'duplicate',
+              note: '',
+            ),
+          ],
+          expenses: [
+            Expense(
+              id: 'expense',
+              userId: 'user',
+              date: now,
+              amountMinor: 1000,
+              paymentMethod: PaymentMethod.transfer,
+              item: '支出',
+              category: '其他',
+              accountId: 'duplicate',
+              merchant: '',
+              note: '',
+              isNecessary: false,
+            ),
+          ],
+        ),
+      );
+
+      expect(store.accountBalance('kept'), 105000);
+      expect(store.accountBalance('duplicate'), 21000);
+
+      await store.mergeAccounts(
+        sourceAccountId: 'duplicate',
+        targetAccountId: 'kept',
+      );
+
+      expect(store.accountById('duplicate'), isNull);
+      expect(store.accountBalance('kept'), 126000);
+      expect(store.data.transactions.single.impacts, isEmpty);
+      expect(store.data.balanceAdjustments.single.accountId, 'kept');
+      expect(store.data.incomes.single.accountId, 'kept');
+      expect(store.data.expenses.single.accountId, 'kept');
+      expect(store.data.settings.defaultCollectionAccountId, 'kept');
+    });
+
+    test('accounts with different currencies cannot be merged', () async {
+      final now = DateTime.utc(2026, 1, 1);
+      Account account(String id, String currency) => Account(
+        id: id,
+        userId: 'user',
+        name: id,
+        institution: '',
+        type: '銀行帳戶',
+        currency: currency,
+        openingBalanceMinor: 0,
+        isActive: true,
+        note: '',
+        createdAt: now,
+        updatedAt: now,
+      );
+      final store = await _store(
+        AppData(accounts: [account('twd', 'TWD'), account('usd', 'USD')]),
+      );
+
+      await store.mergeAccounts(sourceAccountId: 'usd', targetAccountId: 'twd');
+
+      expect(store.accountById('twd'), isNotNull);
+      expect(store.accountById('usd'), isNotNull);
+      expect(store.lastSyncError, '不同幣別的帳戶無法合併');
+    });
+
+    test('account transfer moves money atomically and can be edited', () async {
+      final now = DateTime.utc(2026, 1, 8);
+      Account account(String id, String name, int balance) => Account(
+        id: id,
+        userId: 'user',
+        name: name,
+        institution: '',
+        type: '銀行帳戶',
+        currency: 'TWD',
+        openingBalanceMinor: balance,
+        isActive: true,
+        note: '',
+        createdAt: now,
+        updatedAt: now,
+      );
+      final store = await _store(
+        AppData(
+          accounts: [
+            account('checking', '活存', 100000),
+            account('savings', '儲蓄', 20000),
+          ],
+        ),
+      );
+
+      await store.upsertAccountTransfer(
+        id: 'move',
+        fromAccountId: 'checking',
+        toAccountId: 'savings',
+        amountMinor: 30000,
+        date: now,
+        note: '每月儲蓄',
+      );
+
+      expect(store.accountBalance('checking'), 70000);
+      expect(store.accountBalance('savings'), 50000);
+      expect(
+        store.data.transactions.single.type,
+        FinancialTransactionType.transfer,
+      );
+      expect(
+        store.accountLedgerEntries('checking').first.sourceType,
+        'transfer',
+      );
+      expect(
+        store.accountLedgerEntries('savings').first.sourceType,
+        'transfer',
+      );
+
+      await store.upsertAccountTransfer(
+        id: store.data.transactions.single.id,
+        fromAccountId: 'checking',
+        toAccountId: 'savings',
+        amountMinor: 10000,
+        date: now,
+      );
+      expect(store.data.transactions, hasLength(1));
+      expect(store.accountBalance('checking'), 90000);
+      expect(store.accountBalance('savings'), 30000);
+
+      await store.deleteAccountTransfer(store.data.transactions.single.id);
+      expect(store.accountBalance('checking'), 100000);
+      expect(store.accountBalance('savings'), 20000);
+    });
   });
 
   group('direct investment holding creation', () {
@@ -1079,6 +1473,191 @@ void main() {
     });
   });
 
+  group('credit-card statement reconciliation v9', () {
+    const card = CreditCard(
+      id: 'card-v9',
+      userId: 'user',
+      name: '核對卡',
+      bank: '測試銀行',
+      lastFour: '9988',
+      closingDay: 31,
+      dueDay: 15,
+      autoDebitDay: 31,
+      debitAccountId: 'bank-v9',
+      isActive: true,
+      note: '',
+      liabilityAccountId: 'liability-v9',
+    );
+    final bank = Account(
+      id: 'bank-v9',
+      userId: 'user',
+      name: '扣款帳戶',
+      institution: '測試銀行',
+      type: '活存',
+      currency: 'TWD',
+      openingBalanceMinor: 100000,
+      isActive: true,
+      note: '',
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+    final liability = Account(
+      id: 'liability-v9',
+      userId: 'user',
+      name: '核對卡未繳',
+      institution: '測試銀行',
+      type: '信用卡負債',
+      currency: 'TWD',
+      openingBalanceMinor: 0,
+      isActive: true,
+      note: '',
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+      kind: FinancialAccountKind.liability,
+    );
+
+    test('month-end cycle dates clamp and cross months', () async {
+      final store = await _store(
+        AppData(accounts: [bank, liability], cards: const [card]),
+      );
+      final dates = store.cardBillingDates(card, 2028, 2);
+      expect(dates.closingDate, DateTime(2028, 2, 29));
+      expect(dates.dueDate, DateTime(2028, 3, 15));
+      expect(dates.autoDebitDate, DateTime(2028, 3, 31));
+    });
+
+    test(
+      'actual amount controls liability and supports multiple payments',
+      () async {
+        final expense = Expense(
+          id: 'charge-v9',
+          userId: 'user',
+          date: DateTime(2026, 8, 10),
+          amountMinor: 10000,
+          paymentMethod: PaymentMethod.creditCard,
+          item: '消費',
+          category: '其他',
+          accountId: null,
+          cardId: card.id,
+          merchant: '',
+          note: '',
+          isNecessary: true,
+        );
+        final store = await _store(
+          AppData(
+            accounts: [bank, liability],
+            cards: const [card],
+            expenses: [expense],
+          ),
+        );
+        await store.upsertExpense(expense);
+        final bill = CardBill(
+          id: 'bill-v9',
+          userId: 'user',
+          cardId: card.id,
+          month: '2026-08',
+          chargeIds: const ['expense:charge-v9'],
+          manualAdjustmentMinor: 0,
+          paidMinor: 0,
+          dueDate: DateTime(2026, 9, 15),
+          autoDebitDate: DateTime(2026, 9, 30),
+          note: '',
+          statementAmountMinor: 12000,
+          reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+        );
+        await store.upsertBill(bill);
+        final saved = store.data.bills.single;
+        expect(store.calculatedBillAmount(saved), 10000);
+        expect(store.reconciliationDifference(saved), 2000);
+        expect(store.accountBalance(liability.id), 12000);
+
+        await store.upsertBillPayment(
+          billId: saved.id,
+          paymentId: 'first',
+          amountMinor: 4000,
+          date: DateTime(2026, 9, 10),
+          accountId: bank.id,
+        );
+        expect(store.outstandingBillMinor(store.data.bills.single), 8000);
+        expect(
+          store.billStatus(store.data.bills.single),
+          CardBillStatus.partiallyPaid,
+        );
+
+        await store.upsertBillPayment(
+          billId: saved.id,
+          paymentId: 'second',
+          amountMinor: 8000,
+          date: DateTime(2026, 9, 12),
+          accountId: bank.id,
+        );
+        expect(store.billPayments(saved.id), hasLength(2));
+        expect(store.accountBalance(bank.id), 88000);
+        expect(store.accountBalance(liability.id), 0);
+        expect(store.billStatus(store.data.bills.single), CardBillStatus.paid);
+      },
+    );
+
+    test('rejects duplicate month, missing reason, and overpayment', () async {
+      final existing = CardBill(
+        id: 'existing-v9',
+        userId: 'user',
+        cardId: card.id,
+        month: '2026-08',
+        chargeIds: const [],
+        manualAdjustmentMinor: 0,
+        paidMinor: 0,
+        dueDate: DateTime(2026, 9, 15),
+        autoDebitDate: DateTime(2026, 9, 30),
+        note: '',
+        statementAmountMinor: 10000,
+        reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+      );
+      final store = await _store(
+        AppData(
+          accounts: [bank, liability],
+          cards: const [card],
+          bills: [existing],
+        ),
+      );
+      await store.upsertBill(
+        existing.copyWith(
+          month: '2026-09',
+          statementAmountMinor: 5000,
+          reconciliationReason: CardBillReconciliationReason.none,
+        ),
+      );
+      expect(store.lastSyncError, contains('差異原因'));
+
+      await store.upsertBill(
+        CardBill(
+          id: 'duplicate-v9',
+          userId: 'user',
+          cardId: card.id,
+          month: '2026-08',
+          chargeIds: const [],
+          manualAdjustmentMinor: 0,
+          paidMinor: 0,
+          dueDate: DateTime(2026, 9, 15),
+          autoDebitDate: DateTime(2026, 9, 30),
+          note: '',
+          statementAmountMinor: 10000,
+          reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+        ),
+      );
+      expect(store.lastSyncError, contains('已有此月份'));
+
+      await store.upsertBillPayment(
+        billId: existing.id,
+        paymentId: 'too-much',
+        amountMinor: 10001,
+        date: DateTime(2026, 9, 1),
+        accountId: bank.id,
+      );
+      expect(store.lastSyncError, contains('不得超過'));
+    });
+  });
+
   test('CSV includes BOM and escapes commas, quotes, and newlines', () {
     final csv = encodeCsv([
       ['名稱', '備註'],
@@ -1156,6 +1735,8 @@ class _FakeAuth implements AuthRepository {
   Stream<bool> get authStateChanges => controller.stream;
   @override
   String? get currentUserId => signedIn ? 'user' : null;
+  @override
+  String? get currentUserDisplayName => signedIn ? '測試使用者' : null;
   @override
   bool get isSignedIn => signedIn;
   @override

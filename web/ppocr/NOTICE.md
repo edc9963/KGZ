@@ -10,6 +10,9 @@ application's own origin and cached by `web/kgz_ocr.js`.
   - Source: `bluecopa/paddleocr-v5-onnx`
   - Pinned source revision: `a6159f8`
   - SHA-256: `13d0dda27d63dc0f4938af48df2c55b33f3c989a0bd5eacb8410e30f1735f644`
+- `PP-OCRv5_mobile_rec.onnx`
+  - Source: `PaddlePaddle/PP-OCRv5_mobile_rec_onnx`
+  - SHA-256: `da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092`
 - `ppocrv5_dict.txt`
   - Source: `BMekiker/PP-OCRv5_ONNX`
   - SHA-256: `d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b`

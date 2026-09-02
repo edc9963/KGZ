@@ -12,6 +12,8 @@ import '../widgets/common.dart';
 
 enum _RecordTab { all, expense, income, recurring }
 
+enum _DateFilter { month, previousMonth, threeMonths, all }
+
 class ExpensesPage extends ConsumerStatefulWidget {
   const ExpensesPage({
     this.createOnOpen = false,
@@ -35,6 +37,16 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
   String _category = '全部';
   bool _opened = false;
   _RecordTab _tab = _RecordTab.all;
+  final _search = TextEditingController();
+  _DateFilter _dateFilter = _DateFilter.month;
+  String? _accountFilter;
+  PaymentMethod? _paymentFilter;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -82,15 +94,44 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     );
     final categories = {'全部', ...directionRecords.map((item) => item.category)};
     if (!categories.contains(_category)) _category = '全部';
+    final query = _search.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month);
+    final previousStart = DateTime(now.year, now.month - 1);
+    final threeMonthStart = DateTime(now.year, now.month - 2);
     final filtered = directionRecords
         .where((item) => _category == '全部' || item.category == _category)
+        .where(
+          (item) => switch (_dateFilter) {
+            _DateFilter.month => !item.date.isBefore(monthStart),
+            _DateFilter.previousMonth =>
+              !item.date.isBefore(previousStart) &&
+                  item.date.isBefore(monthStart),
+            _DateFilter.threeMonths => !item.date.isBefore(threeMonthStart),
+            _DateFilter.all => true,
+          },
+        )
+        .where(
+          (item) => _accountFilter == null || item.accountId == _accountFilter,
+        )
+        .where(
+          (item) =>
+              _paymentFilter == null || item.paymentMethod == _paymentFilter,
+        )
+        .where(
+          (item) =>
+              query.isEmpty ||
+              '${item.item} ${item.category} ${item.detail} ${item.expense?.merchant ?? ''} ${item.expense?.note ?? ''} ${item.income?.note ?? ''}'
+                  .toLowerCase()
+                  .contains(query),
+        )
         .toList();
     final mask = store.data.settings.maskBalances;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         PageHeader(
-          title: '收支記錄',
+          title: '帳務',
           subtitle: '收入與支出各自入帳，信用卡付款仍由帳單流程處理',
           action: FilledButton.icon(
             onPressed: () => switch (_tab) {
@@ -118,6 +159,11 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.currentMonthIncomeDefaultMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.south_west_rounded,
               tone: AppColors.income,
             ),
@@ -128,12 +174,22 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.currentMonthExpenseDefaultMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.north_east_rounded,
               tone: AppColors.expense,
             ),
             SummaryCard(
               label: '本月結餘',
               value: moneyText(
+                store.currentMonthBalanceDefaultMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
+              compactValue: compactMoneyText(
                 store.currentMonthBalanceDefaultMinor,
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
@@ -170,6 +226,100 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
         if (_tab == _RecordTab.recurring)
           _recurringExpenseList(store)
         else ...[
+          TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              hintText: '搜尋交易',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: '清除搜尋',
+                      onPressed: () => setState(_search.clear),
+                      icon: const Icon(Icons.close),
+                    ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                DropdownButton<_DateFilter>(
+                  value: _dateFilter,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(
+                      value: _DateFilter.month,
+                      child: Text('本月'),
+                    ),
+                    DropdownMenuItem(
+                      value: _DateFilter.previousMonth,
+                      child: Text('上月'),
+                    ),
+                    DropdownMenuItem(
+                      value: _DateFilter.threeMonths,
+                      child: Text('近三個月'),
+                    ),
+                    DropdownMenuItem(
+                      value: _DateFilter.all,
+                      child: Text('全部日期'),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _dateFilter = value!),
+                ),
+                const SizedBox(width: 16),
+                DropdownButton<String?>(
+                  value: _accountFilter,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('全部帳戶'),
+                    ),
+                    for (final account in store.activeAssetAccounts)
+                      DropdownMenuItem<String?>(
+                        value: account.id,
+                        child: Text(account.name),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _accountFilter = value),
+                ),
+                const SizedBox(width: 16),
+                DropdownButton<PaymentMethod?>(
+                  value: _paymentFilter,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    const DropdownMenuItem<PaymentMethod?>(
+                      value: null,
+                      child: Text('付款方式'),
+                    ),
+                    for (final method in PaymentMethod.values)
+                      DropdownMenuItem<PaymentMethod?>(
+                        value: method,
+                        child: Text(method.label),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _paymentFilter = value),
+                ),
+                if (_accountFilter != null ||
+                    _paymentFilter != null ||
+                    _dateFilter != _DateFilter.month) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _dateFilter = _DateFilter.month;
+                      _accountFilter = null;
+                      _paymentFilter = null;
+                    }),
+                    child: const Text('清除篩選'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -542,8 +692,11 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     var accountId =
         existing?.accountId ??
         store.defaultBankTransferAccountId ??
-        store.data.accounts.where((a) => a.isActive).firstOrNull?.id;
-    var cardId = existing?.cardId ?? store.data.cards.firstOrNull?.id;
+        store.activeAssetAccounts.firstOrNull?.id;
+    var cardId = existing?.cardId;
+    cardId ??= method == PaymentMethod.debitCard
+        ? store.data.cards.where((card) => card.isDebit).firstOrNull?.id
+        : store.data.cards.where((card) => card.isCredit).firstOrNull?.id;
     var telecomDebitAccountId =
         existing?.telecomDebitAccountId ?? store.defaultBankTransferAccountId;
     var necessary = existing?.isNecessary ?? true;
@@ -658,14 +811,33 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    if (method == PaymentMethod.creditCard)
+                    if (method == PaymentMethod.creditCard ||
+                        method == PaymentMethod.debitCard)
                       DropdownButtonFormField<String>(
                         initialValue:
-                            store.data.cards.any((c) => c.id == cardId)
+                            store.data.cards.any(
+                              (c) =>
+                                  c.id == cardId &&
+                                  (method == PaymentMethod.creditCard
+                                      ? c.isCredit
+                                      : c.isDebit),
+                            )
                             ? cardId
                             : null,
-                        decoration: const InputDecoration(labelText: '信用卡'),
+                        decoration: InputDecoration(
+                          labelText: method == PaymentMethod.creditCard
+                              ? '信用卡'
+                              : '金融卡',
+                          helperText: method == PaymentMethod.debitCard
+                              ? '消費會直接扣除卡片綁定的帳戶'
+                              : null,
+                        ),
                         items: store.data.cards
+                            .where(
+                              (card) => method == PaymentMethod.creditCard
+                                  ? card.isCredit
+                                  : card.isDebit,
+                            )
                             .map(
                               (card) => DropdownMenuItem(
                                 value: card.id,
@@ -673,7 +845,9 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                               ),
                             )
                             .toList(),
-                        validator: (value) => value == null ? '請先新增信用卡' : null,
+                        validator: (value) => value == null
+                            ? '請先新增${method == PaymentMethod.creditCard ? '信用卡' : '金融卡'}'
+                            : null,
                         onChanged: (value) => setState(() => cardId = value),
                       )
                     else if (method == PaymentMethod.telecomBill)
@@ -703,14 +877,13 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     else
                       DropdownButtonFormField<String>(
                         initialValue:
-                            store.data.accounts.any(
-                              (a) => a.id == accountId && a.isActive,
+                            store.activeAssetAccounts.any(
+                              (a) => a.id == accountId,
                             )
                             ? accountId
                             : null,
                         decoration: const InputDecoration(labelText: '付款帳戶'),
-                        items: store.data.accounts
-                            .where((a) => a.isActive)
+                        items: store.activeAssetAccounts
                             .map(
                               (account) => DropdownMenuItem(
                                 value: account.id,
@@ -721,22 +894,29 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                         validator: (value) => value == null ? '請先新增帳戶' : null,
                         onChanged: (value) => setState(() => accountId = value),
                       ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('必要支出'),
-                      value: necessary,
-                      onChanged: (value) => setState(() => necessary = value),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('啟用自動入帳'),
-                      value: active,
-                      onChanged: (value) => setState(() => active = value),
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: const Text('進階設定'),
+                      children: [
+                        TextField(
+                          controller: note,
+                          decoration: const InputDecoration(labelText: '備註'),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('必要支出'),
+                          value: necessary,
+                          onChanged: (value) =>
+                              setState(() => necessary = value),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('啟用自動入帳'),
+                          value: active,
+                          onChanged: (value) => setState(() => active = value),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -774,9 +954,10 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     paymentMethod: method,
                     dayOfMonth: day,
                     startMonth: startMonth,
-                    accountId:
-                        method != PaymentMethod.creditCard &&
-                            method != PaymentMethod.telecomBill
+                    accountId: method == PaymentMethod.debitCard
+                        ? store.cardById(cardId)?.debitAccountId
+                        : method != PaymentMethod.creditCard &&
+                              method != PaymentMethod.telecomBill
                         ? accountId
                         : null,
                     cardId: method == PaymentMethod.creditCard ? cardId : null,
@@ -814,7 +995,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     var accountId =
         existing?.accountId ??
         store.defaultBankTransferAccountId ??
-        store.data.accounts.where((a) => a.isActive).firstOrNull?.id;
+        store.activeAssetAccounts.firstOrNull?.id;
     final formKey = GlobalKey<FormState>();
     await showDialog<void>(
       context: context,
@@ -902,12 +1083,13 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       initialValue:
-                          store.data.accounts.any((a) => a.id == accountId)
+                          store.activeAssetAccounts.any(
+                            (a) => a.id == accountId,
+                          )
                           ? accountId
                           : null,
                       decoration: const InputDecoration(labelText: '收款帳戶'),
-                      items: store.data.accounts
-                          .where((a) => a.isActive)
+                      items: store.activeAssetAccounts
                           .map(
                             (account) => DropdownMenuItem(
                               value: account.id,
@@ -978,11 +1160,19 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     var method =
         existing?.paymentMethod ?? store.data.settings.defaultPaymentMethod;
     var accountId =
-        existing?.accountId ??
-        (store.data.accounts.isEmpty ? null : store.data.accounts.first.id);
-    var cardId =
-        existing?.cardId ??
-        (store.data.cards.isEmpty ? null : store.data.cards.first.id);
+        existing?.accountId ?? store.activeAssetAccounts.firstOrNull?.id;
+    var cardId = existing?.cardId;
+    cardId ??= method == PaymentMethod.debitCard
+        ? store.data.cards
+                  .where(
+                    (card) =>
+                        card.isDebit &&
+                        card.debitAccountId == existing?.accountId,
+                  )
+                  .firstOrNull
+                  ?.id ??
+              store.data.cards.where((card) => card.isDebit).firstOrNull?.id
+        : store.data.cards.where((card) => card.isCredit).firstOrNull?.id;
     var necessary = existing?.isNecessary ?? false;
     final formKey = GlobalKey<FormState>();
     Widget itemField() => TextFormField(
@@ -1099,14 +1289,33 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                             ),
                     ),
                     const SizedBox(height: 12),
-                    if (method == PaymentMethod.creditCard)
+                    if (method == PaymentMethod.creditCard ||
+                        method == PaymentMethod.debitCard)
                       DropdownButtonFormField<String>(
                         initialValue:
-                            store.data.cards.any((item) => item.id == cardId)
+                            store.data.cards.any(
+                              (item) =>
+                                  item.id == cardId &&
+                                  (method == PaymentMethod.creditCard
+                                      ? item.isCredit
+                                      : item.isDebit),
+                            )
                             ? cardId
                             : null,
-                        decoration: const InputDecoration(labelText: '信用卡'),
+                        decoration: InputDecoration(
+                          labelText: method == PaymentMethod.creditCard
+                              ? '信用卡'
+                              : '金融卡',
+                          helperText: method == PaymentMethod.debitCard
+                              ? '消費會直接扣除卡片綁定的帳戶'
+                              : null,
+                        ),
                         items: store.data.cards
+                            .where(
+                              (card) => method == PaymentMethod.creditCard
+                                  ? card.isCredit
+                                  : card.isDebit,
+                            )
                             .map(
                               (card) => DropdownMenuItem(
                                 value: card.id,
@@ -1114,7 +1323,9 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                               ),
                             )
                             .toList(),
-                        validator: (value) => value == null ? '請先新增信用卡' : null,
+                        validator: (value) => value == null
+                            ? '請先新增${method == PaymentMethod.creditCard ? '信用卡' : '金融卡'}'
+                            : null,
                         onChanged: (value) => setState(() => cardId = value),
                       )
                     else if (method == PaymentMethod.telecomBill)
@@ -1131,14 +1342,13 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     else
                       DropdownButtonFormField<String>(
                         initialValue:
-                            store.data.accounts.any(
+                            store.activeAssetAccounts.any(
                               (item) => item.id == accountId,
                             )
                             ? accountId
                             : null,
                         decoration: const InputDecoration(labelText: '付款帳戶'),
-                        items: store.data.accounts
-                            .where((account) => account.isActive)
+                        items: store.activeAssetAccounts
                             .map(
                               (account) => DropdownMenuItem(
                                 value: account.id,
@@ -1191,12 +1401,17 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     paymentMethod: method,
                     item: item.text.trim(),
                     category: category,
-                    accountId:
-                        method == PaymentMethod.creditCard ||
-                            method == PaymentMethod.telecomBill
+                    accountId: method == PaymentMethod.debitCard
+                        ? store.cardById(cardId)?.debitAccountId
+                        : method == PaymentMethod.creditCard ||
+                              method == PaymentMethod.telecomBill
                         ? null
                         : accountId,
-                    cardId: method == PaymentMethod.creditCard ? cardId : null,
+                    cardId:
+                        method == PaymentMethod.creditCard ||
+                            method == PaymentMethod.debitCard
+                        ? cardId
+                        : null,
                     billId: existing?.billId,
                     merchant: merchant.text.trim(),
                     note: note.text.trim(),

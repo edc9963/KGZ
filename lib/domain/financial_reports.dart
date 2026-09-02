@@ -314,7 +314,23 @@ class FinancialReportService {
         total += gross - tx.feeMinor - tx.taxMinor;
       }
     }
-    for (final bill in data.bills.where((item) => item.paidMinor > 0)) {
+    final paymentBillIds = <String>{};
+    for (final payment in data.transactions.where(
+      (item) =>
+          item.type == FinancialTransactionType.cardPayment &&
+          item.relatedEntityType == 'cardBill' &&
+          !item.date.isAfter(asOf),
+    )) {
+      if (payment.relatedEntityId != null) {
+        paymentBillIds.add(payment.relatedEntityId!);
+      }
+      total += payment.impacts
+          .where((impact) => impact.accountId == account.id)
+          .fold(0, (sum, impact) => sum + impact.amountMinor);
+    }
+    for (final bill in data.bills.where(
+      (item) => item.paidMinor > 0 && !paymentBillIds.contains(item.id),
+    )) {
       final card = data.cards
           .where((item) => item.id == bill.cardId)
           .firstOrNull;
@@ -376,13 +392,42 @@ class FinancialReportService {
         data.orders
             .where((item) => !item.date.isAfter(asOf))
             .fold(0, (sum, item) => sum + item.totalMinor);
-    final payments = data.bills
-        .where((item) {
-          final paidAt = item.paidAt ?? item.autoDebitDate;
-          return item.paidMinor > 0 && !paidAt.isAfter(asOf);
-        })
-        .fold(0, (sum, item) => sum + item.paidMinor);
-    return (charges - payments).clamp(0, 1 << 62).toInt();
+    final paymentTransactions = data.transactions.where(
+      (item) =>
+          item.type == FinancialTransactionType.cardPayment &&
+          item.relatedEntityType == 'cardBill' &&
+          !item.date.isAfter(asOf),
+    );
+    final transactionBillIds = paymentTransactions
+        .map((item) => item.relatedEntityId)
+        .whereType<String>()
+        .toSet();
+    final payments =
+        paymentTransactions.fold(0, (sum, item) => sum + item.amountMinor) +
+        data.bills
+            .where((item) {
+              final paidAt = item.paidAt ?? item.autoDebitDate;
+              return item.paidMinor > 0 &&
+                  !transactionBillIds.contains(item.id) &&
+                  !paidAt.isAfter(asOf);
+            })
+            .fold(0, (sum, item) => sum + item.paidMinor);
+    final reconciliation = data.transactions
+        .where(
+          (item) =>
+              item.relatedEntityType == 'cardBillReconciliation' &&
+              !item.date.isAfter(asOf),
+        )
+        .expand((item) => item.impacts)
+        .where(
+          (impact) => data.accounts.any(
+            (account) =>
+                account.id == impact.accountId &&
+                account.kind == FinancialAccountKind.liability,
+          ),
+        )
+        .fold(0, (sum, impact) => sum + impact.amountMinor);
+    return (charges + reconciliation - payments).clamp(0, 1 << 62).toInt();
   }
 
   int _telecomLiabilityAt(DateTime asOf) {
@@ -673,7 +718,26 @@ class FinancialReportService {
         ),
       );
     }
-    for (final bill in data.bills.where((item) => item.paidMinor > 0)) {
+    final paymentBillIds = <String>{};
+    for (final payment in data.transactions.where(
+      (item) =>
+          item.type == FinancialTransactionType.cardPayment &&
+          item.relatedEntityType == 'cardBill',
+    )) {
+      if (payment.relatedEntityId != null) {
+        paymentBillIds.add(payment.relatedEntityId!);
+      }
+      if (period.contains(payment.date)) {
+        add(
+          operating,
+          '信用卡繳款',
+          -_convert(payment.amountMinor, payment.currency, payment.date),
+        );
+      }
+    }
+    for (final bill in data.bills.where(
+      (item) => item.paidMinor > 0 && !paymentBillIds.contains(item.id),
+    )) {
       final paidAt = bill.paidAt ?? bill.autoDebitDate;
       if (period.contains(paidAt)) {
         add(operating, '信用卡繳款', -_convert(bill.paidMinor, 'TWD', paidAt));

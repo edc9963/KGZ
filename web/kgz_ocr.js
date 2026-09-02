@@ -6,17 +6,20 @@
     "assets/web/tesseract/",
     document.baseURI
   ).href;
-  const CACHE_NAME = "kgz-ppocr-v5-a6159f8";
-  const ENGINE_VERSION = "ppocr-v5-mobile-det+server-rec@a6159f8";
+  const CACHE_NAME = "kgz-ppocr-v5-adaptive-v1";
+  const ENGINE_VERSION = "ppocr-v5-mobile-det+adaptive-rec@v1";
   const MODEL_ASSETS = {
     detector: `${ASSET_ROOT}PP-OCRv5_mobile_det.onnx`,
-    recognizer: `${ASSET_ROOT}PP-OCRv5_server_rec.onnx`,
+    serverRecognizer: `${ASSET_ROOT}PP-OCRv5_server_rec.onnx`,
+    mobileRecognizer: `${ASSET_ROOT}PP-OCRv5_mobile_rec.onnx`,
     dictionary: `${ASSET_ROOT}ppocrv5_dict.txt`,
   };
-  const EXPECTED_BYTES =
-    4_748_769 +
-    84_505_505 +
-    74_012;
+  const MODEL_BYTES = {
+    detector: 4_748_769,
+    serverRecognizer: 84_505_505,
+    mobileRecognizer: 16_534_782,
+    dictionary: 74_012,
+  };
 
   let runtimePromise;
   let tesseractWorkerPromise;
@@ -35,14 +38,6 @@
     );
   }
 
-  function needsSafariFallback() {
-    const agent = navigator.userAgent || "";
-    return (
-      /iPad|iPhone|iPod/.test(agent) ||
-      (/Safari/.test(agent) && !/Chrome|Chromium|Edg/.test(agent))
-    );
-  }
-
   function loadImage(source) {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -50,6 +45,24 @@
       image.onerror = () => reject(new Error("無法讀取截圖"));
       image.src = source;
     });
+  }
+
+  function prefersMobileRecognizer() {
+    const agent = navigator.userAgent || "";
+    const iPadDesktopMode =
+      /Macintosh/.test(agent) && Number(navigator.maxTouchPoints || 0) > 1;
+    const mobileDevice =
+      /iPad|iPhone|iPod|Android/.test(agent) || iPadDesktopMode;
+    const memory = Number(navigator.deviceMemory || 0);
+    return mobileDevice || (memory > 0 && memory <= 4);
+  }
+
+  function needsIphoneLowMemoryMode() {
+    const agent = navigator.userAgent || "";
+    return (
+      /iPad|iPhone|iPod/.test(agent) ||
+      (/Macintosh/.test(agent) && Number(navigator.maxTouchPoints || 0) > 1)
+    );
   }
 
   async function fetchCached(url, onBytes) {
@@ -108,6 +121,18 @@
     return bytes;
   }
 
+  async function deleteOldModelCaches() {
+    if (typeof caches === "undefined") return;
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter(
+          (name) => name.startsWith("kgz-ppocr-") && name !== CACHE_NAME
+        )
+        .map((name) => caches.delete(name))
+    );
+  }
+
   async function loadRuntime() {
     if (runtimePromise) return runtimePromise;
     runtimePromise = (async () => {
@@ -115,12 +140,21 @@
       progress("runtime", 0.02, "正在載入本機 OCR 執行環境");
       ort.env.wasm.wasmPaths = ASSET_ROOT;
       ort.env.wasm.numThreads = 1;
+      await deleteOldModelCaches();
+
+      const mobileRecognizer = prefersMobileRecognizer();
+      const recognizerAsset = mobileRecognizer
+        ? MODEL_ASSETS.mobileRecognizer
+        : MODEL_ASSETS.serverRecognizer;
+      const recognizerBytesExpected = mobileRecognizer
+        ? MODEL_BYTES.mobileRecognizer
+        : MODEL_BYTES.serverRecognizer;
 
       const loaded = { detector: 0, recognizer: 0, dictionary: 0 };
       const totals = {
-        detector: 4_748_769,
-        recognizer: 84_505_505,
-        dictionary: 74_012,
+        detector: MODEL_BYTES.detector,
+        recognizer: recognizerBytesExpected,
+        dictionary: MODEL_BYTES.dictionary,
       };
       const updateDownload = (key, received, total) => {
         loaded[key] = received;
@@ -129,7 +163,7 @@
         const all = Object.values(totals).reduce((sum, value) => sum + value, 0);
         progress(
           "download",
-          all > 0 ? done / all : done / EXPECTED_BYTES,
+          done / Math.max(1, all),
           `正在準備高精度 OCR 模型 ${Math.round((done / Math.max(1, all)) * 100)}%`,
           done,
           all
@@ -141,7 +175,7 @@
           fetchCached(MODEL_ASSETS.detector, (a, b) =>
             updateDownload("detector", a, b)
           ),
-          fetchCached(MODEL_ASSETS.recognizer, (a, b) =>
+          fetchCached(recognizerAsset, (a, b) =>
             updateDownload("recognizer", a, b)
           ),
           fetchCached(MODEL_ASSETS.dictionary, (a, b) =>
@@ -162,7 +196,11 @@
           gpuAvailable = false;
         }
       }
-      const preferred = gpuAvailable ? ["webgpu"] : ["wasm"];
+      // Safari's WebGPU process has a much tighter memory budget than desktop
+      // browsers. The mobile recognizer is fast enough on single-threaded WASM
+      // and avoids a second GPU copy of the model weights.
+      const preferred =
+        !mobileRecognizer && gpuAvailable ? ["webgpu"] : ["wasm"];
       let detector;
       let recognizer;
       let engine = preferred[0];
@@ -192,14 +230,23 @@
       progress(
         "runtime",
         1,
-        engine === "webgpu"
+        mobileRecognizer
+          ? "行動版 PP-OCR 已使用低記憶體模式"
+          : engine === "webgpu"
           ? "高精度 OCR 已使用 WebGPU"
           : "高精度 OCR 已使用 WASM，辨識速度可能較慢",
         0,
         0,
-        engine
+        mobileRecognizer ? "PP-OCRv5 mobile / WASM" : engine
       );
-      return { detector, recognizer, dictionary, engine };
+      return {
+        detector,
+        recognizer,
+        dictionary,
+        engine,
+        recognizerProfile: mobileRecognizer ? "mobile" : "server",
+        engineLabel: mobileRecognizer ? "PP-OCRv5 mobile / WASM" : engine,
+      };
     })();
     try {
       return await runtimePromise;
@@ -681,7 +728,7 @@
         }/${boxes.length} 列`,
         index + 1,
         boxes.length,
-        runtime.engine
+        runtime.engineLabel
       );
       recognized.push(await recognizeBox(runtime, source, boxes[index]));
     }
@@ -747,12 +794,12 @@
       progress(
         "fallback",
         0.02,
-        "Safari 不支援高精度模型，正在改用相容 OCR",
+        "正在準備 iPhone 低記憶體 OCR",
         0,
         0,
         "Tesseract.js"
       );
-      return Tesseract.createWorker(["chi_tra", "eng"], 1, {
+      const worker = await Tesseract.createWorker(["chi_tra", "eng"], 1, {
         workerPath: `${TESSERACT_ROOT}worker.min.js`,
         corePath: `${TESSERACT_ROOT}core/`,
         langPath: `${TESSERACT_ROOT}lang`,
@@ -762,13 +809,19 @@
           progress(
             "fallback",
             0.05 + value * 0.35,
-            `正在準備 Safari 相容 OCR ${Math.round(value * 100)}%`,
+            `正在準備低記憶體 OCR ${Math.round(value * 100)}%`,
             0,
             0,
             "Tesseract.js"
           );
         },
       });
+      await worker.setParameters({
+        tessedit_pageseg_mode: "6",
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
+      return worker;
     })();
     try {
       return await tesseractWorkerPromise;
@@ -776,6 +829,51 @@
       tesseractWorkerPromise = null;
       throw error;
     }
+  }
+
+  async function prepareTesseractCanvas(source) {
+    const image = await loadImage(source);
+    const cropTop = Math.round(image.naturalHeight * 0.07);
+    const cropBottom = Math.round(image.naturalHeight * 0.94);
+    const scale = Math.min(
+      2,
+      Math.max(1, 1180 / Math.max(1, image.naturalWidth))
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(
+      1,
+      Math.round((cropBottom - cropTop) * scale)
+    );
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      image,
+      0,
+      cropTop,
+      image.naturalWidth,
+      cropBottom - cropTop,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      const gray =
+        pixels.data[index] * 0.299 +
+        pixels.data[index + 1] * 0.587 +
+        pixels.data[index + 2] * 0.114;
+      const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.25 + 128));
+      pixels.data[index] = contrasted;
+      pixels.data[index + 1] = contrasted;
+      pixels.data[index + 2] = contrasted;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas;
   }
 
   async function recognizeWithTesseract(sources, originalError) {
@@ -786,21 +884,24 @@
       progress(
         "recognize",
         0.4 + (pageIndex / sources.length) * 0.55,
-        `Safari 相容 OCR 正在辨識第 ${pageIndex + 1}/${
+        `iPhone 低記憶體 OCR 正在辨識第 ${pageIndex + 1}/${
           sources.length
         } 張截圖`,
         pageIndex + 1,
         sources.length,
         "Tesseract.js"
       );
-      const result = await worker.recognize(sources[pageIndex]);
+      const prepared = await prepareTesseractCanvas(sources[pageIndex]);
+      const result = await worker.recognize(prepared);
       pages.push({
         pageIndex,
         text: result.data.text || "",
         lines: [],
-        engineVersion: "tesseract.js-7-chi_tra+eng",
+        engineVersion: "tesseract.js-7-chi_tra+eng-preprocessed-v2",
         executionProvider: "wasm",
       });
+      prepared.width = 1;
+      prepared.height = 1;
     }
     progress(
       "parse",
@@ -820,24 +921,27 @@
     }
     let runtime;
     let pages;
-    if (needsSafariFallback()) {
+    if (needsIphoneLowMemoryMode()) {
+      await deleteOldModelCaches();
       pages = await recognizeWithTesseract(
         sources,
-        new Error("Safari uses the compatible OCR engine")
+        new Error("iPhone uses the low-memory OCR path")
       );
-    } else {
-      try {
-        runtime = await loadRuntime();
-        pages = [];
-        for (let pageIndex = 0; pageIndex < sources.length; pageIndex += 1) {
-          const image = await loadImage(sources[pageIndex]);
-          pages.push(
-            await recognizePage(runtime, image, pageIndex, sources.length)
-          );
-        }
-      } catch (error) {
-        pages = await recognizeWithTesseract(sources, error);
+    } else try {
+      // Safari supports the WASM execution provider even when WebGPU is not
+      // available. Always try PP-OCR first so mobile and desktop use the same
+      // detector and recognizer; Tesseract remains the runtime-failure fallback.
+      runtime = await loadRuntime();
+      pages = [];
+      for (let pageIndex = 0; pageIndex < sources.length; pageIndex += 1) {
+        const image = await loadImage(sources[pageIndex]);
+        pages.push(
+          await recognizePage(runtime, image, pageIndex, sources.length)
+        );
       }
+    } catch (error) {
+      runtime = null;
+      pages = await recognizeWithTesseract(sources, error);
     }
     progress(
       "parse",
@@ -845,7 +949,7 @@
       "正在解析與對帳",
       0,
       0,
-      runtime ? runtime.engine : "Tesseract.js"
+      runtime ? runtime.engineLabel : "Tesseract.js"
     );
     return JSON.stringify(pages);
   };

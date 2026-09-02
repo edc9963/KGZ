@@ -77,6 +77,8 @@ class _SignedOutAuth implements AuthRepository {
   @override
   String? get currentUserId => null;
   @override
+  String? get currentUserDisplayName => null;
+  @override
   bool get isSignedIn => false;
   @override
   Future<void> signInWithLine({String? returnPath}) async {}

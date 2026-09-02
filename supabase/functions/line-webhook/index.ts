@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import type { LineAction, LineMessage } from '../_shared/line.ts'
 import {
-  LineMessage,
   postback,
   replyLine,
   textMessage,
@@ -28,7 +28,9 @@ const channelSecret = Deno.env.get('LINE_CHANNEL_SECRET') ?? ''
 const channelAccessToken = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const expectedDestination = Deno.env.get('LINE_BOT_USER_ID') ?? ''
 const appPublicUrl = (Deno.env.get('APP_PUBLIC_URL') ?? '').replace(/\/$/, '')
-const ocrEnabled = (Deno.env.get('OCR_ENABLED') ?? 'false') === 'true'
+const appLoginUrl = appPublicUrl
+  ? `${appPublicUrl}/login?source=line_oa&next=%2Fdashboard`
+  : ''
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
@@ -180,9 +182,7 @@ async function routeEvent(
   if (event.type !== 'message') return []
   if (event.message?.type === 'image') {
     return [textMessage(
-      ocrEnabled
-        ? '圖片辨識服務正在準備中，請稍後再試。'
-        : 'Uber Eats 截圖辨識尚未啟用；這張圖片不會被下載或保存。',
+      'LINE 圖片記帳目前不支援；這張圖片不會被下載或保存。',
     )]
   }
   if (event.message?.type !== 'text') return []
@@ -398,14 +398,21 @@ async function expensePostback(
     if (!paymentMethods[method]) return [textMessage('付款方式無效。')]
     const next = { ...payload, paymentMethod: method }
     const sources = payload.sources as Json
-    if (method === 'creditCard') {
-      const cards = (sources.cards ?? []) as Json[]
+    if (method === 'creditCard' || method === 'debitCard') {
+      const requiredType = method === 'creditCard' ? 'credit' : 'debit'
+      const cards = ((sources.cards ?? []) as Json[]).filter(
+        (card) => String(card.cardType ?? 'credit') === requiredType,
+      )
       if (cards.length === 0) {
-        return [textMessage('目前沒有可用信用卡，請先到網頁新增，或選擇其他付款方式。')]
+        return [textMessage(
+          method === 'creditCard'
+            ? '目前沒有可用信用卡，請先到網頁新增，或選擇其他付款方式。'
+            : '目前沒有可用金融卡，請先到網頁新增，或選擇其他付款方式。',
+        )]
       }
       await saveConversation(db, lineUserId, 'expense', 'card', next)
       return [textMessage(
-        '選擇信用卡：',
+        method === 'creditCard' ? '選擇信用卡：' : '選擇金融卡：',
         cards.slice(0, 10).map((card, index) =>
           postback(
             `${String(card.name).slice(0, 12)} ${String(card.lastFour)}`,
@@ -414,7 +421,7 @@ async function expensePostback(
         ),
       )]
     }
-    if (method === 'transfer' || method === 'debitCard') {
+    if (method === 'transfer') {
       const accounts = (sources.accounts ?? []) as Json[]
       if (accounts.length === 0) {
         return [textMessage('目前沒有可用帳戶，請先到網頁新增，或選擇其他付款方式。')]
@@ -427,6 +434,11 @@ async function expensePostback(
         ),
       )]
     }
+    if (method === 'telecomBill' && sources.telecomBillConfigured !== true) {
+      return [textMessage(
+        '請先到網頁的固定支出，設定電信帳單的扣款日與扣款帳戶。',
+      )]
+    }
     await saveConversation(db, lineUserId, 'expense', 'confirm', next)
     return [expenseConfirmation(next)]
   }
@@ -434,11 +446,22 @@ async function expensePostback(
   if (data.startsWith('expense:card:') && conversation.step === 'card') {
     const index = Number(data.split(':')[2])
     const sources = payload.sources as Json
-    const cards = (sources.cards ?? []) as Json[]
+    const requiredType = payload.paymentMethod === 'debitCard'
+      ? 'debit'
+      : 'credit'
+    const cards = ((sources.cards ?? []) as Json[]).filter(
+      (card) => String(card.cardType ?? 'credit') === requiredType,
+    )
     if (!Number.isInteger(index) || !cards[index]) {
-      return [textMessage('信用卡選項已失效，請重新開始。')]
+      return [textMessage('卡片選項已失效，請重新開始。')]
     }
-    const next = { ...payload, cardId: cards[index].id }
+    const next = {
+      ...payload,
+      cardId: cards[index].id,
+      ...(requiredType === 'debit'
+        ? { accountId: cards[index].debitAccountId }
+        : {}),
+    }
     await saveConversation(db, lineUserId, 'expense', 'confirm', next)
     return [expenseConfirmation(next)]
   }
@@ -542,29 +565,30 @@ async function receivableMessages(
 ): Promise<LineMessage[]> {
   const result = await rpc(db, 'line_list_receivables', {
     p_line_user_id: lineUserId,
-    p_limit: 8,
+    // A null limit asks the RPC for every outstanding receivable.  The LINE
+    // reply is kept to one message so the platform's five-message reply cap
+    // cannot silently hide the later entries.
+    p_limit: null,
   })
   if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
   const items = (result.items ?? []) as Json[]
   if (items.length === 0) {
     return [textMessage('目前沒有待收款項。', menuActions())]
   }
-  const messages = items.slice(0, 4).map((item) =>
-    textMessage(
-      `${item.orderName}\n${item.participantName}：${formatMoney(Number(item.amountMinor))}`,
-      [
-        postback(
-          '標記已收款',
-          `receive:confirm:${item.token}`,
-          `確認 ${item.participantName} 已付款`,
-        ),
-      ],
+  const lines = items.map((item, index) =>
+    `${index + 1}. ${item.orderName}｜${item.participantName}：${formatMoney(Number(item.amountMinor))}`
+  )
+  const actions = items.slice(0, 13).map((item, index) =>
+    postback(
+      `收第 ${index + 1} 筆`,
+      `receive:confirm:${item.token}`,
+      `確認 ${item.participantName} 已付款`,
     )
   )
-  if (items.length > 4) {
-    messages.push(textMessage(`另有 ${items.length - 4} 筆，請再次開啟待收款查看。`))
-  }
-  return messages
+  return [textMessage(
+    [`待收款（共 ${items.length} 筆）`, ...lines].join('\n'),
+    actions,
+  )]
 }
 
 function helpMessage(): LineMessage {
@@ -579,8 +603,14 @@ function menuActions() {
     postback('財務總覽', 'menu:summary'),
     postback('快速支出', 'expense:start'),
     postback('待收款', 'receivables:list'),
-    postback('使用說明', 'menu:help'),
+    websiteAction(),
   ]
+}
+
+function websiteAction(): LineAction {
+  return appLoginUrl
+    ? { type: 'uri', label: '開啟網站', uri: appLoginUrl }
+    : postback('開啟網站', 'web:disabled')
 }
 
 async function getConversation(

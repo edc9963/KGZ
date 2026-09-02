@@ -10,6 +10,8 @@ class TransactionDisplayRecord {
     required this.isIncome,
     required this.currency,
     required this.detail,
+    this.accountId,
+    this.paymentMethod,
     this.expense,
     this.income,
     this.order,
@@ -22,6 +24,8 @@ class TransactionDisplayRecord {
   final bool isIncome;
   final String currency;
   final String detail;
+  final String? accountId;
+  final PaymentMethod? paymentMethod;
   final Expense? expense;
   final IncomeEntry? income;
   final GroupOrder? order;
@@ -40,6 +44,8 @@ List<TransactionDisplayRecord> transactionDisplayRecords(AppStore store) {
         detail:
             '${expense.paymentMethod.label}'
             '${expense.merchant.isEmpty ? '' : '・${expense.merchant}'}',
+        accountId: expense.accountId,
+        paymentMethod: expense.paymentMethod,
         expense: expense,
       ),
     for (final income in store.data.incomes)
@@ -53,6 +59,7 @@ List<TransactionDisplayRecord> transactionDisplayRecords(AppStore store) {
             store.accountById(income.accountId)?.currency ??
             store.data.settings.defaultCurrency,
         detail: store.accountById(income.accountId)?.name ?? '未指定',
+        accountId: income.accountId,
         income: income,
       ),
     for (final order in store.data.orders)
@@ -65,6 +72,7 @@ List<TransactionDisplayRecord> transactionDisplayRecords(AppStore store) {
           isIncome: false,
           currency: 'TWD',
           detail: '${order.platform}・代訂本人消費',
+          paymentMethod: PaymentMethod.creditCard,
           order: order,
         ),
   ]..sort((a, b) => b.date.compareTo(a.date));

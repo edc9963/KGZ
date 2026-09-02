@@ -18,6 +18,73 @@ class AllocationResult {
   final List<int> suggestedDues;
 }
 
+class FixedShareAllocationResult {
+  const FixedShareAllocationResult({
+    required this.shares,
+    required this.fixedTotalMinor,
+    required this.automaticTotalMinor,
+  });
+
+  final List<int> shares;
+  final int fixedTotalMinor;
+  final int automaticTotalMinor;
+}
+
+/// Keeps manually fixed whole-TWD shares and distributes the remainder evenly
+/// across automatic participants. Remainders use participant order as a stable
+/// tie breaker.
+FixedShareAllocationResult redistributeFixedSharesWholeTwd({
+  required int totalMinor,
+  required List<int?> fixedSharesMinor,
+}) {
+  if (totalMinor < 0 || totalMinor % 100 != 0) {
+    throw const FormatException('待分配費用必須是非負整數元');
+  }
+  final shares = List<int>.filled(fixedSharesMinor.length, 0);
+  final automaticIndexes = <int>[];
+  var fixedTotalMinor = 0;
+  for (var index = 0; index < fixedSharesMinor.length; index++) {
+    final fixed = fixedSharesMinor[index];
+    if (fixed == null) {
+      automaticIndexes.add(index);
+      continue;
+    }
+    if (fixed < 0 || fixed % 100 != 0) {
+      throw const FormatException('固定費用必須是非負整數元');
+    }
+    shares[index] = fixed;
+    fixedTotalMinor += fixed;
+  }
+  if (fixedTotalMinor > totalMinor) {
+    throw const FormatException('已固定的費用超過可分配總額');
+  }
+
+  final automaticTotalMinor = totalMinor - fixedTotalMinor;
+  if (automaticIndexes.isEmpty) {
+    if (automaticTotalMinor != 0) {
+      throw const FormatException('尚有費用未分配，請恢復至少一位自動分配者');
+    }
+    return FixedShareAllocationResult(
+      shares: shares,
+      fixedTotalMinor: fixedTotalMinor,
+      automaticTotalMinor: 0,
+    );
+  }
+
+  final automaticDollars = automaticTotalMinor ~/ 100;
+  final base = automaticDollars ~/ automaticIndexes.length;
+  final remainder = automaticDollars.remainder(automaticIndexes.length);
+  for (var position = 0; position < automaticIndexes.length; position++) {
+    shares[automaticIndexes[position]] =
+        (base + (position < remainder ? 1 : 0)) * 100;
+  }
+  return FixedShareAllocationResult(
+    shares: shares,
+    fixedTotalMinor: fixedTotalMinor,
+    automaticTotalMinor: automaticTotalMinor,
+  );
+}
+
 /// Allocates a TWD order in whole dollars. All inputs must be multiples of 100.
 AllocationResult allocateWholeTwd({
   required List<int> itemAmountsMinor,

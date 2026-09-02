@@ -14,6 +14,26 @@ String moneyText(int minor, {String currency = 'TWD', bool mask = false}) {
   ).format(minor / 100);
 }
 
+String compactMoneyText(
+  int minor, {
+  String currency = 'TWD',
+  bool mask = false,
+}) {
+  if (mask) return '$currency ••••••';
+  final major = minor / 100;
+  if (major.abs() < 10000) {
+    return moneyText(minor, currency: currency);
+  }
+  final divisor = major.abs() >= 100000000 ? 100000000 : 10000;
+  final unit = divisor == 100000000 ? '億' : '萬';
+  final scaled = major.abs() / divisor;
+  final truncated = (scaled * 10).floor() / 10;
+  final amount = NumberFormat('0.#', 'zh_TW').format(truncated);
+  final sign = minor < 0 ? '-' : '';
+  final symbol = currency == 'TWD' ? r'NT$' : currency;
+  return '$sign$symbol$amount$unit';
+}
+
 String dateText(DateTime date) => DateFormat('yyyy/MM/dd').format(date);
 
 int parseMoney(String text) =>
@@ -117,6 +137,7 @@ class SummaryCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.compactValue,
     this.tone,
     this.caption,
     this.onTap,
@@ -125,6 +146,7 @@ class SummaryCard extends StatelessWidget {
 
   final String label;
   final String value;
+  final String? compactValue;
   final IconData icon;
   final Color? tone;
   final String? caption;
@@ -133,76 +155,110 @@ class SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = tone ?? Theme.of(context).colorScheme.primary;
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ColoredBox(color: color, child: const SizedBox(height: 3)),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 200;
+        final valueStyle =
+            (compact
+                    ? Theme.of(context).textTheme.titleLarge
+                    : Theme.of(context).textTheme.headlineSmall)
+                ?.copyWith(fontWeight: FontWeight.w800, color: color);
+        final valuePainter = TextPainter(
+          text: TextSpan(text: value, style: valueStyle),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        final valueWidth = constraints.maxWidth - (compact ? 28 : 40);
+        const minimumFullValueScale = .64;
+        final useCompactValue =
+            compact &&
+            compactValue != null &&
+            valuePainter.width * minimumFullValueScale > valueWidth;
+        final shownValue = useCompactValue ? compactValue! : value;
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ColoredBox(color: color, child: const SizedBox(height: 3)),
+            Padding(
+              padding: EdgeInsets.all(compact ? 14 : 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(icon, color: color, size: 20),
+                  Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(compact ? 6 : 8),
+                          child: Icon(
+                            icon,
+                            color: color,
+                            size: compact ? 18 : 20,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: compact ? 8 : 12),
+                      Expanded(
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.end,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.textMuted),
+                        ),
+                      ),
+                      if (onTap != null) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right,
+                          size: compact ? 16 : 18,
+                          color: AppColors.textMuted,
+                        ),
+                      ],
+                    ],
+                  ),
+                  SizedBox(height: compact ? 12 : 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(shownValue, maxLines: 1, style: valueStyle),
                     ),
                   ),
-                  const Spacer(),
-                  Flexible(
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(color: AppColors.textMuted),
-                    ),
-                  ),
-                  if (onTap != null) ...[
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: AppColors.textMuted,
+                  if (caption != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      caption!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ],
                 ],
               ),
-              const SizedBox(height: 18),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-              ),
-              if (caption != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  caption!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? content
-          : Semantics(
-              button: true,
-              label: '查看$label',
-              child: InkWell(onTap: onTap, child: content),
             ),
+          ],
+        );
+        return Semantics(
+          button: onTap != null,
+          label:
+              '${onTap == null ? '' : '查看'}$label，$value${caption == null ? '' : '，$caption'}',
+          excludeSemantics: true,
+          child: Card(
+            clipBehavior: Clip.antiAlias,
+            child: onTap == null
+                ? content
+                : InkWell(onTap: onTap, child: content),
+          ),
+        );
+      },
     );
   }
 }
@@ -253,21 +309,34 @@ class ResponsiveGrid extends StatelessWidget {
     required this.children,
     this.minWidth = 230,
     this.spacing = 16,
+    this.mobileSpacing = 12,
+    this.mobileColumns = 2,
     super.key,
   });
 
   final List<Widget> children;
   final double minWidth;
   final double spacing;
+  final double mobileSpacing;
+  final int mobileColumns;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = (constraints.maxWidth / minWidth).floor().clamp(1, 4);
-      final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+      if (children.isEmpty) return const SizedBox.shrink();
+      final mobile = constraints.maxWidth < AppBreakpoints.mobile;
+      final effectiveSpacing = mobile ? mobileSpacing : spacing;
+      final columns = mobile
+          ? mobileColumns.clamp(1, children.length)
+          : (constraints.maxWidth / minWidth).floor().clamp(
+              1,
+              children.length.clamp(1, 4),
+            );
+      final width =
+          (constraints.maxWidth - effectiveSpacing * (columns - 1)) / columns;
       return Wrap(
-        spacing: spacing,
-        runSpacing: spacing,
+        spacing: effectiveSpacing,
+        runSpacing: effectiveSpacing,
         children: children
             .map((child) => SizedBox(width: width, child: child))
             .toList(),

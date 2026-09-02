@@ -103,6 +103,30 @@ void main() {
             note: '',
           ),
         ],
+        transactions: [
+          for (final entry in [
+            ('first', DateTime(2026, 2, 8)),
+            ('second', DateTime(2026, 3, 1)),
+          ])
+            FinancialTransaction(
+              id: 'card-payment:bill:${entry.$1}',
+              userId: 'u',
+              date: entry.$2,
+              type: FinancialTransactionType.cardPayment,
+              label: '信用卡部分繳款',
+              amountMinor: 10000,
+              currency: 'TWD',
+              relatedEntityType: 'cardBill',
+              relatedEntityId: 'bill',
+              impacts: const [
+                AccountImpact(
+                  accountId: 'bank',
+                  amountMinor: -10000,
+                  currency: 'TWD',
+                ),
+              ],
+            ),
+        ],
       );
 
       final january = FinancialReportService(data).build(
@@ -111,12 +135,17 @@ void main() {
       final february = FinancialReportService(data).build(
         ReportPeriod(start: DateTime(2026, 2, 1), end: DateTime(2026, 2, 28)),
       );
+      final march = FinancialReportService(data).build(
+        ReportPeriod(start: DateTime(2026, 3, 1), end: DateTime(2026, 3, 31)),
+      );
 
       expect(january.totalLiabilities, 20000);
       expect(january.totalExpenses, 20000);
-      expect(february.totalLiabilities, 0);
-      expect(february.cashChange, -20000);
+      expect(february.totalLiabilities, 10000);
+      expect(february.cashChange, -10000);
       expect(february.cashFlowBalances, isTrue);
+      expect(march.totalLiabilities, 0);
+      expect(march.cashChange, -10000);
     });
 
     test('telecom charges are expensed once and paid as later cash flow', () {

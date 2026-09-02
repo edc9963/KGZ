@@ -285,6 +285,48 @@ enum PaymentMethod {
   final String label;
 }
 
+enum PaymentCardType {
+  credit('信用卡'),
+  debit('金融卡');
+
+  const PaymentCardType(this.label);
+  final String label;
+}
+
+enum CardBillReconciliationReason {
+  none('無差異'),
+  rebate('回饋／折抵'),
+  refund('退款'),
+  feeOrInterest('費用／利息'),
+  exchangeRate('匯率差'),
+  missingOrOther('漏登／其他'),
+  legacyAdjustment('舊版人工調整');
+
+  const CardBillReconciliationReason(this.label);
+  final String label;
+}
+
+enum CardBillAutoDebitState {
+  pending('待確認'),
+  succeeded('扣款成功'),
+  failed('扣款失敗');
+
+  const CardBillAutoDebitState(this.label);
+  final String label;
+}
+
+enum CardBillStatus {
+  paid('已繳清'),
+  debitFailed('扣款失敗'),
+  overdue('已逾期'),
+  partiallyPaid('部分繳款'),
+  debitSoon('即將扣款'),
+  unpaid('待繳款');
+
+  const CardBillStatus(this.label);
+  final String label;
+}
+
 enum InvestmentTransactionType {
   buy('買入'),
   sell('賣出'),
@@ -907,6 +949,7 @@ class CreditCard {
     required this.debitAccountId,
     required this.isActive,
     required this.note,
+    this.cardType = PaymentCardType.credit,
     this.liabilityAccountId,
     this.origin = DataOrigin.user,
   });
@@ -922,8 +965,12 @@ class CreditCard {
   final String debitAccountId;
   final bool isActive;
   final String note;
+  final PaymentCardType cardType;
   final String? liabilityAccountId;
   final DataOrigin origin;
+
+  bool get isCredit => cardType == PaymentCardType.credit;
+  bool get isDebit => cardType == PaymentCardType.debit;
 
   Json toJson() => {
     'id': id,
@@ -937,6 +984,7 @@ class CreditCard {
     'debitAccountId': debitAccountId,
     'isActive': isActive,
     'note': note,
+    'cardType': cardType.name,
     'liabilityAccountId': liabilityAccountId,
     'origin': origin.name,
   };
@@ -953,6 +1001,9 @@ class CreditCard {
     debitAccountId: json['debitAccountId'] as String,
     isActive: json['isActive'] as bool? ?? true,
     note: json['note'] as String? ?? '',
+    cardType: PaymentCardType.values.byName(
+      json['cardType'] as String? ?? 'credit',
+    ),
     liabilityAccountId: json['liabilityAccountId'] as String?,
     origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
   );
@@ -970,6 +1021,10 @@ class CardBill {
     required this.dueDate,
     required this.autoDebitDate,
     required this.note,
+    this.statementAmountMinor,
+    this.reconciliationReason = CardBillReconciliationReason.none,
+    this.reconciliationNote = '',
+    this.autoDebitState = CardBillAutoDebitState.pending,
     this.paidAt,
     this.origin = DataOrigin.user,
   });
@@ -984,8 +1039,46 @@ class CardBill {
   final DateTime dueDate;
   final DateTime autoDebitDate;
   final String note;
+  final int? statementAmountMinor;
+  final CardBillReconciliationReason reconciliationReason;
+  final String reconciliationNote;
+  final CardBillAutoDebitState autoDebitState;
   final DateTime? paidAt;
   final DataOrigin origin;
+
+  CardBill copyWith({
+    String? cardId,
+    String? month,
+    List<String>? chargeIds,
+    int? manualAdjustmentMinor,
+    int? paidMinor,
+    DateTime? dueDate,
+    DateTime? autoDebitDate,
+    String? note,
+    int? statementAmountMinor,
+    CardBillReconciliationReason? reconciliationReason,
+    String? reconciliationNote,
+    CardBillAutoDebitState? autoDebitState,
+    DateTime? paidAt,
+    bool clearPaidAt = false,
+  }) => CardBill(
+    id: id,
+    userId: userId,
+    cardId: cardId ?? this.cardId,
+    month: month ?? this.month,
+    chargeIds: chargeIds ?? this.chargeIds,
+    manualAdjustmentMinor: manualAdjustmentMinor ?? this.manualAdjustmentMinor,
+    paidMinor: paidMinor ?? this.paidMinor,
+    dueDate: dueDate ?? this.dueDate,
+    autoDebitDate: autoDebitDate ?? this.autoDebitDate,
+    note: note ?? this.note,
+    statementAmountMinor: statementAmountMinor ?? this.statementAmountMinor,
+    reconciliationReason: reconciliationReason ?? this.reconciliationReason,
+    reconciliationNote: reconciliationNote ?? this.reconciliationNote,
+    autoDebitState: autoDebitState ?? this.autoDebitState,
+    paidAt: clearPaidAt ? null : paidAt ?? this.paidAt,
+    origin: origin,
+  );
 
   Json toJson() => {
     'id': id,
@@ -998,6 +1091,10 @@ class CardBill {
     'dueDate': dueDate.toIso8601String(),
     'autoDebitDate': autoDebitDate.toIso8601String(),
     'note': note,
+    'statementAmountMinor': statementAmountMinor,
+    'reconciliationReason': reconciliationReason.name,
+    'reconciliationNote': reconciliationNote,
+    'autoDebitState': autoDebitState.name,
     'paidAt': paidAt?.toIso8601String(),
     'origin': origin.name,
   };
@@ -1013,6 +1110,14 @@ class CardBill {
     dueDate: DateTime.parse(json['dueDate'] as String),
     autoDebitDate: DateTime.parse(json['autoDebitDate'] as String),
     note: json['note'] as String? ?? '',
+    statementAmountMinor: (json['statementAmountMinor'] as num?)?.toInt(),
+    reconciliationReason: CardBillReconciliationReason.values.byName(
+      json['reconciliationReason'] as String? ?? 'none',
+    ),
+    reconciliationNote: json['reconciliationNote'] as String? ?? '',
+    autoDebitState: CardBillAutoDebitState.values.byName(
+      json['autoDebitState'] as String? ?? 'pending',
+    ),
     paidAt: json['paidAt'] == null
         ? null
         : DateTime.parse(json['paidAt'] as String),
@@ -1032,6 +1137,10 @@ class InvestmentProduct {
     required this.priceUpdatedAt,
     required this.note,
     this.origin = DataOrigin.user,
+    this.priceSource = 'manual',
+    this.market,
+    this.marketSymbol,
+    this.quoteLinkedAt,
   });
 
   final String id;
@@ -1044,6 +1153,43 @@ class InvestmentProduct {
   final DateTime priceUpdatedAt;
   final String note;
   final DataOrigin origin;
+  final String priceSource;
+  final String? market;
+  final String? marketSymbol;
+  final DateTime? quoteLinkedAt;
+
+  bool get usesAutomaticQuote =>
+      priceSource == 'twse' && market != null && marketSymbol != null;
+
+  InvestmentProduct copyWith({
+    String? symbol,
+    String? name,
+    String? type,
+    CurrencyCode? currency,
+    int? currentPriceMinor,
+    DateTime? priceUpdatedAt,
+    String? note,
+    String? priceSource,
+    String? market,
+    String? marketSymbol,
+    DateTime? quoteLinkedAt,
+    bool clearMarketLink = false,
+  }) => InvestmentProduct(
+    id: id,
+    userId: userId,
+    symbol: symbol ?? this.symbol,
+    name: name ?? this.name,
+    type: type ?? this.type,
+    currency: currency ?? this.currency,
+    currentPriceMinor: currentPriceMinor ?? this.currentPriceMinor,
+    priceUpdatedAt: priceUpdatedAt ?? this.priceUpdatedAt,
+    note: note ?? this.note,
+    origin: origin,
+    priceSource: priceSource ?? this.priceSource,
+    market: clearMarketLink ? null : market ?? this.market,
+    marketSymbol: clearMarketLink ? null : marketSymbol ?? this.marketSymbol,
+    quoteLinkedAt: clearMarketLink ? null : quoteLinkedAt ?? this.quoteLinkedAt,
+  );
 
   Json toJson() => {
     'id': id,
@@ -1056,6 +1202,11 @@ class InvestmentProduct {
     'priceUpdatedAt': priceUpdatedAt.toIso8601String(),
     'note': note,
     'origin': origin.name,
+    'priceSource': priceSource,
+    if (market != null) 'market': market,
+    if (marketSymbol != null) 'marketSymbol': marketSymbol,
+    if (quoteLinkedAt != null)
+      'quoteLinkedAt': quoteLinkedAt!.toIso8601String(),
   };
 
   factory InvestmentProduct.fromJson(Json json) => InvestmentProduct(
@@ -1069,6 +1220,12 @@ class InvestmentProduct {
     priceUpdatedAt: DateTime.parse(json['priceUpdatedAt'] as String),
     note: json['note'] as String? ?? '',
     origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
+    priceSource: json['priceSource'] as String? ?? 'manual',
+    market: json['market'] as String?,
+    marketSymbol: json['marketSymbol'] as String?,
+    quoteLinkedAt: json['quoteLinkedAt'] == null
+        ? null
+        : DateTime.parse(json['quoteLinkedAt'] as String),
   );
 }
 
@@ -1543,11 +1700,9 @@ class UserSettings {
     this.defaultCategory = '餐飲',
     this.defaultExpenseCategoryId = 'expense-food',
     this.defaultCollectionAccountId,
-    this.linePayQrData = '',
     this.bankQrData = '',
     this.bankAccountInfo = '',
     this.remindersEnabled = true,
-    this.lineRemindersEnabled = false,
     this.maskBalances = false,
     this.fxRates = const [],
   });
@@ -1557,11 +1712,9 @@ class UserSettings {
   final String defaultCategory;
   final String defaultExpenseCategoryId;
   final String? defaultCollectionAccountId;
-  final String linePayQrData;
   final String bankQrData;
   final String bankAccountInfo;
   final bool remindersEnabled;
-  final bool lineRemindersEnabled;
   final bool maskBalances;
   final List<FxRate> fxRates;
 
@@ -1571,11 +1724,9 @@ class UserSettings {
     String? defaultCategory,
     String? defaultExpenseCategoryId,
     String? defaultCollectionAccountId,
-    String? linePayQrData,
     String? bankQrData,
     String? bankAccountInfo,
     bool? remindersEnabled,
-    bool? lineRemindersEnabled,
     bool? maskBalances,
     List<FxRate>? fxRates,
   }) => UserSettings(
@@ -1586,11 +1737,9 @@ class UserSettings {
         defaultExpenseCategoryId ?? this.defaultExpenseCategoryId,
     defaultCollectionAccountId:
         defaultCollectionAccountId ?? this.defaultCollectionAccountId,
-    linePayQrData: linePayQrData ?? this.linePayQrData,
     bankQrData: bankQrData ?? this.bankQrData,
     bankAccountInfo: bankAccountInfo ?? this.bankAccountInfo,
     remindersEnabled: remindersEnabled ?? this.remindersEnabled,
-    lineRemindersEnabled: lineRemindersEnabled ?? this.lineRemindersEnabled,
     maskBalances: maskBalances ?? this.maskBalances,
     fxRates: fxRates ?? this.fxRates,
   );
@@ -1601,11 +1750,9 @@ class UserSettings {
     'defaultCategory': defaultCategory,
     'defaultExpenseCategoryId': defaultExpenseCategoryId,
     'defaultCollectionAccountId': defaultCollectionAccountId,
-    'linePayQrData': linePayQrData,
     'bankQrData': bankQrData,
     'bankAccountInfo': bankAccountInfo,
     'remindersEnabled': remindersEnabled,
-    'lineRemindersEnabled': lineRemindersEnabled,
     'maskBalances': maskBalances,
     'fxRates': fxRates.map((rate) => rate.toJson()).toList(),
   };
@@ -1619,11 +1766,9 @@ class UserSettings {
     defaultExpenseCategoryId:
         json['defaultExpenseCategoryId'] as String? ?? 'expense-food',
     defaultCollectionAccountId: json['defaultCollectionAccountId'] as String?,
-    linePayQrData: json['linePayQrData'] as String? ?? '',
     bankQrData: json['bankQrData'] as String? ?? '',
     bankAccountInfo: json['bankAccountInfo'] as String? ?? '',
     remindersEnabled: json['remindersEnabled'] as bool? ?? true,
-    lineRemindersEnabled: json['lineRemindersEnabled'] as bool? ?? false,
     maskBalances: json['maskBalances'] as bool? ?? false,
     fxRates: (json['fxRates'] as List? ?? const [])
         .map((item) => FxRate.fromJson(item as Json))
@@ -1633,7 +1778,7 @@ class UserSettings {
 
 class AppData {
   const AppData({
-    this.schemaVersion = 7,
+    this.schemaVersion = 9,
     this.settings = const UserSettings(),
     this.categories = const [],
     this.transactions = const [],

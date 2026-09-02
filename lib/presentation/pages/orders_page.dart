@@ -39,6 +39,43 @@ String? validateUberEatsImportFiles(List<PickedImportImage>? files) {
   return null;
 }
 
+@visibleForTesting
+int collectionFeeMinorForEditing(OrderParticipant participant) {
+  if (participant.isSelf) return participant.sharedFeeMinor;
+  return (participant.dueMinor -
+          participant.itemAmountMinor +
+          participant.discountMinor)
+      .clamp(0, 999999999);
+}
+
+@visibleForTesting
+List<OrderParticipant> participantsWithSelfFirst(
+  Iterable<OrderParticipant> participants,
+) => [
+  ...participants.where((participant) => participant.isSelf),
+  ...participants.where((participant) => !participant.isSelf),
+];
+
+@visibleForTesting
+int nonSelfFeeDifferenceMinor({
+  required List<bool> isSelf,
+  required List<int> targetSharesMinor,
+  required List<int> assignedSharesMinor,
+}) {
+  if (isSelf.length != targetSharesMinor.length ||
+      isSelf.length != assignedSharesMinor.length) {
+    throw ArgumentError('Fee share lengths must match');
+  }
+  var target = 0;
+  var assigned = 0;
+  for (var index = 0; index < isSelf.length; index++) {
+    if (isSelf[index]) continue;
+    target += targetSharesMinor[index];
+    assigned += assignedSharesMinor[index];
+  }
+  return target - assigned;
+}
+
 class OrdersPage extends ConsumerWidget {
   const OrdersPage({super.key});
 
@@ -62,7 +99,7 @@ class OrdersPage extends ConsumerWidget {
                 label: const Text('從截圖匯入'),
               ),
               FilledButton.icon(
-                onPressed: () => _showOrderDialog(context, ref),
+                onPressed: () => _showCreateMethodDialog(context, ref),
                 icon: const Icon(Icons.add),
                 label: const Text('新增代訂'),
               ),
@@ -75,6 +112,10 @@ class OrdersPage extends ConsumerWidget {
             SummaryCard(
               label: '代墊應收款',
               value: moneyText(
+                store.receivablesMinor,
+                mask: store.data.settings.maskBalances,
+              ),
+              compactValue: compactMoneyText(
                 store.receivablesMinor,
                 mask: store.data.settings.maskBalances,
               ),
@@ -101,7 +142,7 @@ class OrdersPage extends ConsumerWidget {
             title: '還沒有代訂',
             message: '建立餐點或團購代訂，系統會分開計算個人支出與應收款。',
             action: FilledButton(
-              onPressed: () => _showOrderDialog(context, ref),
+              onPressed: () => _showCreateMethodDialog(context, ref),
               child: const Text('新增代訂'),
             ),
           )
@@ -182,9 +223,51 @@ class OrdersPage extends ConsumerWidget {
     );
   }
 
+  Future<void> _showCreateMethodDialog(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final method = await showDialog<_OrderEntryMethod>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('新增代訂'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_note_outlined),
+              title: const Text('手動輸入'),
+              subtitle: const Text('自行填寫訂單、人員與分攤'),
+              onTap: () =>
+                  Navigator.pop(dialogContext, _OrderEntryMethod.manual),
+            ),
+            ListTile(
+              leading: const Icon(Icons.document_scanner_outlined),
+              title: const Text('截圖辨識'),
+              subtitle: const Text('從 Uber Eats 截圖帶入後再確認'),
+              onTap: () => Navigator.pop(dialogContext, _OrderEntryMethod.ocr),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || method == null) return;
+    if (method == _OrderEntryMethod.ocr) {
+      await _showImportDialog(context, ref);
+    } else {
+      await _showOrderDialog(context, ref);
+    }
+  }
+
   Future<void> _showImportDialog(BuildContext context, WidgetRef ref) async {
     final store = ref.read(appStoreProvider);
-    if (store.data.cards.isEmpty) {
+    if (!store.data.cards.any((card) => card.isCredit)) {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -292,8 +375,9 @@ class OrdersPage extends ConsumerWidget {
     var date = existing?.date ?? DateTime.now();
     var cardId =
         existing?.cardId ??
-        (store.data.cards.isEmpty ? null : store.data.cards.first.id);
-    var splitMethod = existing?.splitMethod ?? SplitMethod.equal;
+        store.data.cards.where((card) => card.isCredit).firstOrNull?.id;
+    final splitMethod = existing?.splitMethod ?? SplitMethod.equal;
+    var editorStep = 0;
     var includeSelfInDeliveryFee = existing?.includeSelfInDeliveryFee ?? false;
     var includeSelfInServiceFee = existing?.includeSelfInServiceFee ?? false;
     final defaultCollectionMethod = store.lastCollectionMethod;
@@ -309,7 +393,40 @@ class OrdersPage extends ConsumerWidget {
               collectionAccountId: defaultCollectionAccountId,
             ),
           ]
-        : existing.participants.map(_ParticipantDraft.fromModel).toList();
+        : participantsWithSelfFirst(existing.participants)
+              .map(
+                (item) => _ParticipantDraft.fromModel(
+                  item,
+                  manualFee: existing.splitMethod == SplitMethod.manual,
+                ),
+              )
+              .toList();
+    bool orderAmountsUnchanged() {
+      if (existing == null || existing.participants.length != drafts.length) {
+        return false;
+      }
+      if (parseMoney(total.text) != existing.totalMinor ||
+          parseMoney(delivery.text) != existing.deliveryFeeMinor ||
+          parseMoney(service.text) != existing.serviceFeeMinor ||
+          parseMoney(discount.text) != existing.discountMinor) {
+        return false;
+      }
+      final existingById = {
+        for (final participant in existing.participants)
+          participant.id: participant,
+      };
+      return drafts.every((draft) {
+        final participant = existingById[draft.id];
+        return participant != null &&
+            parseMoney(draft.amount.text) == participant.itemAmountMinor;
+      });
+    }
+
+    bool feeTotalsUnchanged() =>
+        existing != null &&
+        parseMoney(delivery.text) == existing.deliveryFeeMinor &&
+        parseMoney(service.text) == existing.serviceFeeMinor;
+
     String? error;
     List<int>? syncDiscounts({bool reportError = false}) {
       try {
@@ -338,16 +455,206 @@ class OrdersPage extends ConsumerWidget {
       }
     }
 
+    AllocationResult? currentAllocation({bool reportError = false}) {
+      try {
+        return allocateWholeTwd(
+          itemAmountsMinor: [
+            for (final draft in drafts) parseMoney(draft.amount.text),
+          ],
+          isSelf: [for (final draft in drafts) draft.isSelf],
+          deliveryFeeMinor: parseMoney(delivery.text),
+          serviceFeeMinor: parseMoney(service.text),
+          discountMinor: parseMoney(discount.text),
+          includeSelfInDeliveryFee: includeSelfInDeliveryFee,
+          includeSelfInServiceFee: includeSelfInServiceFee,
+          discountEligible: [
+            for (final draft in drafts) draft.discountEligible,
+          ],
+          fixedDiscountSharesMinor: [
+            for (final draft in drafts)
+              draft.discountEligible && draft.discountIsFixed
+                  ? parseMoney(draft.discount.text)
+                  : null,
+          ],
+        );
+      } on FormatException catch (exception) {
+        if (reportError) error = exception.message;
+        return null;
+      }
+    }
+
+    AllocationResult? currentFeeAllocation({bool reportError = false}) {
+      try {
+        return allocateWholeTwd(
+          itemAmountsMinor: [
+            for (final draft in drafts) parseMoney(draft.amount.text),
+          ],
+          isSelf: [for (final draft in drafts) draft.isSelf],
+          deliveryFeeMinor: parseMoney(delivery.text),
+          serviceFeeMinor: parseMoney(service.text),
+          discountMinor: 0,
+          includeSelfInDeliveryFee: includeSelfInDeliveryFee,
+          includeSelfInServiceFee: includeSelfInServiceFee,
+          discountEligible: [for (final _ in drafts) false],
+        );
+      } on FormatException catch (exception) {
+        if (reportError) error = exception.message;
+        return null;
+      }
+    }
+
+    void syncFees({bool resetFixed = false}) {
+      final allocation = currentFeeAllocation();
+      if (allocation == null) return;
+      for (var index = 0; index < drafts.length; index++) {
+        final draft = drafts[index];
+        if (resetFixed) draft.feeFixed = false;
+        if (!draft.feeFixed) {
+          final automatic = splitMethod == SplitMethod.manual
+              ? allocation.feeShares[index]
+              : allocation.collectionFeeShares[index];
+          draft.fee.text = (automatic ~/ 100).toString();
+        }
+      }
+    }
+
+    int feeTargetMinor(AllocationResult allocation) {
+      final shares = splitMethod == SplitMethod.manual
+          ? allocation.feeShares
+          : allocation.collectionFeeShares;
+      return [
+        for (var index = 0; index < drafts.length; index++)
+          if (!drafts[index].isSelf) shares[index],
+      ].fold<int>(0, (sum, value) => sum + value);
+    }
+
+    int feeDifferenceMinor() {
+      final allocation = currentFeeAllocation();
+      if (allocation == null) return 0;
+      return nonSelfFeeDifferenceMinor(
+        isSelf: [for (final draft in drafts) draft.isSelf],
+        targetSharesMinor: splitMethod == SplitMethod.manual
+            ? allocation.feeShares
+            : allocation.collectionFeeShares,
+        assignedSharesMinor: [
+          for (final draft in drafts) parseMoney(draft.fee.text),
+        ],
+      );
+    }
+
+    (int totalCollectionMinor, int resultMinor)? collectionSummary() {
+      final allocation = currentAllocation();
+      if (allocation == null) return null;
+      var totalCollectionMinor = 0;
+      var selfExpenseMinor = 0;
+      for (var index = 0; index < drafts.length; index++) {
+        final draft = drafts[index];
+        final itemMinor = parseMoney(draft.amount.text);
+        final discountMinor = allocation.discountShares[index];
+        if (draft.isSelf) {
+          selfExpenseMinor +=
+              (itemMinor + allocation.feeShares[index] - discountMinor).clamp(
+                0,
+                999999999,
+              );
+        } else {
+          totalCollectionMinor +=
+              (itemMinor + parseMoney(draft.fee.text) - discountMinor).clamp(
+                0,
+                999999999,
+              );
+        }
+      }
+      final advanceMinor = (parseMoney(total.text) - selfExpenseMinor).clamp(
+        0,
+        999999999,
+      );
+      return (totalCollectionMinor, totalCollectionMinor - advanceMinor);
+    }
+
+    void redistributeFees() {
+      final allocation = currentFeeAllocation(reportError: true);
+      if (allocation == null) return;
+      try {
+        final collectionDrafts = drafts
+            .where((draft) => !draft.isSelf)
+            .toList();
+        final result = redistributeFixedSharesWholeTwd(
+          totalMinor: feeTargetMinor(allocation),
+          fixedSharesMinor: [
+            for (final draft in collectionDrafts)
+              draft.feeFixed ? parseMoney(draft.fee.text) : null,
+          ],
+        );
+        for (var index = 0; index < collectionDrafts.length; index++) {
+          if (!collectionDrafts[index].feeFixed) {
+            collectionDrafts[index].fee.text = (result.shares[index] ~/ 100)
+                .toString();
+          }
+        }
+        error = null;
+      } on FormatException catch (exception) {
+        error = exception.message;
+      }
+    }
+
+    void adjustAllCollectionFees(int delta) {
+      for (final draft in drafts.where((draft) => !draft.isSelf)) {
+        final current = int.tryParse(draft.fee.text) ?? 0;
+        draft.fee.text = (current + delta).clamp(0, 999999999).toString();
+        draft.feeFixed = true;
+      }
+      error = null;
+    }
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          insetPadding: MediaQuery.sizeOf(context).width < 600
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+          shape: MediaQuery.sizeOf(context).width < 600
+              ? const RoundedRectangleBorder()
+              : null,
           title: Text(existing == null ? '新增代訂' : '編輯代訂'),
           content: SizedBox(
             width: 720,
+            height: MediaQuery.sizeOf(context).width < 600
+                ? MediaQuery.sizeOf(context).height - 180
+                : null,
             child: SingleChildScrollView(
               child: Column(
                 children: [
+                  Row(
+                    children: [
+                      for (var index = 0; index < 3; index++) ...[
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: index <= editorStep
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                          foregroundColor: index <= editorStep
+                              ? Colors.white
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(const ['訂單資訊', '人員與分攤', '確認'][index]),
+                        if (index < 2) ...[
+                          const SizedBox(width: 8),
+                          const Expanded(child: Divider()),
+                          const SizedBox(width: 8),
+                        ],
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 18),
                   if (error != null) ...[
                     Container(
                       width: double.infinity,
@@ -378,245 +685,325 @@ class OrdersPage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextField(
-                          controller: name,
-                          decoration: const InputDecoration(labelText: '代訂名稱'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: platform,
-                          decoration: const InputDecoration(labelText: '訂購平台'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Builder(
-                    builder: (context) {
-                      final itemTotal = drafts.fold<int>(
-                        0,
-                        (sum, draft) => sum + parseMoney(draft.amount.text),
-                      );
-                      final calculated =
-                          itemTotal +
-                          parseMoney(delivery.text) +
-                          parseMoney(service.text) -
-                          parseMoney(discount.text);
-                      final entered = parseMoney(total.text);
-                      final matches = entered == calculated && calculated > 0;
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '明細計算：${moneyText(calculated)}'
-                              '${matches ? '（金額一致）' : ''}',
-                              style: TextStyle(
-                                color: matches
-                                    ? const Color(0xFF0E7C66)
-                                    : Colors.black54,
-                                fontWeight: matches
-                                    ? FontWeight.w700
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: calculated <= 0
-                                ? null
-                                : () => setState(() {
-                                    total.text = (calculated / 100)
-                                        .toStringAsFixed(2);
-                                    error = null;
-                                  }),
-                            child: const Text('帶入總刷卡金額'),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: () async {
-                            final value = await showDatePicker(
-                              context: context,
-                              initialDate: date,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime.now().add(
-                                const Duration(days: 365),
-                              ),
-                            );
-                            if (value != null) setState(() => date = value);
-                          },
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: '訂購日期',
-                            ),
-                            child: Text(dateText(date)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue:
-                              store.data.cards.any((item) => item.id == cardId)
-                              ? cardId
-                              : null,
-                          decoration: const InputDecoration(labelText: '刷卡信用卡'),
-                          items: store.data.cards
-                              .map(
-                                (card) => DropdownMenuItem(
-                                  value: card.id,
-                                  child: Text(card.name),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) => setState(() => cardId = value),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      for (final field in [
-                        ('總刷卡金額', total),
-                        ('外送費', delivery),
-                        ('服務費', service),
-                        ('折扣', discount),
-                      ])
+                  if (editorStep == 0)
+                    Row(
+                      children: [
                         Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              right: field.$1 == '折扣' ? 0 : 8,
+                          flex: 2,
+                          child: TextField(
+                            controller: name,
+                            decoration: const InputDecoration(
+                              labelText: '代訂名稱',
                             ),
-                            child: TextField(
-                              controller: field.$2,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: platform,
+                            decoration: const InputDecoration(
+                              labelText: '訂購平台',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (editorStep == 0) const SizedBox(height: 4),
+                  if (editorStep == 0)
+                    Builder(
+                      builder: (context) {
+                        final itemTotal = drafts.fold<int>(
+                          0,
+                          (sum, draft) => sum + parseMoney(draft.amount.text),
+                        );
+                        final calculated =
+                            itemTotal +
+                            parseMoney(delivery.text) +
+                            parseMoney(service.text) -
+                            parseMoney(discount.text);
+                        final entered = parseMoney(total.text);
+                        final matches = entered == calculated && calculated > 0;
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '明細計算：${moneyText(calculated)}'
+                                '${matches ? '（金額一致）' : ''}',
+                                style: TextStyle(
+                                  color: matches
+                                      ? const Color(0xFF0E7C66)
+                                      : Colors.black54,
+                                  fontWeight: matches
+                                      ? FontWeight.w700
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: calculated <= 0
+                                  ? null
+                                  : () => setState(() {
+                                      total.text = (calculated / 100)
+                                          .toStringAsFixed(2);
+                                      error = null;
+                                    }),
+                              child: const Text('帶入總刷卡金額'),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  if (editorStep == 0) const SizedBox(height: 12),
+                  if (editorStep == 0)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final value = await showDatePicker(
+                                context: context,
+                                initialDate: date,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
+                              );
+                              if (value != null) setState(() => date = value);
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '訂購日期',
+                              ),
+                              child: Text(dateText(date)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue:
+                                store.data.cards.any(
+                                  (item) => item.id == cardId && item.isCredit,
+                                )
+                                ? cardId
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: '刷卡信用卡',
+                            ),
+                            items: store.data.cards
+                                .where((card) => card.isCredit)
+                                .map(
+                                  (card) => DropdownMenuItem(
+                                    value: card.id,
+                                    child: Text(card.name),
                                   ),
-                              decoration: InputDecoration(labelText: field.$1),
-                              onChanged: (_) => setState(() {
-                                if (field.$1 == '折扣') syncDiscounts();
-                              }),
-                            ),
+                                )
+                                .toList(),
+                            onChanged: (value) =>
+                                setState(() => cardId = value),
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<SplitMethod>(
-                    segments: [
-                      for (final method in SplitMethod.values)
-                        ButtonSegment(value: method, label: Text(method.label)),
-                    ],
-                    selected: {splitMethod},
-                    onSelectionChanged: (value) =>
-                        setState(() => splitMethod = value.first),
-                  ),
-                  if (splitMethod == SplitMethod.equal) ...[
-                    const SizedBox(height: 10),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('外送費包含本人'),
-                      value: includeSelfInDeliveryFee,
-                      onChanged: (value) =>
-                          setState(() => includeSelfInDeliveryFee = value),
+                      ],
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('服務費包含本人'),
-                      value: includeSelfInServiceFee,
-                      onChanged: (value) =>
-                          setState(() => includeSelfInServiceFee = value),
+                  if (editorStep == 0) const SizedBox(height: 12),
+                  if (editorStep == 0)
+                    Row(
+                      children: [
+                        for (final field in [
+                          ('總刷卡金額', total),
+                          ('外送費', delivery),
+                          ('服務費', service),
+                          ('折扣', discount),
+                        ])
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: field.$1 == '折扣' ? 0 : 8,
+                              ),
+                              child: TextField(
+                                controller: field.$2,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: field.$1,
+                                ),
+                                onChanged: (_) => setState(() {
+                                  if (field.$1 == '折扣') syncDiscounts();
+                                }),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
+                  if (editorStep == 1) const SizedBox(height: 12),
+                  if (editorStep == 1)
+                    Builder(
+                      builder: (context) {
+                        final fixed = drafts
+                            .where(
+                              (draft) =>
+                                  draft.discountEligible &&
+                                  draft.discountIsFixed,
+                            )
+                            .fold<int>(
+                              0,
+                              (sum, draft) =>
+                                  sum + parseMoney(draft.discount.text),
+                            );
+                        final assigned = drafts
+                            .where((draft) => draft.discountEligible)
+                            .fold<int>(
+                              0,
+                              (sum, draft) =>
+                                  sum + parseMoney(draft.discount.text),
+                            );
+                        return _AllocationSettingsCard(
+                          hasSelf: drafts.any((draft) => draft.isSelf),
+                          includeDelivery: includeSelfInDeliveryFee,
+                          includeService: includeSelfInServiceFee,
+                          onDeliveryChanged: (value) => setState(() {
+                            includeSelfInDeliveryFee = value;
+                            syncFees();
+                          }),
+                          onServiceChanged: (value) => setState(() {
+                            includeSelfInServiceFee = value;
+                            syncFees();
+                          }),
+                          discountTotalMinor: parseMoney(discount.text),
+                          fixedDiscountMinor: fixed,
+                          assignedDiscountMinor: assigned,
+                        );
+                      },
+                    ),
+                  if (editorStep == 1) const SizedBox(height: 18),
+                  if (editorStep == 1)
+                    _UniformFeeAdjuster(
+                      peopleFees: [
+                        for (final draft in drafts.where(
+                          (draft) => !draft.isSelf,
+                        ))
+                          int.tryParse(draft.fee.text) ?? 0,
+                      ],
+                      onDelta: (delta) =>
+                          setState(() => adjustAllCollectionFees(delta)),
+                    ),
+                  if (editorStep == 1) const SizedBox(height: 10),
+                  if (editorStep == 1)
+                    Row(
+                      children: [
+                        Text(
+                          '參與人員與品項',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () => setState(
+                            () => drafts.add(
+                              _ParticipantDraft.empty(
+                                collectionMethod: defaultCollectionMethod,
+                                collectionAccountId: defaultCollectionAccountId,
+                              ),
+                            ),
+                          ),
+                          icon: const Icon(Icons.person_add_alt),
+                          label: const Text('新增人員'),
+                        ),
+                      ],
+                    ),
+                  if (editorStep == 1)
+                    for (var index = 0; index < drafts.length; index++)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: _ParticipantEditor(
+                          draft: drafts[index],
+                          dueMinor:
+                              (parseMoney(drafts[index].amount.text) +
+                                      parseMoney(drafts[index].fee.text) -
+                                      parseMoney(drafts[index].discount.text))
+                                  .clamp(0, 999999999),
+                          accounts: store.bankTransferAccounts,
+                          canDelete: drafts.length > 1,
+                          onDelete: () => setState(() {
+                            drafts.removeAt(index);
+                            syncDiscounts();
+                            syncFees();
+                          }),
+                          onChanged: () => setState(() {
+                            syncDiscounts();
+                            syncFees();
+                            error = null;
+                          }),
+                          onFeeDelta: (delta) => setState(() {
+                            final current =
+                                int.tryParse(drafts[index].fee.text) ?? 0;
+                            drafts[index].fee.text = (current + delta)
+                                .clamp(0, 999999999)
+                                .toString();
+                            drafts[index].feeFixed = true;
+                            error = null;
+                          }),
+                          onResetFee: () => setState(() {
+                            drafts[index].feeFixed = false;
+                            syncFees();
+                            error = null;
+                          }),
+                        ),
+                      ),
+                  if (editorStep == 1)
+                    Builder(
+                      builder: (context) {
+                        final difference = feeDifferenceMinor();
+                        final fixedCount = drafts
+                            .where((draft) => !draft.isSelf && draft.feeFixed)
+                            .length;
+                        return _FeeRedistributionNotice(
+                          differenceMinor: difference,
+                          fixedCount: fixedCount,
+                          onRedistribute: () => setState(redistributeFees),
+                          onReset: () => setState(() {
+                            syncFees(resetFixed: true);
+                            error = null;
+                          }),
+                        );
+                      },
+                    ),
+                  if (editorStep == 1)
+                    Builder(
+                      builder: (context) {
+                        final summary = collectionSummary();
+                        return summary == null
+                            ? const SizedBox.shrink()
+                            : _CollectionSummary(
+                                totalCollectionMinor: summary.$1,
+                                resultMinor: summary.$2,
+                              );
+                      },
+                    ),
+                  if (editorStep == 2) ...[
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.receipt_long_outlined),
+                      title: Text(
+                        name.text.trim().isEmpty ? '未命名代訂' : name.text.trim(),
+                      ),
+                      subtitle: Text(
+                        '${drafts.length} 位參與者・${splitMethod.label}',
+                      ),
+                      trailing: Text(
+                        moneyText(parseMoney(total.text)),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                   ],
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Text(
-                        '參與人員與品項',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: () => setState(
-                          () => drafts.add(
-                            _ParticipantDraft.empty(
-                              collectionMethod: defaultCollectionMethod,
-                              collectionAccountId: defaultCollectionAccountId,
-                            ),
-                          ),
-                        ),
-                        icon: const Icon(Icons.person_add_alt),
-                        label: const Text('新增人員'),
-                      ),
-                    ],
-                  ),
-                  for (var index = 0; index < drafts.length; index++)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: _ParticipantEditor(
-                        draft: drafts[index],
-                        accounts: store.bankTransferAccounts,
-                        manual: splitMethod == SplitMethod.manual,
-                        canDelete: drafts.length > 1,
-                        onDelete: () => setState(() {
-                          drafts.removeAt(index);
-                          syncDiscounts();
-                        }),
-                        onChanged: () => setState(() {
-                          syncDiscounts();
-                          error = null;
-                        }),
-                      ),
+                  if (editorStep == 2)
+                    TextField(
+                      controller: note,
+                      decoration: const InputDecoration(labelText: '備註'),
                     ),
-                  Builder(
-                    builder: (context) {
-                      final fixed = drafts
-                          .where(
-                            (draft) =>
-                                draft.discountEligible && draft.discountIsFixed,
-                          )
-                          .fold<int>(
-                            0,
-                            (sum, draft) =>
-                                sum + parseMoney(draft.discount.text),
-                          );
-                      final assigned = drafts
-                          .where((draft) => draft.discountEligible)
-                          .fold<int>(
-                            0,
-                            (sum, draft) =>
-                                sum + parseMoney(draft.discount.text),
-                          );
-                      return Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          '折扣：訂單 ${moneyText(parseMoney(discount.text))}・'
-                          '已固定 ${moneyText(fixed)}・'
-                          '已分配 ${moneyText(assigned)}',
-                          style: const TextStyle(color: Colors.black54),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: note,
-                    decoration: const InputDecoration(labelText: '備註'),
-                  ),
                 ],
               ),
             ),
@@ -626,8 +1013,47 @@ class OrdersPage extends ConsumerWidget {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
+            if (editorStep > 0)
+              OutlinedButton(
+                onPressed: () => setState(() {
+                  editorStep -= 1;
+                  error = null;
+                }),
+                child: const Text('上一步'),
+              ),
             FilledButton(
               onPressed: () async {
+                if (editorStep == 0) {
+                  if (name.text.trim().isEmpty ||
+                      cardId == null ||
+                      parseMoney(total.text) <= 0) {
+                    setState(() => error = '請填寫代訂名稱、信用卡與總刷卡金額。');
+                    return;
+                  }
+                  setState(() {
+                    // Opening an existing order must not replace its collection
+                    // amounts merely because the user is changing how to pay.
+                    if (!feeTotalsUnchanged()) syncFees();
+                    editorStep = 1;
+                    error = null;
+                  });
+                  return;
+                }
+                if (editorStep == 1) {
+                  if (drafts.any(
+                    (item) =>
+                        item.name.text.trim().isEmpty ||
+                        item.item.text.trim().isEmpty,
+                  )) {
+                    setState(() => error = '請填寫所有參與人員與品項。');
+                    return;
+                  }
+                  setState(() {
+                    editorStep = 2;
+                    error = null;
+                  });
+                  return;
+                }
                 final itemTotal = drafts.fold<int>(
                   0,
                   (sum, draft) => sum + parseMoney(draft.amount.text),
@@ -649,13 +1075,6 @@ class OrdersPage extends ConsumerWidget {
                           item.item.text.trim().isEmpty,
                     )) {
                   setState(() => error = '請填寫名稱、信用卡與所有參與人員品項。');
-                  return;
-                }
-                if (drafts.where((item) => !item.isSelf).any((item) {
-                  final value = item.finalDue.text.trim();
-                  return value.isNotEmpty && int.tryParse(value) == null;
-                })) {
-                  setState(() => error = '最終收款只能輸入整數元。');
                   return;
                 }
                 if (drafts
@@ -680,46 +1099,34 @@ class OrdersPage extends ConsumerWidget {
                   totalMinor = expected;
                   total.text = (expected / 100).toStringAsFixed(2);
                 }
-                if (totalMinor != expected) {
+                if (totalMinor != expected && !orderAmountsUnchanged()) {
                   setState(
                     () => error = '金額不一致：品項＋費用－折扣應為 ${moneyText(expected)}。',
                   );
                   return;
                 }
-                if (splitMethod == SplitMethod.manual) {
-                  final shared = drafts.fold(
-                    0,
-                    (sum, item) => sum + parseMoney(item.fee.text),
-                  );
-                  if (shared != fee) {
-                    setState(() => error = '手動分攤的費用合計必須等於訂單設定。');
-                    return;
-                  }
+                final allocation = currentAllocation(reportError: true);
+                if (allocation == null) {
+                  setState(() {});
+                  return;
                 }
-                AllocationResult? allocation;
-                if (splitMethod == SplitMethod.equal) {
+                List<int> actualFeeShares = splitMethod == SplitMethod.manual
+                    ? [for (final draft in drafts) parseMoney(draft.fee.text)]
+                    : allocation.feeShares;
+                if (splitMethod != SplitMethod.manual &&
+                    drafts.any((draft) => draft.isSelf && draft.feeFixed)) {
                   try {
-                    allocation = allocateWholeTwd(
-                      itemAmountsMinor: [
-                        for (final draft in drafts)
-                          parseMoney(draft.amount.text),
-                      ],
-                      isSelf: [for (final draft in drafts) draft.isSelf],
-                      deliveryFeeMinor: parseMoney(delivery.text),
-                      serviceFeeMinor: parseMoney(service.text),
-                      discountMinor: discountMinor,
-                      includeSelfInDeliveryFee: includeSelfInDeliveryFee,
-                      includeSelfInServiceFee: includeSelfInServiceFee,
-                      discountEligible: [
-                        for (final draft in drafts) draft.discountEligible,
-                      ],
-                      fixedDiscountSharesMinor: [
-                        for (final draft in drafts)
-                          draft.discountEligible && draft.discountIsFixed
-                              ? parseMoney(draft.discount.text)
+                    actualFeeShares = redistributeFixedSharesWholeTwd(
+                      totalMinor: fee,
+                      fixedSharesMinor: [
+                        for (var index = 0; index < drafts.length; index++)
+                          drafts[index].isSelf
+                              ? (drafts[index].feeFixed
+                                    ? parseMoney(drafts[index].fee.text)
+                                    : allocation.feeShares[index])
                               : null,
                       ],
-                    );
+                    ).shares;
                   } on FormatException catch (exception) {
                     setState(() => error = exception.message);
                     return;
@@ -728,32 +1135,28 @@ class OrdersPage extends ConsumerWidget {
                 final participants = <OrderParticipant>[];
                 for (var index = 0; index < drafts.length; index++) {
                   final draft = drafts[index];
+                  final itemMinor = parseMoney(draft.amount.text);
+                  final chargedFeeMinor = parseMoney(draft.fee.text);
+                  final due =
+                      (itemMinor +
+                              chargedFeeMinor -
+                              allocation.discountShares[index])
+                          .clamp(0, 999999999);
                   participants.add(
                     OrderParticipant(
                       id: draft.id ?? store.newId(),
                       name: draft.name.text.trim(),
                       isSelf: draft.isSelf,
                       itemName: draft.item.text.trim(),
-                      itemAmountMinor: parseMoney(draft.amount.text),
-                      sharedFeeMinor: splitMethod == SplitMethod.equal
-                          ? allocation!.feeShares[index]
-                          : parseMoney(draft.fee.text),
-                      discountMinor: splitMethod == SplitMethod.equal
-                          ? allocation!.discountShares[index]
-                          : discountShares[index],
+                      itemAmountMinor: itemMinor,
+                      sharedFeeMinor: actualFeeShares[index],
+                      discountMinor: allocation.discountShares[index],
                       discountEligible: draft.discountEligible,
                       discountIsFixed: draft.discountIsFixed,
-                      suggestedDueMinor: splitMethod == SplitMethod.equal
-                          ? allocation!.suggestedDues[index]
-                          : null,
+                      suggestedDueMinor: draft.isSelf ? null : due,
                       finalDueMinor: draft.isSelf
                           ? null
-                          : (draft.finalDue.text.trim().isEmpty
-                                ? (splitMethod == SplitMethod.equal
-                                      ? allocation!.suggestedDues[index]
-                                      : null)
-                                : int.tryParse(draft.finalDue.text.trim())! *
-                                      100),
+                          : (draft.feeFixed ? due : null),
                       status: draft.isSelf
                           ? CollectionStatus.paid
                           : draft.status,
@@ -801,7 +1204,7 @@ class OrdersPage extends ConsumerWidget {
                   setState(() => error = '儲存失敗：$exception');
                 }
               },
-              child: const Text('儲存代訂'),
+              child: Text(editorStep < 2 ? '下一步' : '儲存代訂'),
             ),
           ],
         ),
@@ -812,6 +1215,8 @@ class OrdersPage extends ConsumerWidget {
     }
   }
 }
+
+enum _OrderEntryMethod { manual, ocr }
 
 class OrderEditorLauncher extends ConsumerStatefulWidget {
   const OrderEditorLauncher({required this.orderId, super.key});
@@ -866,6 +1271,7 @@ class _UberEatsImportDialog extends ConsumerStatefulWidget {
 
 class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
   late final List<ImportImage> _images = [...widget.images];
+  final ScrollController _scrollController = ScrollController();
   ImportedOrder? _imported;
   List<_ImportPersonDraft> _people = [];
   final Set<String> _confirmedOrderFields = {};
@@ -909,7 +1315,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
           );
       final store = ref.read(appStoreProvider);
       final matches = store.data.cards
-          .where((card) => card.lastFour == imported.paymentLastFour)
+          .where(
+            (card) =>
+                card.isCredit && card.lastFour == imported.paymentLastFour,
+          )
           .toList();
       setState(() {
         _imported = imported;
@@ -933,7 +1342,8 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               amount: TextEditingController(
                 text: _integerText(person.itemAmountMinor),
               ),
-              finalDue: TextEditingController(),
+              fee: TextEditingController(text: '0'),
+              feeFixed: false,
               isSelf: person.isSelf,
               discountEligible: false,
               discountIsFixed: false,
@@ -941,11 +1351,16 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               nameConfidence: person.nameConfidence,
               itemConfidence: person.itemConfidence,
               amountConfidence: person.amountConfidence,
-              finalDueIsManual: false,
             ),
         ];
         if (_hasFractionalAmounts(imported)) {
           _error = '辨識結果含非整數新台幣；相關欄位已留白，請人工填入整數元。';
+        }
+        _syncFees(resetFixed: true);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.jumpTo(0);
         }
       });
     } on Object catch (error) {
@@ -1006,6 +1421,122 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     }
   }
 
+  AllocationResult? _feeAllocation({bool reportError = false}) {
+    final feeValues = [_delivery, _service].map(_wholeMinor).toList();
+    final itemValues = _people
+        .map((person) => _wholeMinor(person.amount))
+        .toList();
+    if (feeValues.any((value) => value == null) ||
+        itemValues.any((value) => value == null)) {
+      if (reportError) _error = '所有金額都必須是整數元。';
+      return null;
+    }
+    try {
+      return allocateWholeTwd(
+        itemAmountsMinor: itemValues.cast<int>(),
+        isSelf: [for (final person in _people) person.isSelf],
+        deliveryFeeMinor: feeValues[0]!,
+        serviceFeeMinor: feeValues[1]!,
+        discountMinor: 0,
+        includeSelfInDeliveryFee: _includeDelivery,
+        includeSelfInServiceFee: _includeService,
+        discountEligible: [for (final _ in _people) false],
+      );
+    } on FormatException catch (error) {
+      if (reportError) _error = error.message;
+      return null;
+    }
+  }
+
+  void _syncFees({bool resetFixed = false}) {
+    final allocation = _feeAllocation();
+    if (allocation == null) return;
+    for (var index = 0; index < _people.length; index++) {
+      final person = _people[index];
+      if (resetFixed) person.feeFixed = false;
+      if (!person.feeFixed) {
+        person.fee.text = (allocation.collectionFeeShares[index] ~/ 100)
+            .toString();
+      }
+    }
+  }
+
+  int _feeDifferenceMinor() {
+    final allocation = _feeAllocation();
+    if (allocation == null) return 0;
+    final target = allocation.collectionFeeShares.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
+    final assigned = _people.fold<int>(
+      0,
+      (sum, person) => sum + (_wholeMinor(person.fee) ?? 0),
+    );
+    return target - assigned;
+  }
+
+  (int totalCollectionMinor, int resultMinor)? _collectionSummary() {
+    final allocation = _allocation();
+    if (allocation == null) return null;
+    var totalCollectionMinor = 0;
+    var selfExpenseMinor = 0;
+    for (var index = 0; index < _people.length; index++) {
+      final person = _people[index];
+      final itemMinor = _wholeMinor(person.amount) ?? 0;
+      final discountMinor = allocation.discountShares[index];
+      if (person.isSelf) {
+        selfExpenseMinor +=
+            (itemMinor + allocation.feeShares[index] - discountMinor).clamp(
+              0,
+              999999999,
+            );
+      } else {
+        totalCollectionMinor +=
+            (itemMinor + (_wholeMinor(person.fee) ?? 0) - discountMinor).clamp(
+              0,
+              999999999,
+            );
+      }
+    }
+    final totalMinor = _wholeMinor(_total) ?? 0;
+    final advanceMinor = (totalMinor - selfExpenseMinor).clamp(0, 999999999);
+    return (totalCollectionMinor, totalCollectionMinor - advanceMinor);
+  }
+
+  void _redistributeFees() {
+    final allocation = _feeAllocation(reportError: true);
+    if (allocation == null) return;
+    try {
+      final result = redistributeFixedSharesWholeTwd(
+        totalMinor: allocation.collectionFeeShares.fold<int>(
+          0,
+          (sum, value) => sum + value,
+        ),
+        fixedSharesMinor: [
+          for (final person in _people)
+            person.feeFixed ? _wholeMinor(person.fee) : null,
+        ],
+      );
+      for (var index = 0; index < _people.length; index++) {
+        if (!_people[index].feeFixed) {
+          _people[index].fee.text = (result.shares[index] ~/ 100).toString();
+        }
+      }
+      _error = null;
+    } on FormatException catch (error) {
+      _error = error.message;
+    }
+  }
+
+  void _adjustAllCollectionFees(int delta) {
+    for (final person in _people.where((person) => !person.isSelf)) {
+      final current = int.tryParse(person.fee.text) ?? 0;
+      person.fee.text = (current + delta).clamp(0, 999999999).toString();
+      person.feeFixed = true;
+    }
+    _error = null;
+  }
+
   void _syncDiscounts() {
     final total = _wholeMinor(_discount);
     if (total == null) return;
@@ -1034,27 +1565,13 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     }
   }
 
-  void _applySuggestedDues({required bool resetManual}) {
-    final allocation = _allocation();
-    if (allocation == null) return;
-    for (var index = 0; index < _people.length; index++) {
-      final person = _people[index];
-      if (person.isSelf) continue;
-      if (resetManual) person.finalDueIsManual = false;
-      if (!person.finalDueIsManual) {
-        person.finalDue.text = (allocation.suggestedDues[index] ~/ 100)
-            .toString();
-      }
-    }
-  }
-
   bool get _hasSelf => _people.any((person) => person.isSelf);
 
   void _addPerson() {
     setState(() {
       _people.add(_ImportPersonDraft.empty());
       _syncDiscounts();
-      _applySuggestedDues(resetManual: false);
+      _syncFees();
       _error = null;
     });
   }
@@ -1062,13 +1579,13 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
   void _removePerson(int index) {
     setState(() {
       final removedSelf = _people[index].isSelf;
-      _people.removeAt(index);
+      _people.removeAt(index).dispose();
       if (removedSelf && !_hasSelf) {
         _includeDelivery = false;
         _includeService = false;
       }
       _syncDiscounts();
-      _applySuggestedDues(resetManual: false);
+      _syncFees();
       _error = null;
     });
   }
@@ -1078,16 +1595,14 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     if (_name.text.trim().isEmpty ||
         _cardId == null ||
         _people.isEmpty ||
-        _people.any(
-          (person) =>
-              person.name.text.trim().isEmpty ||
-              person.item.text.trim().isEmpty,
-        )) {
-      setState(() => _error = '請確認名稱、信用卡與所有參與者資料。');
+        _people.any((person) => person.name.text.trim().isEmpty)) {
+      setState(() => _error = '請確認名稱、信用卡與所有參與者姓名。');
       return;
     }
     final allocation = _allocation(reportError: true);
     if (allocation == null) return;
+    final feeAllocation = _feeAllocation(reportError: true);
+    if (feeAllocation == null) return;
     final totalMinor = _wholeMinor(_total)!;
     final itemTotal = _people.fold<int>(
       0,
@@ -1130,34 +1645,47 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       if (!proceed) return;
     }
 
+    var actualFeeShares = allocation.feeShares;
+    if (_people.any((person) => person.isSelf && person.feeFixed)) {
+      try {
+        actualFeeShares = redistributeFixedSharesWholeTwd(
+          totalMinor: _wholeMinor(_delivery)! + _wholeMinor(_service)!,
+          fixedSharesMinor: [
+            for (var index = 0; index < _people.length; index++)
+              _people[index].isSelf
+                  ? (_people[index].feeFixed
+                        ? _wholeMinor(_people[index].fee)
+                        : allocation.feeShares[index])
+                  : null,
+          ],
+        ).shares;
+      } on FormatException catch (error) {
+        setState(() => _error = error.message);
+        return;
+      }
+    }
     final participants = <OrderParticipant>[];
     for (var i = 0; i < _people.length; i++) {
       final draft = _people[i];
-      final finalText = draft.finalDue.text.trim();
-      final finalDue = draft.isSelf
-          ? null
-          : finalText.isEmpty
-          ? allocation.suggestedDues[i]
-          : int.tryParse(finalText) == null
-          ? null
-          : int.parse(finalText) * 100;
-      if (!draft.isSelf && finalDue == null) {
-        setState(() => _error = '最終收款只能輸入整數元。');
-        return;
-      }
+      final chargedFee = _wholeMinor(draft.fee)!;
+      final suggestedDue =
+          (_wholeMinor(draft.amount)! +
+                  chargedFee -
+                  allocation.discountShares[i])
+              .clamp(0, 999999999);
       participants.add(
         OrderParticipant(
           id: store.newId(),
           name: draft.name.text.trim(),
           isSelf: draft.isSelf,
-          itemName: draft.item.text.trim(),
+          itemName: '餐點',
           itemAmountMinor: _wholeMinor(draft.amount)!,
-          sharedFeeMinor: allocation.feeShares[i],
+          sharedFeeMinor: actualFeeShares[i],
           discountMinor: allocation.discountShares[i],
           discountEligible: draft.discountEligible,
           discountIsFixed: draft.discountIsFixed,
-          suggestedDueMinor: allocation.suggestedDues[i],
-          finalDueMinor: finalDue,
+          suggestedDueMinor: draft.isSelf ? null : suggestedDue,
+          finalDueMinor: draft.isSelf || !draft.feeFixed ? null : suggestedDue,
           status: draft.isSelf
               ? CollectionStatus.paid
               : CollectionStatus.unpaid,
@@ -1173,9 +1701,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       );
     }
     final imported = _imported!;
+    final orderId = store.newId();
     await store.upsertOrder(
       GroupOrder(
-        id: store.newId(),
+        id: orderId,
         userId: store.userId,
         name: _name.text.trim(),
         date: _date,
@@ -1197,6 +1726,12 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
         participants: participants,
       ),
     );
+    if (!store.data.orders.any((order) => order.id == orderId)) {
+      if (mounted) {
+        setState(() => _error = store.lastSyncError ?? '儲存失敗，資料尚未寫入。');
+      }
+      return;
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -1212,16 +1747,35 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     }
     if (_people.any(
       (person) =>
-          person.nameConfidence < 0.75 ||
-          person.itemConfidence < 0.75 ||
-          person.amountConfidence < 0.75,
+          person.nameConfidence < 0.75 || person.amountConfidence < 0.75,
     )) {
-      issues.add('部分參與者或品項為低信心 OCR 結果');
+      issues.add('部分參與者或金額為低信心 OCR 結果');
     }
     if (imported.warnings.any((warning) => warning.contains('未辨識到「您」'))) {
       issues.add('本人身分為系統暫時猜測');
     }
     return issues;
+  }
+
+  String _conciseImportWarning() {
+    final imported = _imported!;
+    final messages = <String>[];
+    if (imported.warnings.any((warning) => warning.contains('未辨識到「您」'))) {
+      messages.add('請確認本人');
+    }
+    if (imported.reconciliationDifferenceMinor != 0) {
+      messages.add(
+        '訂單差額 ${moneyText(imported.reconciliationDifferenceMinor.abs())}',
+      );
+    }
+    if (importedLowConfidenceIssues().isNotEmpty ||
+        imported.warnings.any((warning) => warning.contains('低信心'))) {
+      messages.add('黃色欄位需核對');
+    }
+    if (messages.isEmpty && imported.warnings.isNotEmpty) {
+      messages.add('部分辨識結果需確認');
+    }
+    return messages.join('・');
   }
 
   InputDecoration _ocrDecoration(String label, {required bool lowConfidence}) =>
@@ -1263,20 +1817,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
   @override
   Widget build(BuildContext context) {
     final store = ref.watch(appStoreProvider);
-    final allocation = _imported == null ? null : _allocation();
-    if (allocation != null) {
-      for (var index = 0; index < _people.length; index++) {
-        final person = _people[index];
-        if (!person.isSelf && !person.finalDueIsManual) {
-          final suggested = (allocation.suggestedDues[index] ~/ 100).toString();
-          if (person.finalDue.text != suggested) {
-            person.finalDue.text = suggested;
-          }
-        }
-      }
-    }
     final compact = MediaQuery.sizeOf(context).width < 600;
     final content = SingleChildScrollView(
+      key: const ValueKey('uber-eats-import-scroll'),
+      controller: _scrollController,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1288,7 +1832,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               child: Text(_error!),
             ),
           if (_imported == null) ...[
-            const Text('請確認截圖順序；相鄰圖片的重疊品項會自動去除。'),
+            const Text('請確認截圖順序，重疊品項會自動去除。'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1301,16 +1845,21 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 children: [
                   Icon(Icons.privacy_tip_outlined, size: 20),
                   SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '截圖只在這台手機的瀏覽器內辨識，不會上傳或保存。'
-                      '首次使用需下載 OCR 模型（Safari 約 10 MB，'
-                      '其他瀏覽器最高約 100 MB），'
-                      '建議連接 Wi‑Fi 並保持此頁開啟。',
-                    ),
-                  ),
+                  Expanded(child: Text('截圖只在此裝置辨識，不會上傳或保存。')),
                 ],
               ),
+            ),
+            const ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text('首次辨識與模型下載'),
+              childrenPadding: EdgeInsets.only(bottom: 8),
+              children: [
+                Text(
+                  '首次使用需下載 OCR 模型；iPhone 約 5 MB、其他行動裝置約 '
+                  '22 MB，電腦最高約 100 MB。建議連接 Wi‑Fi 並保持此頁開啟，'
+                  '下載後會保存在此裝置。',
+                ),
+              ],
             ),
             if (_loading) ...[
               const SizedBox(height: 8),
@@ -1323,7 +1872,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               Text(
                 _ocrProgress?.message ??
                     '首次使用需下載 OCR 模型；'
-                        '下載後會保存在這台電腦。',
+                        '下載後會保存在此裝置。',
                 style: const TextStyle(color: Colors.black54),
               ),
               if ((_ocrProgress?.engine ?? '').isNotEmpty)
@@ -1475,7 +2024,9 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 initialValue: _cardId,
                 decoration: const InputDecoration(labelText: '付款信用卡'),
                 items: [
-                  for (final card in store.data.cards)
+                  for (final card in store.data.cards.where(
+                    (card) => card.isCredit,
+                  ))
                     DropdownMenuItem(
                       value: card.id,
                       child: Text('${card.name} ••••${card.lastFour}'),
@@ -1516,7 +2067,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                   color: Color(0xFFFFF8E8),
                   borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
-                child: Text('請確認：${_imported!.warnings.join('；')}'),
+                child: Text('請確認：${_conciseImportWarning()}'),
               ),
             ],
             const SizedBox(height: 8),
@@ -1552,35 +2103,11 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                         if (entry.$2 == 'discount') {
                           _syncDiscounts();
                         }
-                        _applySuggestedDues(resetManual: false);
+                        _syncFees();
                       }),
                     ),
                   ),
               ],
-            ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('外送費包含本人'),
-              value: _includeDelivery,
-              subtitle: _hasSelf ? null : const Text('目前沒有本人參與者'),
-              onChanged: !_hasSelf
-                  ? null
-                  : (value) => setState(() {
-                      _includeDelivery = value ?? false;
-                      _applySuggestedDues(resetManual: false);
-                    }),
-            ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('服務費包含本人'),
-              value: _includeService,
-              subtitle: _hasSelf ? null : const Text('目前沒有本人參與者'),
-              onChanged: !_hasSelf
-                  ? null
-                  : (value) => setState(() {
-                      _includeService = value ?? false;
-                      _applySuggestedDues(resetManual: false);
-                    }),
             ),
             Builder(
               builder: (context) {
@@ -1602,36 +2129,25 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                           sum + (_wholeMinor(person.discount) ?? 0),
                     );
                 final total = _wholeMinor(_discount) ?? 0;
-                return Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F8F7),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: _responsivePair(
-                    compact: compact,
-                    first: Text(
-                      '折扣分配：訂單 ${moneyText(total)}・'
-                      '已固定 ${moneyText(fixed)}・'
-                      '待自動分配 '
-                      '${moneyText((total - fixed).clamp(0, total))}・'
-                      '已分配 ${moneyText(assigned)}',
-                    ),
-                    second: TextButton.icon(
-                      onPressed: allocation == null
-                          ? null
-                          : () => setState(() {
-                              _applySuggestedDues(resetManual: true);
-                            }),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重新套用建議收款'),
-                    ),
-                    desktopSecondWidth: 200,
-                  ),
+                return _AllocationSettingsCard(
+                  hasSelf: _hasSelf,
+                  includeDelivery: _includeDelivery,
+                  includeService: _includeService,
+                  onDeliveryChanged: (value) => setState(() {
+                    _includeDelivery = value;
+                    _syncFees();
+                  }),
+                  onServiceChanged: (value) => setState(() {
+                    _includeService = value;
+                    _syncFees();
+                  }),
+                  discountTotalMinor: total,
+                  fixedDiscountMinor: fixed,
+                  assignedDiscountMinor: assigned,
                 );
               },
             ),
+            const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -1639,7 +2155,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               runSpacing: 4,
               children: [
                 Text(
-                  '參與人員與品項',
+                  '參與人員與金額',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -1652,6 +2168,15 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 ),
               ],
             ),
+            _UniformFeeAdjuster(
+              peopleFees: [
+                for (final person in _people.where((person) => !person.isSelf))
+                  int.tryParse(person.fee.text) ?? 0,
+              ],
+              onDelta: (delta) =>
+                  setState(() => _adjustAllCollectionFees(delta)),
+            ),
+            const SizedBox(height: 8),
             if (_people.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 20),
@@ -1695,7 +2220,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                                 onChanged: (_) => setState(() {
                                   _people[i].amountConfidence = 1;
                                   _syncDiscounts();
-                                  _applySuggestedDues(resetManual: false);
+                                  _syncFees();
                                 }),
                               ),
                               desktopSecondWidth: 130,
@@ -1710,97 +2235,132 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      TextField(
-                        controller: _people[i].item,
-                        decoration: _ocrDecoration(
-                          '品項',
-                          lowConfidence: _people[i].itemConfidence < 0.75,
-                        ),
-                        onChanged: (_) =>
-                            setState(() => _people[i].itemConfidence = 1),
+                      Builder(
+                        builder: (context) {
+                          final checkbox = SizedBox(
+                            width: 92,
+                            child: CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text('折扣'),
+                              value: _people[i].discountEligible,
+                              onChanged: (value) => setState(() {
+                                _people[i].discountEligible = value ?? false;
+                                if (!_people[i].discountEligible) {
+                                  _people[i].discountIsFixed = false;
+                                  _people[i].discount.text = '0';
+                                }
+                                _syncDiscounts();
+                              }),
+                            ),
+                          );
+                          final discount = TextField(
+                            controller: _people[i].discount,
+                            enabled: _people[i].discountEligible,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            decoration: InputDecoration(
+                              labelText: _people[i].discountIsFixed
+                                  ? '折扣（固定）'
+                                  : '折扣（自動）',
+                              suffixIcon: _people[i].discountIsFixed
+                                  ? IconButton(
+                                      tooltip: '恢復自動',
+                                      onPressed: () => setState(() {
+                                        _people[i].discountIsFixed = false;
+                                        _syncDiscounts();
+                                      }),
+                                      icon: const Icon(Icons.refresh),
+                                    )
+                                  : null,
+                            ),
+                            onChanged: (_) => setState(() {
+                              _people[i].discountIsFixed = true;
+                              _syncDiscounts();
+                            }),
+                          );
+                          final fee = _FeeStepper(
+                            controller: _people[i].fee,
+                            label: _people[i].isSelf ? '本人負擔費用' : '收款附加費',
+                            fixed: _people[i].feeFixed,
+                            onDelta: (delta) => setState(() {
+                              final current =
+                                  int.tryParse(_people[i].fee.text) ?? 0;
+                              _people[i].fee.text = (current + delta)
+                                  .clamp(0, 999999999)
+                                  .toString();
+                              _people[i].feeFixed = true;
+                              _error = null;
+                            }),
+                            onReset: () => setState(() {
+                              _people[i].feeFixed = false;
+                              _syncFees();
+                              _error = null;
+                            }),
+                          );
+                          final due = _ReadOnlyAmount(
+                            label: _people[i].isSelf ? '本人合計' : '預計收款',
+                            amountMinor:
+                                ((_wholeMinor(_people[i].amount) ?? 0) +
+                                        (_wholeMinor(_people[i].fee) ?? 0) -
+                                        (_wholeMinor(_people[i].discount) ?? 0))
+                                    .clamp(0, 999999999),
+                          );
+                          if (compact) {
+                            return Column(
+                              children: [
+                                _responsivePair(
+                                  compact: true,
+                                  first: checkbox,
+                                  second: discount,
+                                ),
+                                const SizedBox(height: 8),
+                                fee,
+                                const SizedBox(height: 8),
+                                due,
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              checkbox,
+                              const SizedBox(width: 8),
+                              SizedBox(width: 170, child: discount),
+                              const SizedBox(width: 10),
+                              Expanded(child: fee),
+                              const SizedBox(width: 10),
+                              SizedBox(width: 145, child: due),
+                            ],
+                          );
+                        },
                       ),
-                      const SizedBox(height: 8),
-                      _responsivePair(
-                        compact: compact,
-                        first: CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          title: const Text('有折扣'),
-                          value: _people[i].discountEligible,
-                          onChanged: (value) => setState(() {
-                            _people[i].discountEligible = value ?? false;
-                            if (!_people[i].discountEligible) {
-                              _people[i].discountIsFixed = false;
-                              _people[i].discount.text = '0';
-                            }
-                            _syncDiscounts();
-                          }),
-                        ),
-                        second: TextField(
-                          controller: _people[i].discount,
-                          enabled: _people[i].discountEligible,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          decoration: InputDecoration(
-                            labelText: _people[i].discountIsFixed
-                                ? '折扣（固定）'
-                                : '折扣（自動）',
-                            suffixIcon: _people[i].discountIsFixed
-                                ? IconButton(
-                                    tooltip: '恢復自動',
-                                    onPressed: () => setState(() {
-                                      _people[i].discountIsFixed = false;
-                                      _syncDiscounts();
-                                    }),
-                                    icon: const Icon(Icons.refresh),
-                                  )
-                                : null,
-                          ),
-                          onChanged: (_) => setState(() {
-                            _people[i].discountIsFixed = true;
-                            _syncDiscounts();
-                          }),
-                        ),
-                        desktopSecondWidth: 190,
-                      ),
-                      if (!_people[i].isSelf) ...[
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _people[i].finalDue,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          decoration: InputDecoration(
-                            labelText: allocation == null
-                                ? '最終收款（整數元）'
-                                : '最終收款（建議 ${allocation.suggestedDues[i] ~/ 100} 元）',
-                          ),
-                          onChanged: (_) => setState(
-                            () => _people[i].finalDueIsManual = true,
-                          ),
-                        ),
-                        if (allocation != null &&
-                            _people[i].finalDue.text.isNotEmpty &&
-                            int.tryParse(_people[i].finalDue.text) != null)
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(() {
-                              final difference =
-                                  int.parse(_people[i].finalDue.text) -
-                                  allocation.suggestedDues[i] ~/ 100;
-                              if (difference == 0) return '與建議相同';
-                              return difference > 0
-                                  ? '多收 NT\$$difference'
-                                  : '少收 NT\$${difference.abs()}';
-                            }()),
-                          ),
-                      ],
                     ],
                   ),
                 ),
+              ),
+            if (_people.isNotEmpty)
+              _FeeRedistributionNotice(
+                differenceMinor: _feeDifferenceMinor(),
+                fixedCount: _people.where((person) => person.feeFixed).length,
+                onRedistribute: () => setState(_redistributeFees),
+                onReset: () => setState(() {
+                  _syncFees(resetFixed: true);
+                  _error = null;
+                }),
+              ),
+            if (_people.isNotEmpty)
+              Builder(
+                builder: (context) {
+                  final summary = _collectionSummary();
+                  return summary == null
+                      ? const SizedBox.shrink()
+                      : _CollectionSummary(
+                          totalCollectionMinor: summary.$1,
+                          resultMinor: summary.$2,
+                        );
+                },
               ),
           ],
         ],
@@ -1873,6 +2433,21 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       actions: actions,
     );
   }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _name.dispose();
+    _platform.dispose();
+    _total.dispose();
+    _delivery.dispose();
+    _service.dispose();
+    _discount.dispose();
+    for (final person in _people) {
+      person.dispose();
+    }
+    super.dispose();
+  }
 }
 
 class _ImportPersonDraft {
@@ -1880,7 +2455,8 @@ class _ImportPersonDraft {
     required this.name,
     required this.item,
     required this.amount,
-    required this.finalDue,
+    required this.fee,
+    required this.feeFixed,
     required this.isSelf,
     required this.discountEligible,
     required this.discountIsFixed,
@@ -1888,14 +2464,14 @@ class _ImportPersonDraft {
     required this.nameConfidence,
     required this.itemConfidence,
     required this.amountConfidence,
-    required this.finalDueIsManual,
   });
 
   factory _ImportPersonDraft.empty() => _ImportPersonDraft(
     name: TextEditingController(),
     item: TextEditingController(),
     amount: TextEditingController(),
-    finalDue: TextEditingController(),
+    fee: TextEditingController(text: '0'),
+    feeFixed: false,
     isSelf: false,
     discountEligible: false,
     discountIsFixed: false,
@@ -1903,13 +2479,13 @@ class _ImportPersonDraft {
     nameConfidence: 1,
     itemConfidence: 1,
     amountConfidence: 1,
-    finalDueIsManual: false,
   );
 
   final TextEditingController name;
   final TextEditingController item;
   final TextEditingController amount;
-  final TextEditingController finalDue;
+  final TextEditingController fee;
+  bool feeFixed;
   final bool isSelf;
   bool discountEligible;
   bool discountIsFixed;
@@ -1917,7 +2493,14 @@ class _ImportPersonDraft {
   double nameConfidence;
   double itemConfidence;
   double amountConfidence;
-  bool finalDueIsManual;
+
+  void dispose() {
+    name.dispose();
+    item.dispose();
+    amount.dispose();
+    fee.dispose();
+    discount.dispose();
+  }
 }
 
 class OrderDetailPage extends ConsumerWidget {
@@ -1960,21 +2543,25 @@ class OrderDetailPage extends ConsumerWidget {
             SummaryCard(
               label: '總刷卡金額',
               value: moneyText(order.totalMinor),
+              compactValue: compactMoneyText(order.totalMinor),
               icon: Icons.credit_card,
             ),
             SummaryCard(
               label: '本人信用卡消費',
               value: moneyText(order.selfExpenseMinor),
+              compactValue: compactMoneyText(order.selfExpenseMinor),
               icon: Icons.person_outline,
             ),
             SummaryCard(
               label: '代收代墊刷卡',
               value: moneyText(order.advanceCardMinor),
+              compactValue: compactMoneyText(order.advanceCardMinor),
               icon: Icons.account_balance_wallet_outlined,
             ),
             SummaryCard(
               label: '預計收款',
               value: moneyText(order.expectedCollectionMinor),
+              compactValue: compactMoneyText(order.expectedCollectionMinor),
               icon: Icons.request_quote_outlined,
             ),
             SummaryCard(
@@ -1982,6 +2569,9 @@ class OrderDetailPage extends ConsumerWidget {
                   ? '預期代收收益'
                   : '預期代收損失',
               value: moneyText(order.expectedCollectionResultMinor.abs()),
+              compactValue: compactMoneyText(
+                order.expectedCollectionResultMinor.abs(),
+              ),
               icon: order.expectedCollectionResultMinor >= 0
                   ? Icons.trending_up
                   : Icons.trending_down,
@@ -1992,6 +2582,7 @@ class OrderDetailPage extends ConsumerWidget {
             SummaryCard(
               label: '尚未收回',
               value: moneyText(order.outstandingMinor),
+              compactValue: compactMoneyText(order.outstandingMinor),
               icon: Icons.handshake_outlined,
               tone: const Color(0xFFE27848),
             ),
@@ -2000,6 +2591,9 @@ class OrderDetailPage extends ConsumerWidget {
                   ? '已認列收益'
                   : '已認列損失',
               value: moneyText(order.recognizedCollectionResultMinor.abs()),
+              compactValue: compactMoneyText(
+                order.recognizedCollectionResultMinor.abs(),
+              ),
               icon: Icons.done_all,
               tone: order.recognizedCollectionResultMinor >= 0
                   ? const Color(0xFF0E7C66)
@@ -2061,7 +2655,8 @@ class _ParticipantRow extends ConsumerWidget {
         ],
       ),
       subtitle: Text(
-        '${person.itemName} ${moneyText(person.itemAmountMinor)}・'
+        '${order.importSource == 'uberEatsScreenshot' ? '餐點金額' : person.itemName} '
+        '${moneyText(person.itemAmountMinor)}・'
         '實際費用 ${moneyText(person.sharedFeeMinor)}・'
         '折扣 -${moneyText(person.discountMinor)}'
         '${person.isSelf ? '' : '・實際成本 ${moneyText(person.calculatedDueMinor)}'}'
@@ -2169,6 +2764,560 @@ int _editDistance(String left, String right) {
   return previous.last;
 }
 
+class _AllocationSettingsCard extends StatelessWidget {
+  const _AllocationSettingsCard({
+    required this.hasSelf,
+    required this.includeDelivery,
+    required this.includeService,
+    required this.onDeliveryChanged,
+    required this.onServiceChanged,
+    required this.discountTotalMinor,
+    required this.fixedDiscountMinor,
+    required this.assignedDiscountMinor,
+  });
+
+  final bool hasSelf;
+  final bool includeDelivery;
+  final bool includeService;
+  final ValueChanged<bool> onDeliveryChanged;
+  final ValueChanged<bool> onServiceChanged;
+  final int discountTotalMinor;
+  final int fixedDiscountMinor;
+  final int assignedDiscountMinor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final automaticDiscountMinor = (discountTotalMinor - fixedDiscountMinor)
+        .clamp(0, discountTotalMinor < 0 ? 0 : discountTotalMinor)
+        .toInt();
+
+    return Container(
+      key: const ValueKey('allocation-settings-card'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F8F7),
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.call_split_rounded,
+                  size: 20,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '分攤設定',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      '設定本人是否一起分攤附加費',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Text(
+                '本人分攤附加費',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (!hasSelf) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '目前沒有本人參與者',
+                    textAlign: TextAlign.end,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 520;
+              final delivery = _SelfFeeSwitch(
+                switchKey: const ValueKey('include-self-delivery'),
+                label: '外送費',
+                value: hasSelf && includeDelivery,
+                onChanged: hasSelf ? onDeliveryChanged : null,
+              );
+              final service = _SelfFeeSwitch(
+                switchKey: const ValueKey('include-self-service'),
+                label: '服務費',
+                value: hasSelf && includeService,
+                onChanged: hasSelf ? onServiceChanged : null,
+              );
+              if (compact) {
+                return Column(
+                  children: [delivery, const SizedBox(height: 8), service],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: delivery),
+                  const SizedBox(width: 10),
+                  Expanded(child: service),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: scheme.outlineVariant),
+          const SizedBox(height: 16),
+          Text(
+            '折扣分配',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 520;
+              final spacing = compact ? 8.0 : 10.0;
+              final columns = compact ? 2 : 4;
+              final width =
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
+              final metrics = [
+                ('discount-total', '訂單折扣', discountTotalMinor),
+                ('discount-fixed', '手動固定', fixedDiscountMinor),
+                ('discount-automatic', '自動分配', automaticDiscountMinor),
+                ('discount-assigned', '已分配', assignedDiscountMinor),
+              ];
+              return Wrap(
+                spacing: spacing,
+                runSpacing: 8,
+                children: [
+                  for (final metric in metrics)
+                    SizedBox(
+                      width: width,
+                      child: _AllocationMetric(
+                        metricKey: ValueKey(metric.$1),
+                        label: metric.$2,
+                        valueMinor: metric.$3,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelfFeeSwitch extends StatelessWidget {
+  const _SelfFeeSwitch({
+    required this.switchKey,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key switchKey;
+  final String label;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minHeight: 64),
+    padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(
+                '本人一起分攤',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(key: switchKey, value: value, onChanged: onChanged),
+      ],
+    ),
+  );
+}
+
+class _AllocationMetric extends StatelessWidget {
+  const _AllocationMetric({
+    required this.metricKey,
+    required this.label,
+    required this.valueMinor,
+  });
+
+  final Key metricKey;
+  final String label;
+  final int valueMinor;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: metricKey,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          moneyText(valueMinor),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+        ),
+      ],
+    ),
+  );
+}
+
+class _CollectionSummary extends StatelessWidget {
+  const _CollectionSummary({
+    required this.totalCollectionMinor,
+    required this.resultMinor,
+  });
+
+  final int totalCollectionMinor;
+  final int resultMinor;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(top: 10),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF1F7F5),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: _SummaryAmount(
+            label: '總共收款',
+            value: moneyText(totalCollectionMinor),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _SummaryAmount(
+            label: resultMinor >= 0 ? '預計多收' : '預計少收',
+            value: moneyText(resultMinor.abs()),
+            tone: resultMinor >= 0
+                ? const Color(0xFF0E7C66)
+                : const Color(0xFFB84B3E),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SummaryAmount extends StatelessWidget {
+  const _SummaryAmount({required this.label, required this.value, this.tone});
+
+  final String label;
+  final String value;
+  final Color? tone;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.labelMedium),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+          color: tone,
+        ),
+      ),
+    ],
+  );
+}
+
+class _ReadOnlyAmount extends StatelessWidget {
+  const _ReadOnlyAmount({required this.label, required this.amountMinor});
+
+  final String label;
+  final int amountMinor;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 52,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.labelMedium),
+        ),
+        Text(
+          moneyText(amountMinor),
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ],
+    ),
+  );
+}
+
+class _UniformFeeAdjuster extends StatelessWidget {
+  const _UniformFeeAdjuster({required this.peopleFees, required this.onDelta});
+
+  final List<int> peopleFees;
+  final ValueChanged<int> onDelta;
+
+  @override
+  Widget build(BuildContext context) {
+    final same = peopleFees.isNotEmpty && peopleFees.toSet().length == 1;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F7F5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '統一調整收款附加費',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text('其他參與者每人一起調整 1 元'),
+              ],
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('all-fees-minus'),
+            tooltip: '每人減少 1 元',
+            onPressed: peopleFees.isEmpty || peopleFees.every((fee) => fee <= 0)
+                ? null
+                : () => onDelta(-1),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          SizedBox(
+            width: 72,
+            child: Text(
+              same ? '${peopleFees.first} 元' : '各自設定',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('all-fees-plus'),
+            tooltip: '每人增加 1 元',
+            onPressed: peopleFees.isEmpty ? null : () => onDelta(1),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeeStepper extends StatelessWidget {
+  const _FeeStepper({
+    required this.controller,
+    required this.label,
+    required this.fixed,
+    required this.onDelta,
+    required this.onReset,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final bool fixed;
+  final ValueChanged<int> onDelta;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+              IconButton(
+                key: ValueKey('fee-minus-$label'),
+                tooltip: '減少 1 元',
+                onPressed: (int.tryParse(controller.text) ?? 0) <= 0
+                    ? null
+                    : () => onDelta(-1),
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  controller.text.isEmpty ? '0' : controller.text,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Text('元'),
+              IconButton(
+                key: ValueKey('fee-plus-$label'),
+                tooltip: '增加 1 元',
+                onPressed: () => onDelta(1),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(width: 6),
+      if (fixed)
+        IconButton(
+          tooltip: '已固定，點擊恢復自動',
+          onPressed: onReset,
+          icon: const Icon(Icons.lock_outline),
+        )
+      else
+        const Tooltip(
+          message: '自動分配',
+          child: Icon(Icons.auto_awesome, size: 20),
+        ),
+    ],
+  );
+}
+
+class _FeeRedistributionNotice extends StatelessWidget {
+  const _FeeRedistributionNotice({
+    required this.differenceMinor,
+    required this.fixedCount,
+    required this.onRedistribute,
+    required this.onReset,
+  });
+
+  final int differenceMinor;
+  final int fixedCount;
+  final VoidCallback onRedistribute;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final balanced = differenceMinor == 0;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: balanced || differenceMinor < 0
+            ? const Color(0xFFF1F7F5)
+            : const Color(0xFFFFF8E8),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Icon(
+            balanced ? Icons.check_circle_outline : Icons.sync_problem,
+            color: balanced || differenceMinor < 0
+                ? const Color(0xFF0E7C66)
+                : const Color(0xFFB56A00),
+          ),
+          Text(
+            balanced
+                ? '費用已平衡・$fixedCount 人手動固定'
+                : differenceMinor > 0
+                ? '目前少收 ${moneyText(differenceMinor)}，仍可直接儲存'
+                : '目前多收 ${moneyText(differenceMinor.abs())}，會列入代收收益',
+          ),
+          if (!balanced)
+            FilledButton.tonalIcon(
+              key: const ValueKey('redistribute-fees'),
+              onPressed: onRedistribute,
+              icon: const Icon(Icons.sync),
+              label: const Text('重套系統分配'),
+            ),
+          TextButton(onPressed: onReset, child: const Text('全部恢復自動')),
+        ],
+      ),
+    );
+  }
+}
+
 class _ParticipantDraft {
   _ParticipantDraft({
     required this.id,
@@ -2177,10 +3326,10 @@ class _ParticipantDraft {
     required this.item,
     required this.amount,
     required this.fee,
+    required this.feeFixed,
     required this.discount,
     required this.discountEligible,
     required this.discountIsFixed,
-    required this.finalDue,
     required this.status,
     required this.collectionMethod,
     required this.collectionAccountId,
@@ -2200,10 +3349,10 @@ class _ParticipantDraft {
     item: TextEditingController(),
     amount: TextEditingController(),
     fee: TextEditingController(text: '0'),
+    feeFixed: false,
     discount: TextEditingController(text: '0'),
     discountEligible: false,
     discountIsFixed: false,
-    finalDue: TextEditingController(),
     status: isSelf ? CollectionStatus.paid : CollectionStatus.unpaid,
     collectionMethod: isSelf ? '' : collectionMethod,
     collectionAccountId: isSelf
@@ -2215,34 +3364,36 @@ class _ParticipantDraft {
     collectedAt: null,
   );
 
-  factory _ParticipantDraft.fromModel(OrderParticipant item) =>
-      _ParticipantDraft(
-        id: item.id,
-        name: TextEditingController(text: item.name),
-        isSelf: item.isSelf,
-        item: TextEditingController(text: item.itemName),
-        amount: TextEditingController(
-          text: (item.itemAmountMinor / 100).toString(),
-        ),
-        fee: TextEditingController(
-          text: (item.sharedFeeMinor / 100).toString(),
-        ),
-        discount: TextEditingController(
-          text: (item.discountMinor / 100).toString(),
-        ),
-        discountEligible: item.discountEligible,
-        discountIsFixed: item.discountIsFixed,
-        finalDue: TextEditingController(
-          text: item.finalDueMinor == null
-              ? ''
-              : (item.finalDueMinor! ~/ 100).toString(),
-        ),
-        status: item.status,
-        collectionMethod: item.collectionMethod,
-        collectionAccountId: item.collectionAccountId,
-        token: item.token,
-        collectedAt: item.collectedAt,
-      );
+  factory _ParticipantDraft.fromModel(
+    OrderParticipant item, {
+    bool manualFee = false,
+  }) => _ParticipantDraft(
+    id: item.id,
+    name: TextEditingController(text: item.name),
+    isSelf: item.isSelf,
+    item: TextEditingController(text: item.itemName),
+    amount: TextEditingController(
+      text: (item.itemAmountMinor / 100).toString(),
+    ),
+    fee: TextEditingController(
+      text: (collectionFeeMinorForEditing(item) ~/ 100).toString(),
+    ),
+    feeFixed:
+        manualFee ||
+        (!item.isSelf &&
+            item.finalDueMinor != null &&
+            item.finalDueMinor != item.suggestedDueMinor),
+    discount: TextEditingController(
+      text: (item.discountMinor / 100).toString(),
+    ),
+    discountEligible: item.discountEligible,
+    discountIsFixed: item.discountIsFixed,
+    status: item.status,
+    collectionMethod: item.collectionMethod,
+    collectionAccountId: item.collectionAccountId,
+    token: item.token,
+    collectedAt: item.collectedAt,
+  );
 
   final String? id;
   final TextEditingController name;
@@ -2250,10 +3401,10 @@ class _ParticipantDraft {
   final TextEditingController item;
   final TextEditingController amount;
   final TextEditingController fee;
+  bool feeFixed;
   final TextEditingController discount;
   bool discountEligible;
   bool discountIsFixed;
-  final TextEditingController finalDue;
   final CollectionStatus status;
   String collectionMethod;
   String? collectionAccountId;
@@ -2264,19 +3415,23 @@ class _ParticipantDraft {
 class _ParticipantEditor extends StatelessWidget {
   const _ParticipantEditor({
     required this.draft,
+    required this.dueMinor,
     required this.accounts,
-    required this.manual,
     required this.canDelete,
     required this.onDelete,
     required this.onChanged,
+    required this.onFeeDelta,
+    required this.onResetFee,
   });
 
   final _ParticipantDraft draft;
+  final int dueMinor;
   final List<Account> accounts;
-  final bool manual;
   final bool canDelete;
   final VoidCallback onDelete;
   final VoidCallback onChanged;
+  final ValueChanged<int> onFeeDelta;
+  final VoidCallback onResetFee;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -2321,79 +3476,92 @@ class _ParticipantEditor extends StatelessWidget {
                 IconButton(onPressed: onDelete, icon: const Icon(Icons.close)),
             ],
           ),
-          if (manual) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: draft.fee,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(labelText: '費用分攤'),
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('有折扣'),
-                  value: draft.discountEligible,
-                  onChanged: (value) {
-                    draft.discountEligible = value ?? false;
-                    if (!draft.discountEligible) {
-                      draft.discountIsFixed = false;
-                      draft.discount.text = '0';
-                    }
-                    onChanged();
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: draft.discount,
-                  enabled: draft.discountEligible,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: draft.discountIsFixed ? '折扣金額（固定）' : '折扣金額（自動）',
-                    suffixIcon: draft.discountIsFixed
-                        ? IconButton(
-                            tooltip: '恢復自動',
-                            onPressed: () {
-                              draft.discountIsFixed = false;
-                              onChanged();
-                            },
-                            icon: const Icon(Icons.refresh),
-                          )
-                        : null,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final discountControls = Row(
+                children: [
+                  SizedBox(
+                    width: 92,
+                    child: CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: const Text('折扣'),
+                      value: draft.discountEligible,
+                      onChanged: (value) {
+                        draft.discountEligible = value ?? false;
+                        if (!draft.discountEligible) {
+                          draft.discountIsFixed = false;
+                          draft.discount.text = '0';
+                        }
+                        onChanged();
+                      },
+                    ),
                   ),
-                  onChanged: (_) {
-                    draft.discountIsFixed = true;
-                    onChanged();
-                  },
-                ),
-              ),
-            ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: draft.discount,
+                      enabled: draft.discountEligible,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: InputDecoration(
+                        labelText: draft.discountIsFixed
+                            ? '折扣金額（固定）'
+                            : '折扣金額（自動）',
+                        suffixIcon: draft.discountIsFixed
+                            ? IconButton(
+                                tooltip: '恢復自動',
+                                onPressed: () {
+                                  draft.discountIsFixed = false;
+                                  onChanged();
+                                },
+                                icon: const Icon(Icons.refresh),
+                              )
+                            : null,
+                      ),
+                      onChanged: (_) {
+                        draft.discountIsFixed = true;
+                        onChanged();
+                      },
+                    ),
+                  ),
+                ],
+              );
+              final fee = _FeeStepper(
+                controller: draft.fee,
+                label: draft.isSelf ? '本人負擔費用' : '收款附加費',
+                fixed: draft.feeFixed,
+                onDelta: onFeeDelta,
+                onReset: onResetFee,
+              );
+              final due = _ReadOnlyAmount(
+                label: draft.isSelf ? '本人合計' : '預計收款',
+                amountMinor: dueMinor,
+              );
+              if (constraints.maxWidth < 620) {
+                return Column(
+                  children: [
+                    discountControls,
+                    const SizedBox(height: 8),
+                    fee,
+                    const SizedBox(height: 8),
+                    due,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  SizedBox(width: 250, child: discountControls),
+                  const SizedBox(width: 10),
+                  Expanded(child: fee),
+                  const SizedBox(width: 10),
+                  SizedBox(width: 145, child: due),
+                ],
+              );
+            },
           ),
           if (!draft.isSelf) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: draft.finalDue,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: '最終收款（整數元，空白則採系統建議）',
-              ),
-            ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               key: ValueKey(

@@ -23,6 +23,66 @@ import 'package:quick_ledger/presentation/pages/reports_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
 
 void main() {
+  test(
+    'order editor restores the saved collection fee instead of card cost',
+    () {
+      const participant = OrderParticipant(
+        id: 'friend',
+        name: '朋友',
+        isSelf: false,
+        itemName: '餐點',
+        itemAmountMinor: 10000,
+        sharedFeeMinor: 300,
+        discountMinor: 0,
+        suggestedDueMinor: 10400,
+        status: CollectionStatus.unpaid,
+        collectionMethod: collectionMethodCash,
+        collectionAccountId: systemCashAccountId,
+        token: 'token',
+        note: '',
+      );
+
+      expect(collectionFeeMinorForEditing(participant), 400);
+    },
+  );
+
+  test('order editor keeps the self participant first after cloud reload', () {
+    OrderParticipant participant(String id, {bool isSelf = false}) =>
+        OrderParticipant(
+          id: id,
+          name: id,
+          isSelf: isSelf,
+          itemName: '餐點',
+          itemAmountMinor: 10000,
+          sharedFeeMinor: 0,
+          discountMinor: 0,
+          status: isSelf ? CollectionStatus.paid : CollectionStatus.unpaid,
+          collectionMethod: isSelf ? '' : collectionMethodCash,
+          collectionAccountId: isSelf ? null : systemCashAccountId,
+          token: '$id-token',
+          note: '',
+        );
+
+    final sorted = participantsWithSelfFirst([
+      participant('friend-a'),
+      participant('self', isSelf: true),
+      participant('friend-b'),
+    ]);
+
+    expect(sorted.map((item) => item.id), ['self', 'friend-a', 'friend-b']);
+  });
+
+  test('self fee does not increase the collection overage', () {
+    expect(
+      nonSelfFeeDifferenceMinor(
+        isSelf: const [true, false, false],
+        targetSharesMinor: const [100, 200, 200],
+        assignedSharesMinor: const [100, 300, 300],
+      ),
+      -200,
+    );
+  });
+
   test('Uber Eats screenshot selection validates cancel, type, and limits', () {
     PickedImportImage image(String name, int size, {bool withData = true}) =>
         PickedImportImage(
@@ -95,7 +155,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final width in [390.0, 430.0]) {
+  testWidgets(
+    'mobile create flow chooses a source and opens full-width editor',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final auth = _WidgetAuth()..signedIn = true;
+      final store = await _makeStore(auth: auth, finance: _importFinance());
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appStoreProvider.overrideWith((ref) => store)],
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: const Scaffold(
+              body: SingleChildScrollView(
+                padding: EdgeInsets.all(18),
+                child: OrdersPage(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('新增代訂').first);
+      await tester.pumpAndSettle();
+      expect(find.text('手動輸入'), findsOneWidget);
+      expect(find.text('截圖辨識'), findsOneWidget);
+      await tester.tap(find.text('手動輸入'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('訂單資訊'), findsOneWidget);
+      expect(find.text('下一步'), findsOneWidget);
+      expect(tester.getSize(find.byType(AlertDialog)).width, 390);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final width in [390.0, 430.0, 900.0]) {
     testWidgets('Uber Eats import is responsive at ${width.toInt()}px', (
       tester,
     ) async {
@@ -132,28 +230,96 @@ void main() {
       expect(find.text('開始辨識'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.byTooltip('往後移').first);
-      await tester.pump();
-      expect(
-        tester.getTopLeft(find.text('ue-2.png')).dy,
-        lessThan(tester.getTopLeft(find.text('ue-1.png')).dy),
-      );
-      await tester.tap(find.byTooltip('移除截圖').first);
-      await tester.pump();
-      expect(find.text('ue-2.png'), findsNothing);
-      expect(tester.takeException(), isNull);
+      if (width < 600) {
+        await tester.tap(find.byTooltip('往後移').first);
+        await tester.pump();
+        expect(
+          tester.getTopLeft(find.text('ue-2.png')).dy,
+          lessThan(tester.getTopLeft(find.text('ue-1.png')).dy),
+        );
+        await tester.tap(find.byTooltip('移除截圖').first);
+        await tester.pump();
+        expect(find.text('ue-2.png'), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
 
       await tester.tap(find.text('開始辨識'));
       await tester.pumpAndSettle();
       expect(find.text('平台'), findsOneWidget);
       expect(find.text('付款信用卡'), findsOneWidget);
       expect(find.text('確認匯入'), findsOneWidget);
+      expect(find.text('本人負擔費用'), findsOneWidget);
+      expect(find.text('收款附加費'), findsOneWidget);
+      expect(find.text('統一調整收款附加費'), findsOneWidget);
+      expect(find.text('預計收款'), findsOneWidget);
+      expect(find.text('總共收款'), findsOneWidget);
+      expect(find.text('預計多收'), findsOneWidget);
+      expect(find.text('分攤設定'), findsOneWidget);
+      expect(find.text('本人分攤附加費'), findsOneWidget);
+      expect(find.text('訂單折扣'), findsOneWidget);
+      expect(find.text('手動固定'), findsOneWidget);
+      expect(find.text('自動分配'), findsOneWidget);
+      expect(find.text('已分配'), findsOneWidget);
+      expect(find.text('重設費用分攤'), findsNothing);
+
+      final deliverySwitch = find.byKey(
+        const ValueKey('include-self-delivery'),
+      );
+      final serviceSwitch = find.byKey(const ValueKey('include-self-service'));
+      final totalMetric = find.byKey(const ValueKey('discount-total'));
+      final fixedMetric = find.byKey(const ValueKey('discount-fixed'));
+      final automaticMetric = find.byKey(const ValueKey('discount-automatic'));
+      final assignedMetric = find.byKey(const ValueKey('discount-assigned'));
+      if (width < 600) {
+        expect(
+          tester.getTopLeft(serviceSwitch).dy,
+          greaterThan(tester.getTopLeft(deliverySwitch).dy),
+        );
+        expect(
+          tester.getTopLeft(fixedMetric).dy,
+          tester.getTopLeft(totalMetric).dy,
+        );
+        expect(
+          tester.getTopLeft(automaticMetric).dy,
+          greaterThan(tester.getTopLeft(totalMetric).dy),
+        );
+      } else {
+        expect(
+          tester.getTopLeft(serviceSwitch).dy,
+          tester.getTopLeft(deliverySwitch).dy,
+        );
+        expect({
+          tester.getTopLeft(totalMetric).dy,
+          tester.getTopLeft(fixedMetric).dy,
+          tester.getTopLeft(automaticMetric).dy,
+          tester.getTopLeft(assignedMetric).dy,
+        }, hasLength(1));
+      }
       expect(tester.takeException(), isNull);
+      if (width == 430) {
+        await tester.ensureVisible(deliverySwitch);
+        await tester.pumpAndSettle();
+        expect(tester.widget<Switch>(deliverySwitch).value, isFalse);
+        await tester.tap(deliverySwitch);
+        await tester.pump();
+        expect(tester.widget<Switch>(deliverySwitch).value, isTrue);
+        await tester.tap(deliverySwitch);
+        await tester.pump();
+      }
       if (width == 390) {
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('fee-plus-收款附加費')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('fee-plus-收款附加費')));
+        await tester.pump();
+        expect(find.byTooltip('已固定，點擊恢復自動'), findsOneWidget);
+        expect(find.textContaining('目前多收'), findsOneWidget);
         await tester.tap(find.text('確認匯入'));
         await tester.pumpAndSettle();
         expect(store.data.orders, hasLength(1));
         expect(store.data.orders.single.name, '測試代訂');
+        expect(store.data.orders.single.expectedCollectionResultMinor, 100);
       }
     });
   }
@@ -187,6 +353,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('總額（元）・待確認'), findsOneWidget);
     expect(find.text('姓名（自己）・待確認'), findsOneWidget);
+    expect(find.text('請確認：請確認本人・黃色欄位需核對'), findsOneWidget);
+    expect(find.textContaining('使用瀏覽器本機 OCR'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -225,6 +393,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('重新辨識'), findsOneWidget);
     expect(find.textContaining('測試辨識失敗'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile OCR review returns to the top after recognition', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = _WidgetAuth()..signedIn = true;
+    final store = await _makeStore(
+      auth: auth,
+      finance: _importFinance(),
+      orderImport: const _WidgetOrderImport(),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: buildUberEatsImportDialogForTest(
+            images: [
+              for (var index = 0; index < 8; index++)
+                _testImportImage('ue-$index.png'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final importScroll = find.byKey(const ValueKey('uber-eats-import-scroll'));
+    await tester.drag(importScroll, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    final scrollable = find
+        .descendant(of: importScroll, matching: find.byType(Scrollable))
+        .first;
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      greaterThan(0),
+    );
+
+    await tester.tap(find.text('開始辨識'));
+    await tester.pumpAndSettle();
+
+    expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
+    expect(find.text('查看原始截圖'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -408,7 +624,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(finance.lastMigrationAction, InitialMigrationAction.useCloud);
-    expect(find.text('目前無法連線到雲端，請稍後再試'), findsWidgets);
+    expect(find.text('資料處理失敗，請稍後再試'), findsWidgets);
   });
 
   testWidgets('offline cloud cache is visible but read only', (tester) async {
@@ -447,7 +663,7 @@ void main() {
               id: 'order-1',
               userId: 'user',
               name: 'Uber Eats 代訂',
-              date: DateTime(2026, 8, 4),
+              date: DateTime.now(),
               platform: 'Uber Eats',
               cardId: 'card-1',
               totalMinor: 68300,
@@ -548,7 +764,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('import-remove-person-0')));
     await tester.pump();
     expect(find.text('姓名（自己）'), findsNothing);
-    expect(find.text('目前沒有本人參與者'), findsNWidgets(2));
+    expect(find.text('目前沒有本人參與者'), findsOneWidget);
+    expect(
+      tester
+          .widget<Switch>(find.byKey(const ValueKey('include-self-delivery')))
+          .onChanged,
+      isNull,
+    );
 
     await tester.tap(find.byKey(const ValueKey('import-remove-person-0')));
     await tester.pump();
@@ -583,12 +805,25 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
+    final deletedAccount = Account(
+      id: 'deleted-account',
+      userId: 'user',
+      name: '已刪除舊帳戶',
+      institution: '舊銀行',
+      type: '銀行帳戶',
+      currency: 'TWD',
+      openingBalanceMinor: 0,
+      isActive: false,
+      note: '',
+      createdAt: now,
+      updatedAt: now,
+    );
     final auth = _WidgetAuth()..signedIn = true;
     final store = await _makeStore(
       auth: auth,
       finance: _WidgetFinance(
         data: AppData(
-          accounts: [account],
+          accounts: [account, deletedAccount],
           cards: [
             CreditCard(
               id: 'card-1',
@@ -624,6 +859,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('編輯信用卡'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('已刪除舊帳戶'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -707,6 +945,118 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('statement reconciliation and payment history render at 390px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.now();
+    final account = Account(
+      id: 'bill-bank',
+      userId: 'user',
+      name: '帳單扣款帳戶',
+      institution: '銀行',
+      type: '活存',
+      currency: 'TWD',
+      openingBalanceMinor: 100000,
+      isActive: true,
+      note: '',
+      createdAt: now,
+      updatedAt: now,
+    );
+    const card = CreditCard(
+      id: 'bill-card',
+      userId: 'user',
+      name: '帳單核對卡',
+      bank: '銀行',
+      lastFour: '7788',
+      closingDay: 15,
+      dueDay: 28,
+      autoDebitDay: 28,
+      debitAccountId: 'bill-bank',
+      isActive: true,
+      note: '',
+    );
+    final expense = Expense(
+      id: 'bill-charge',
+      userId: 'user',
+      date: now,
+      amountMinor: 10000,
+      paymentMethod: PaymentMethod.creditCard,
+      item: '核對消費',
+      category: '購物',
+      cardId: card.id,
+      merchant: '商店',
+      note: '',
+      isNecessary: false,
+    );
+    final bill = CardBill(
+      id: 'bill-detail',
+      userId: 'user',
+      cardId: card.id,
+      month: '${now.year}-${now.month.toString().padLeft(2, '0')}',
+      chargeIds: const ['expense:bill-charge'],
+      manualAdjustmentMinor: 0,
+      paidMinor: 4000,
+      dueDate: now.add(const Duration(days: 10)),
+      autoDebitDate: now.add(const Duration(days: 8)),
+      note: '',
+      statementAmountMinor: 12000,
+      reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+    );
+    final payment = FinancialTransaction(
+      id: 'card-payment:bill-detail:first',
+      userId: 'user',
+      date: now,
+      type: FinancialTransactionType.cardPayment,
+      label: '部分繳款',
+      amountMinor: 4000,
+      currency: 'TWD',
+      relatedEntityType: 'cardBill',
+      relatedEntityId: bill.id,
+      impacts: const [
+        AccountImpact(
+          accountId: 'bill-bank',
+          amountMinor: -4000,
+          currency: 'TWD',
+        ),
+      ],
+    );
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          accounts: [account],
+          cards: const [card],
+          expenses: [expense],
+          bills: [bill],
+          transactions: [payment],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const Scaffold(body: CardsPage()),
+        ),
+      ),
+    );
+    await tester.tap(find.text('信用卡帳單'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('部分繳款'), findsOneWidget);
+    expect(find.text('所有狀態'), findsOneWidget);
+    await tester.tap(find.textContaining('帳單核對卡').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('銀行實際總額'), findsOneWidget);
+    expect(find.textContaining('核對差額'), findsOneWidget);
+    expect(find.text('繳款紀錄'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('account ledger opens and reuses the expense editor', (
     tester,
@@ -796,6 +1146,69 @@ void main() {
     expect(store.accountBalance('account'), 100000);
     expect(find.text('午餐'), findsNothing);
     expect(find.text('日常帳戶 扣／入帳明細'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('balance adjustment can set a new total directly', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.utc(2026, 8, 1);
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          accounts: [
+            Account(
+              id: 'bank',
+              userId: 'user',
+              name: '彰銀',
+              institution: '彰化銀行',
+              type: '銀行帳戶',
+              currency: 'TWD',
+              openingBalanceMinor: 800000,
+              isActive: true,
+              note: '',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: AccountsPage()),
+          ),
+        ),
+      ),
+    );
+
+    final row = find.ancestor(
+      of: find.text('彰銀'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(PopupMenuButton<String>)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('餘額調整'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('直接改總額'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '10000');
+    await tester.tap(find.text('套用調整'));
+    await tester.pumpAndSettle();
+
+    expect(store.accountBalance('bank'), 1000000);
+    expect(store.data.balanceAdjustments.single.amountMinor, 200000);
     expect(tester.takeException(), isNull);
   });
 
@@ -937,6 +1350,10 @@ void main() {
     for (final entry in routes.entries) {
       router.go('/dashboard');
       await tester.pumpAndSettle();
+      if (find.text(entry.key).evaluate().isEmpty) {
+        await tester.tap(find.text('其他財務摘要'));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text(entry.key));
       await tester.pumpAndSettle();
       expect(router.routeInformationProvider.value.uri.path, entry.value);
@@ -1357,6 +1774,15 @@ void main() {
     expect(find.text('淨資產趨勢'), findsOneWidget);
     expect(find.text('近 6 個月收入／支出'), findsOneWidget);
     expect(find.text('現金流摘要'), findsOneWidget);
+    final netWorthTop = tester.getTopLeft(find.text('淨資產'));
+    final incomeTop = tester.getTopLeft(find.text('本期收入'));
+    final expenseTop = tester.getTopLeft(find.text('本期支出'));
+    expect(incomeTop.dy, netWorthTop.dy);
+    expect(expenseTop.dy, greaterThan(netWorthTop.dy));
+    final reportTabs = find.byWidgetPredicate(
+      (widget) => widget is SegmentedButton,
+    );
+    expect(tester.getSize(reportTabs).width, lessThanOrEqualTo(358));
     expect(tester.takeException(), isNull);
   });
 }
@@ -1437,7 +1863,9 @@ class _WidgetOrderImport implements OrderImportRepository {
         itemAmountMinor: 18000,
       ),
     ],
-    warnings: const [],
+    warnings: lowConfidence
+        ? const ['使用瀏覽器本機 OCR，請逐項確認辨識結果', '未辨識到「您」']
+        : const [],
     reconciliationDifferenceMinor: 0,
     fieldConfidence: {if (lowConfidence) 'total': 0.5},
   );
@@ -1475,6 +1903,8 @@ class _WidgetAuth implements AuthRepository {
   Stream<bool> get authStateChanges => controller.stream;
   @override
   String? get currentUserId => signedIn ? 'user' : null;
+  @override
+  String? get currentUserDisplayName => signedIn ? '測試使用者' : null;
   @override
   bool get isSignedIn => signedIn;
   @override

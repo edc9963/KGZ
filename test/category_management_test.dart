@@ -62,6 +62,8 @@ class _Auth implements AuthRepository {
 
   @override
   String? get currentUserId => 'user';
+  @override
+  String? get currentUserDisplayName => '測試使用者';
 
   @override
   bool get isSignedIn => true;

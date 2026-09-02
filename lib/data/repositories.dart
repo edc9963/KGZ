@@ -6,6 +6,7 @@ import 'ocr_models.dart';
 
 abstract interface class AuthRepository {
   String? get currentUserId;
+  String? get currentUserDisplayName;
   bool get isSignedIn;
   Stream<bool> get authStateChanges;
   Future<void> signInWithLine({String? returnPath});
@@ -19,6 +20,54 @@ abstract interface class FinanceRepository {
   Future<FinanceSnapshot> resolveInitialMigration(
     InitialMigrationAction action,
   );
+}
+
+class MarketInstrument {
+  const MarketInstrument({
+    required this.market,
+    required this.symbol,
+    required this.name,
+    required this.type,
+    required this.currency,
+    required this.closePriceMinor,
+    required this.quoteDate,
+  });
+
+  final String market;
+  final String symbol;
+  final String name;
+  final String type;
+  final CurrencyCode currency;
+  final int closePriceMinor;
+  final DateTime? quoteDate;
+
+  factory MarketInstrument.fromJson(Json json) => MarketInstrument(
+    market: json['market'] as String? ?? 'TWSE',
+    symbol: json['symbol'] as String,
+    name: json['name'] as String,
+    type: json['type'] as String,
+    currency: json['currency'] as String? ?? 'TWD',
+    closePriceMinor: (json['closePriceMinor'] as num?)?.toInt() ?? 0,
+    quoteDate: json['quoteDate'] == null
+        ? null
+        : DateTime.parse(json['quoteDate'] as String),
+  );
+
+  Json toJson() => {
+    'market': market,
+    'symbol': symbol,
+    'name': name,
+    'type': type,
+    'currency': currency,
+    'closePriceMinor': closePriceMinor,
+    'quoteDate': quoteDate?.toIso8601String(),
+  };
+}
+
+abstract interface class MarketDataRepository {
+  Future<List<MarketInstrument>> loadCatalog({bool forceRefresh = false});
+  Future<List<MarketInstrument>> search(String query);
+  Future<List<MarketInstrument>> quotes(Iterable<String> symbols);
 }
 
 class PublicCollectionDetails {

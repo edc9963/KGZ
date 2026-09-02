@@ -6,7 +6,6 @@
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LINE_BOT_USER_ID`（選用；只用來偵測 webhook destination 設定錯誤）
-- `OCR_ENABLED=false`
 - `APP_PUBLIC_URL`（第一階段可省略）
 
 Supabase 自動提供 `SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY`。Function

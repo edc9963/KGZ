@@ -13,12 +13,14 @@ class AppStore extends ChangeNotifier {
     required CsvExportService csvExportService,
     OrderImportRepository? orderImportRepository,
     PublicCollectionRepository? publicCollectionRepository,
+    MarketDataRepository? marketDataRepository,
     Uuid uuid = const Uuid(),
   }) : _auth = authRepository,
        _finance = financeRepository,
        _csv = csvExportService,
        _orderImport = orderImportRepository,
        _publicCollection = publicCollectionRepository,
+       _marketData = marketDataRepository,
        _uuid = uuid;
 
   final AuthRepository _auth;
@@ -26,6 +28,7 @@ class AppStore extends ChangeNotifier {
   final CsvExportService _csv;
   final OrderImportRepository? _orderImport;
   final PublicCollectionRepository? _publicCollection;
+  final MarketDataRepository? _marketData;
   final Uuid _uuid;
   StreamSubscription<bool>? _authSubscription;
 
@@ -38,9 +41,13 @@ class AppStore extends ChangeNotifier {
   AppData? localMigrationCandidate;
   DateTime? cloudUpdatedAt;
   bool cloudExists = false;
+  List<MarketInstrument> marketCatalog = const [];
+  bool isLoadingMarketCatalog = false;
+  String? marketDataError;
 
   bool get isSignedIn => _auth.isSignedIn;
   String get userId => _auth.currentUserId ?? 'demo-line-user';
+  String? get userDisplayName => _auth.currentUserDisplayName;
   bool get needsInitialMigration => localMigrationCandidate != null;
   bool get canWrite =>
       isSignedIn &&
@@ -51,11 +58,136 @@ class AppStore extends ChangeNotifier {
 
   Future<void> initialize() async {
     await _loadFinance();
+    if (isSignedIn && !isOffline) {
+      unawaited(refreshMarketData());
+    }
     _authSubscription = _auth.authStateChanges.listen((_) async {
       await _loadFinance();
+      if (isSignedIn && !isOffline) {
+        await refreshMarketData();
+      }
     });
     initialized = true;
     notifyListeners();
+  }
+
+  Future<void> ensureMarketCatalog({bool forceRefresh = false}) async {
+    final repository = _marketData;
+    if (repository == null || isLoadingMarketCatalog) return;
+    if (!forceRefresh && marketCatalog.isNotEmpty) return;
+    isLoadingMarketCatalog = true;
+    marketDataError = null;
+    notifyListeners();
+    try {
+      marketCatalog = await repository.loadCatalog(forceRefresh: forceRefresh);
+    } on Object catch (error) {
+      debugPrint('Market catalogue load failed: $error');
+      marketDataError = '上市商品資料暫時無法取得';
+    } finally {
+      isLoadingMarketCatalog = false;
+      notifyListeners();
+    }
+  }
+
+  List<MarketInstrument> searchMarketCatalog(String query) {
+    final normalized = query.trim().toUpperCase().replaceAll(
+      RegExp(r'\s+'),
+      '',
+    );
+    if (normalized.length < 2) return const [];
+    final result = marketCatalog
+        .where(
+          (item) =>
+              item.symbol.toUpperCase().contains(normalized) ||
+              item.name.replaceAll(RegExp(r'\s+'), '').contains(normalized),
+        )
+        .toList();
+    result.sort((left, right) {
+      final exact = (left.symbol == normalized ? 0 : 1).compareTo(
+        right.symbol == normalized ? 0 : 1,
+      );
+      if (exact != 0) return exact;
+      final prefix = (left.symbol.startsWith(normalized) ? 0 : 1).compareTo(
+        right.symbol.startsWith(normalized) ? 0 : 1,
+      );
+      return prefix != 0 ? prefix : left.symbol.compareTo(right.symbol);
+    });
+    return result.take(8).toList();
+  }
+
+  Future<void> refreshMarketData() async {
+    final repository = _marketData;
+    if (repository == null || !isSignedIn || isOffline) return;
+    await ensureMarketCatalog();
+    final symbols = data.products
+        .where((item) => item.usesAutomaticQuote)
+        .map((item) => item.marketSymbol!)
+        .toSet();
+    if (symbols.isEmpty) return;
+    try {
+      await repository.quotes(symbols);
+      await _loadFinance();
+    } on Object catch (error) {
+      debugPrint('Market quote refresh failed: $error');
+      marketDataError = '收盤價更新失敗，暫時沿用最後有效價格';
+      notifyListeners();
+    }
+  }
+
+  Map<String, MarketInstrument> get existingMarketLinkCandidates {
+    final result = <String, MarketInstrument>{};
+    for (final product in data.products.where(
+      (item) => !item.usesAutomaticQuote && item.symbol.trim().isNotEmpty,
+    )) {
+      final symbol = product.symbol.trim().toUpperCase();
+      final match = marketCatalog
+          .where((item) => item.symbol == symbol)
+          .firstOrNull;
+      if (match != null) result[product.id] = match;
+    }
+    return result;
+  }
+
+  Future<void> linkMarketProducts(Map<String, MarketInstrument> links) async {
+    if (links.isEmpty) return;
+    final now = DateTime.now();
+    final products = [
+      for (final product in data.products)
+        if (links[product.id] case final instrument?)
+          product.copyWith(
+            symbol: instrument.symbol,
+            name: instrument.name,
+            type: instrument.type,
+            currency: instrument.currency,
+            currentPriceMinor: instrument.closePriceMinor,
+            priceUpdatedAt: instrument.quoteDate ?? now,
+            priceSource: 'twse',
+            market: instrument.market,
+            marketSymbol: instrument.symbol,
+            quoteLinkedAt: now,
+          )
+        else
+          product,
+    ];
+    await _commit(data.copyWith(products: products));
+  }
+
+  Future<void> unlinkMarketProduct(String productId) async {
+    await _commit(
+      data.copyWith(
+        products: [
+          for (final product in data.products)
+            if (product.id == productId)
+              product.copyWith(
+                priceSource: 'manual',
+                clearMarketLink: true,
+                priceUpdatedAt: DateTime.now(),
+              )
+            else
+              product,
+        ],
+      ),
+    );
   }
 
   Future<void> _loadFinance() async {
@@ -76,7 +208,8 @@ class AppStore extends ChangeNotifier {
       lastSyncError = snapshot.isOffline ? '目前離線，資料僅供查看' : null;
     } on Object catch (error) {
       isOffline = true;
-      lastSyncError = error.toString();
+      debugPrint('Finance load failed: $error');
+      lastSyncError = '目前無法連線到雲端，資料僅供查看';
     }
     notifyListeners();
   }
@@ -135,7 +268,7 @@ class AppStore extends ChangeNotifier {
     for (final card in source.cards) {
       final liabilityId =
           card.liabilityAccountId ?? 'card-liability-${card.id}';
-      if (!accounts.any((item) => item.id == liabilityId)) {
+      if (card.isCredit && !accounts.any((item) => item.id == liabilityId)) {
         accounts.add(
           Account(
             id: liabilityId,
@@ -167,7 +300,8 @@ class AppStore extends ChangeNotifier {
           debitAccountId: card.debitAccountId,
           isActive: card.isActive,
           note: card.note,
-          liabilityAccountId: liabilityId,
+          cardType: card.cardType,
+          liabilityAccountId: card.isCredit ? liabilityId : null,
           origin: card.origin,
         ),
       );
@@ -248,6 +382,13 @@ class AppStore extends ChangeNotifier {
       )
       .toList();
 
+  /// Active asset accounts that can actually receive or pay money.
+  /// Internal liability and receivable ledger accounts are intentionally
+  /// excluded from user-facing account selectors.
+  List<Account> get activeAssetAccounts => data.accounts
+      .where((item) => item.isActive && item.kind == FinancialAccountKind.asset)
+      .toList();
+
   String get lastCollectionMethod {
     final collected =
         data.orders
@@ -285,7 +426,8 @@ class AppStore extends ChangeNotifier {
       hasConflict = true;
       lastSyncError = error.toString();
     } on Object catch (error) {
-      lastSyncError = error.toString();
+      debugPrint('Initial migration failed: $error');
+      lastSyncError = '資料處理失敗，請稍後再試';
     } finally {
       isSaving = false;
       notifyListeners();
@@ -352,7 +494,8 @@ class AppStore extends ChangeNotifier {
       hasConflict = true;
       lastSyncError = error.toString();
     } on Object catch (error) {
-      lastSyncError = error.toString();
+      debugPrint('Finance save failed: $error');
+      lastSyncError = '同步失敗，資料尚未儲存，請稍後再試';
     } finally {
       isSaving = false;
       notifyListeners();
@@ -532,7 +675,7 @@ class AppStore extends ChangeNotifier {
     }
     for (final bill in data.bills) {
       if (bill.paidMinor <= 0) continue;
-      if (mirrored.contains('card-payment:${bill.id}')) continue;
+      if (billPayments(bill.id).isNotEmpty) continue;
       final card = cardById(bill.cardId);
       if (card != null) {
         effects.add(
@@ -675,11 +818,12 @@ class AppStore extends ChangeNotifier {
     return expenses + orders;
   }
 
-  int billAmount(CardBill bill) {
-    var amount = bill.manualAdjustmentMinor;
+  int calculatedBillAmount(CardBill bill) {
+    var amount = 0;
     final owners = cardChargeBills;
     for (final id in bill.chargeIds.toSet()) {
-      if (owners[id]?.id != bill.id) continue;
+      final owner = owners[id];
+      if (owner != null && owner.id != bill.id) continue;
       if (id.startsWith('expense:')) {
         final expenseId = id.substring('expense:'.length);
         amount += data.expenses
@@ -695,6 +839,84 @@ class AppStore extends ChangeNotifier {
     return amount < 0 ? 0 : amount;
   }
 
+  int billAmount(CardBill bill) =>
+      bill.statementAmountMinor ??
+      (calculatedBillAmount(bill) + bill.manualAdjustmentMinor)
+          .clamp(0, 1 << 62)
+          .toInt();
+
+  int reconciliationDifference(CardBill bill) =>
+      billAmount(bill) - calculatedBillAmount(bill);
+
+  List<FinancialTransaction> billPayments(String billId) {
+    final result = data.transactions
+        .where(
+          (item) =>
+              item.type == FinancialTransactionType.cardPayment &&
+              item.relatedEntityType == 'cardBill' &&
+              item.relatedEntityId == billId,
+        )
+        .toList();
+    result.sort((a, b) => b.date.compareTo(a.date));
+    return result;
+  }
+
+  int paidBillMinor(CardBill bill) {
+    final payments = billPayments(bill.id);
+    return payments.isEmpty
+        ? bill.paidMinor
+        : payments.fold(0, (sum, item) => sum + item.amountMinor);
+  }
+
+  int outstandingBillMinor(CardBill bill) =>
+      (billAmount(bill) - paidBillMinor(bill)).clamp(0, 1 << 62).toInt();
+
+  CardBillStatus billStatus(CardBill bill, {DateTime? now}) {
+    final paid = paidBillMinor(bill);
+    if (outstandingBillMinor(bill) == 0) return CardBillStatus.paid;
+    if (bill.autoDebitState == CardBillAutoDebitState.failed) {
+      return CardBillStatus.debitFailed;
+    }
+    final instant = now ?? DateTime.now();
+    final today = DateTime(instant.year, instant.month, instant.day);
+    final due = DateTime(
+      bill.dueDate.year,
+      bill.dueDate.month,
+      bill.dueDate.day,
+    );
+    if (today.isAfter(due)) return CardBillStatus.overdue;
+    if (paid > 0) return CardBillStatus.partiallyPaid;
+    final debit = DateTime(
+      bill.autoDebitDate.year,
+      bill.autoDebitDate.month,
+      bill.autoDebitDate.day,
+    );
+    final days = debit.difference(today).inDays;
+    return days >= 0 && days <= 3
+        ? CardBillStatus.debitSoon
+        : CardBillStatus.unpaid;
+  }
+
+  ({DateTime closingDate, DateTime dueDate, DateTime autoDebitDate})
+  cardBillingDates(CreditCard card, int year, int month) {
+    DateTime clamped(int y, int m, int day) {
+      final last = DateTime(y, m + 1, 0).day;
+      return DateTime(y, m, day.clamp(1, last));
+    }
+
+    final closing = clamped(year, month, card.closingDay);
+    DateTime afterClosing(int day) {
+      final nextMonth = day <= card.closingDay;
+      return clamped(year, month + (nextMonth ? 1 : 0), day);
+    }
+
+    return (
+      closingDate: closing,
+      dueDate: afterClosing(card.dueDay),
+      autoDebitDate: afterClosing(card.autoDebitDay),
+    );
+  }
+
   int get pendingCardMinor {
     final ownedCharges = cardChargeBills.keys.toSet();
     final unbilledExpenses = data.expenses
@@ -707,7 +929,7 @@ class AppStore extends ChangeNotifier {
         .where((item) => !ownedCharges.contains('order:${item.id}'))
         .fold(0, (sum, item) => sum + item.totalMinor);
     final outstandingBills = data.bills.fold(0, (sum, bill) {
-      final remaining = billAmount(bill) - bill.paidMinor;
+      final remaining = billAmount(bill) - paidBillMinor(bill);
       return sum + (remaining < 0 ? 0 : remaining);
     });
     return unbilledExpenses + unbilledOrders + outstandingBills;
@@ -942,9 +1164,28 @@ class AppStore extends ChangeNotifier {
     final today = DateTime(now.year, now.month, now.day);
     final items = <ReminderItem>[];
     for (final bill in data.bills) {
-      final remaining = billAmount(bill) - bill.paidMinor;
+      final remaining = billAmount(bill) - paidBillMinor(bill);
       final outstanding = remaining < 0 ? 0 : remaining;
       if (outstanding == 0) continue;
+      final card = cardById(bill.cardId);
+      final balance = card == null ? 0 : accountBalance(card.debitAccountId);
+      final status = billStatus(bill, now: now);
+      if (status == CardBillStatus.debitFailed ||
+          status == CardBillStatus.overdue) {
+        items.add(
+          ReminderItem(
+            title: status == CardBillStatus.debitFailed ? '自動扣款失敗' : '信用卡帳單已逾期',
+            subtitle:
+                '${card?.name ?? '信用卡'} ${bill.month}・未繳 ${(outstanding / 100).toStringAsFixed(2)}',
+            date: status == CardBillStatus.debitFailed
+                ? bill.autoDebitDate
+                : bill.dueDate,
+            isWarning: true,
+            destination: ReminderDestination.cards,
+          ),
+        );
+        continue;
+      }
       final debit = DateTime(
         bill.autoDebitDate.year,
         bill.autoDebitDate.month,
@@ -952,8 +1193,6 @@ class AppStore extends ChangeNotifier {
       );
       final days = debit.difference(today).inDays;
       if (days == 3 || days == 1 || days == 0) {
-        final card = cardById(bill.cardId);
-        final balance = card == null ? 0 : accountBalance(card.debitAccountId);
         items.add(
           ReminderItem(
             title: days == 0 ? '今天將自動扣款' : '$days 天後自動扣款',
@@ -1024,6 +1263,121 @@ class AppStore extends ChangeNotifier {
     );
   }
 
+  Future<void> mergeAccounts({
+    required String sourceAccountId,
+    required String targetAccountId,
+  }) async {
+    if (sourceAccountId == targetAccountId) {
+      lastSyncError = '請選擇不同的保留帳戶';
+      notifyListeners();
+      return;
+    }
+    if (sourceAccountId == systemCashAccountId) {
+      lastSyncError = '系統現金帳戶不可被合併';
+      notifyListeners();
+      return;
+    }
+    final source = accountById(sourceAccountId);
+    final target = accountById(targetAccountId);
+    if (source == null || target == null) {
+      lastSyncError = '找不到要合併的帳戶';
+      notifyListeners();
+      return;
+    }
+    if (source.kind != FinancialAccountKind.asset ||
+        target.kind != FinancialAccountKind.asset) {
+      lastSyncError = '只能合併資產帳戶';
+      notifyListeners();
+      return;
+    }
+    if (source.currency != target.currency) {
+      lastSyncError = '不同幣別的帳戶無法合併';
+      notifyListeners();
+      return;
+    }
+
+    final json = data.toJson();
+    final accounts = (json['accounts'] as List).cast<Map<String, dynamic>>();
+    final targetJson = accounts.firstWhere(
+      (item) => item['id'] == targetAccountId,
+    );
+    targetJson['openingBalanceMinor'] =
+        target.openingBalanceMinor + source.openingBalanceMinor;
+    final earliestOpening =
+        source.effectiveOpeningBalanceDate.isBefore(
+          target.effectiveOpeningBalanceDate,
+        )
+        ? source.effectiveOpeningBalanceDate
+        : target.effectiveOpeningBalanceDate;
+    targetJson['openingBalanceDate'] = earliestOpening.toIso8601String();
+    targetJson['updatedAt'] = DateTime.now().toIso8601String();
+    accounts.removeWhere((item) => item['id'] == sourceAccountId);
+
+    void replaceField(Map<String, dynamic> item, String key) {
+      if (item[key] == sourceAccountId) item[key] = targetAccountId;
+    }
+
+    for (final raw in json['transactions'] as List) {
+      final transaction = raw as Map<String, dynamic>;
+      final totals = <String, int>{};
+      for (final impactRaw in transaction['impacts'] as List) {
+        final impact = impactRaw as Map<String, dynamic>;
+        replaceField(impact, 'accountId');
+        final key = '${impact['accountId']}\u0000${impact['currency']}';
+        totals[key] = (totals[key] ?? 0) + impact['amountMinor'] as int;
+      }
+      transaction['impacts'] = [
+        for (final entry in totals.entries)
+          if (entry.value != 0)
+            {
+              'accountId': entry.key.split('\u0000').first,
+              'currency': entry.key.split('\u0000').last,
+              'amountMinor': entry.value,
+            },
+      ];
+    }
+    for (final raw in json['balanceAdjustments'] as List) {
+      replaceField(raw as Map<String, dynamic>, 'accountId');
+    }
+    for (final raw in json['expenses'] as List) {
+      replaceField(raw as Map<String, dynamic>, 'accountId');
+    }
+    for (final raw in json['recurringExpenses'] as List) {
+      final item = raw as Map<String, dynamic>;
+      replaceField(item, 'accountId');
+      replaceField(item, 'telecomDebitAccountId');
+    }
+    for (final raw in json['telecomBillPayments'] as List) {
+      replaceField(raw as Map<String, dynamic>, 'debitAccountId');
+    }
+    for (final raw in json['incomes'] as List) {
+      replaceField(raw as Map<String, dynamic>, 'accountId');
+    }
+    for (final raw in json['cards'] as List) {
+      replaceField(raw as Map<String, dynamic>, 'debitAccountId');
+    }
+    for (final raw in json['investmentTransactions'] as List) {
+      final item = raw as Map<String, dynamic>;
+      replaceField(item, 'debitAccountId');
+      replaceField(item, 'creditAccountId');
+    }
+    for (final raw in json['orders'] as List) {
+      final order = raw as Map<String, dynamic>;
+      for (final participantRaw in order['participants'] as List) {
+        replaceField(
+          participantRaw as Map<String, dynamic>,
+          'collectionAccountId',
+        );
+      }
+    }
+    replaceField(
+      json['settings'] as Map<String, dynamic>,
+      'defaultCollectionAccountId',
+    );
+
+    await _commit(AppData.fromJson(json));
+  }
+
   Future<void> deleteAccount(String id) async {
     if (id == systemCashAccountId) {
       lastSyncError = '系統現金帳戶不可刪除';
@@ -1031,7 +1385,7 @@ class AppStore extends ChangeNotifier {
       return;
     }
     final references = <String>[
-      if (data.cards.any((item) => item.debitAccountId == id)) '信用卡扣款帳戶',
+      if (data.cards.any((item) => item.debitAccountId == id)) '卡片綁定帳戶',
       if (data.expenses.any((item) => item.accountId == id)) '支出',
       if (data.recurringExpenses.any(
         (item) => item.accountId == id || item.telecomDebitAccountId == id,
@@ -1044,6 +1398,12 @@ class AppStore extends ChangeNotifier {
         (item) => item.debitAccountId == id || item.creditAccountId == id,
       ))
         '投資交易',
+      if (data.transactions.any(
+        (item) =>
+            item.type == FinancialTransactionType.transfer &&
+            item.impacts.any((impact) => impact.accountId == id),
+      ))
+        '轉帳紀錄',
       if (data.orders.any(
         (order) => order.participants.any(
           (participant) => participant.collectionAccountId == id,
@@ -1066,6 +1426,75 @@ class AppStore extends ChangeNotifier {
 
   Future<void> addBalanceAdjustment(BalanceAdjustment adjustment) =>
       upsertBalanceAdjustment(adjustment);
+
+  Future<void> upsertAccountTransfer({
+    required String id,
+    required String fromAccountId,
+    required String toAccountId,
+    required int amountMinor,
+    required DateTime date,
+    String note = '',
+  }) async {
+    final from = accountById(fromAccountId);
+    final to = accountById(toAccountId);
+    if (from == null || to == null || !from.isActive || !to.isActive) {
+      lastSyncError = '請選擇已啟用的轉出與轉入帳戶';
+      notifyListeners();
+      return;
+    }
+    if (from.id == to.id) {
+      lastSyncError = '轉出與轉入帳戶不能相同';
+      notifyListeners();
+      return;
+    }
+    if (from.currency != to.currency) {
+      lastSyncError = '目前僅支援相同幣別的帳戶間轉帳';
+      notifyListeners();
+      return;
+    }
+    if (amountMinor <= 0) {
+      lastSyncError = '轉帳金額必須大於 0';
+      notifyListeners();
+      return;
+    }
+    lastSyncError = null;
+    final transactionId = id.startsWith('transfer:') ? id : 'transfer:$id';
+    await _commit(
+      data.copyWith(
+        transactions: _replaceTransaction(
+          transactionId,
+          FinancialTransaction(
+            id: transactionId,
+            userId: userId,
+            date: date,
+            type: FinancialTransactionType.transfer,
+            label: '${from.name} → ${to.name}',
+            amountMinor: amountMinor,
+            currency: from.currency,
+            note: note.trim(),
+            impacts: [
+              AccountImpact(
+                accountId: from.id,
+                amountMinor: -amountMinor,
+                currency: from.currency,
+              ),
+              AccountImpact(
+                accountId: to.id,
+                amountMinor: amountMinor,
+                currency: to.currency,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> deleteAccountTransfer(String id) => _commit(
+    data.copyWith(
+      transactions: data.transactions.where((item) => item.id != id).toList(),
+    ),
+  );
 
   Future<void> upsertBalanceAdjustment(BalanceAdjustment adjustment) async {
     final items = [...data.balanceAdjustments];
@@ -1112,6 +1541,15 @@ class AppStore extends ChangeNotifier {
   );
 
   Future<void> upsertExpense(Expense expense) async {
+    if (expense.paymentMethod == PaymentMethod.debitCard) {
+      final card = cardById(expense.cardId);
+      if (card == null || !card.isDebit || !card.isActive) {
+        lastSyncError = '請選擇已啟用的金融卡';
+        notifyListeners();
+        return;
+      }
+      expense = expense.copyWith(accountId: card.debitAccountId);
+    }
     final items = [...data.expenses];
     final index = items.indexWhere((item) => item.id == expense.id);
     index < 0 ? items.add(expense) : items[index] = expense;
@@ -1192,7 +1630,9 @@ class AppStore extends ChangeNotifier {
   );
 
   Future<void> upsertCard(CreditCard card) async {
-    final liabilityId = card.liabilityAccountId ?? 'card-liability-${card.id}';
+    final liabilityId = card.isCredit
+        ? card.liabilityAccountId ?? 'card-liability-${card.id}'
+        : null;
     final normalized = CreditCard(
       id: card.id,
       userId: card.userId,
@@ -1205,6 +1645,7 @@ class AppStore extends ChangeNotifier {
       debitAccountId: card.debitAccountId,
       isActive: card.isActive,
       note: card.note,
+      cardType: card.cardType,
       liabilityAccountId: liabilityId,
       origin: card.origin,
     );
@@ -1212,32 +1653,38 @@ class AppStore extends ChangeNotifier {
     final index = items.indexWhere((item) => item.id == card.id);
     index < 0 ? items.add(normalized) : items[index] = normalized;
     final accounts = [...data.accounts];
-    final accountIndex = accounts.indexWhere((item) => item.id == liabilityId);
+    final accountIndex = liabilityId == null
+        ? -1
+        : accounts.indexWhere((item) => item.id == liabilityId);
     final now = DateTime.now();
-    final liability = Account(
-      id: liabilityId,
-      userId: card.userId,
-      name: '${card.name}未繳',
-      institution: card.bank,
-      type: '信用卡負債',
-      currency: 'TWD',
-      openingBalanceMinor: accountIndex < 0
-          ? 0
-          : accounts[accountIndex].openingBalanceMinor,
-      isActive: card.isActive,
-      note: '信用卡負債帳戶',
-      createdAt: accountIndex < 0 ? now : accounts[accountIndex].createdAt,
-      updatedAt: now,
-      kind: FinancialAccountKind.liability,
-      subtype: 'creditCard',
-    );
-    accountIndex < 0
-        ? accounts.add(liability)
-        : accounts[accountIndex] = liability;
+    if (liabilityId != null) {
+      final liability = Account(
+        id: liabilityId,
+        userId: card.userId,
+        name: '${card.name}未繳',
+        institution: card.bank,
+        type: '信用卡負債',
+        currency: 'TWD',
+        openingBalanceMinor: accountIndex < 0
+            ? 0
+            : accounts[accountIndex].openingBalanceMinor,
+        isActive: card.isActive,
+        note: '信用卡負債帳戶',
+        createdAt: accountIndex < 0 ? now : accounts[accountIndex].createdAt,
+        updatedAt: now,
+        kind: FinancialAccountKind.liability,
+        subtype: 'creditCard',
+      );
+      accountIndex < 0
+          ? accounts.add(liability)
+          : accounts[accountIndex] = liability;
+    }
     await _commit(data.copyWith(cards: items, accounts: accounts));
   }
 
   Future<void> deleteCard(String id) async {
+    final card = cardById(id);
+    if (card == null) return;
     if (data.bills.any((item) => item.cardId == id) ||
         data.expenses.any((item) => item.cardId == id) ||
         data.orders.any((item) => item.cardId == id)) {
@@ -1245,12 +1692,23 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final liabilityId = card.liabilityAccountId;
     await _commit(
-      data.copyWith(cards: data.cards.where((item) => item.id != id).toList()),
+      data.copyWith(
+        cards: data.cards.where((item) => item.id != id).toList(),
+        accounts: liabilityId == null
+            ? data.accounts
+            : data.accounts.where((item) => item.id != liabilityId).toList(),
+      ),
     );
   }
 
   Future<void> upsertBill(CardBill bill) async {
+    if (cardById(bill.cardId)?.isCredit != true) {
+      lastSyncError = '金融卡消費直接扣款，不會產生信用卡帳單';
+      notifyListeners();
+      return;
+    }
     final chargeIds = bill.chargeIds.toSet().toList();
     final invalid = chargeIds.where(
       (id) => !canAssignChargeToBill(id, bill.cardId, billId: bill.id),
@@ -1260,82 +1718,249 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (!RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(bill.month)) {
+      lastSyncError = '帳單月份格式必須為 YYYY-MM';
+      notifyListeners();
+      return;
+    }
+    if (data.bills.any(
+      (item) =>
+          item.id != bill.id &&
+          item.cardId == bill.cardId &&
+          item.month == bill.month,
+    )) {
+      lastSyncError = '同一張卡已有此月份帳單';
+      notifyListeners();
+      return;
+    }
+    final statementAmount =
+        bill.statementAmountMinor ??
+        (calculatedBillAmount(bill) + bill.manualAdjustmentMinor)
+            .clamp(0, 1 << 62)
+            .toInt();
+    final paid = paidBillMinor(bill);
+    if (statementAmount < paid) {
+      lastSyncError = '實際帳單總額不得低於已繳金額';
+      notifyListeners();
+      return;
+    }
+    final difference = statementAmount - calculatedBillAmount(bill);
+    if (difference != 0 &&
+        bill.reconciliationReason == CardBillReconciliationReason.none) {
+      lastSyncError = '帳單有差額時請選擇差異原因';
+      notifyListeners();
+      return;
+    }
+    if (difference != 0 &&
+        bill.reconciliationReason ==
+            CardBillReconciliationReason.missingOrOther &&
+        bill.reconciliationNote.trim().isEmpty) {
+      lastSyncError = '選擇漏登／其他時請填寫差異說明';
+      notifyListeners();
+      return;
+    }
     final normalized = CardBill(
       id: bill.id,
       userId: bill.userId,
       cardId: bill.cardId,
       month: bill.month,
       chargeIds: chargeIds,
-      manualAdjustmentMinor: bill.manualAdjustmentMinor,
-      paidMinor: bill.paidMinor,
+      manualAdjustmentMinor: 0,
+      paidMinor: paid,
       dueDate: bill.dueDate,
       autoDebitDate: bill.autoDebitDate,
       note: bill.note,
-      paidAt: bill.paidAt,
+      statementAmountMinor: statementAmount,
+      reconciliationReason: difference == 0
+          ? CardBillReconciliationReason.none
+          : bill.reconciliationReason,
+      reconciliationNote: difference == 0 ? '' : bill.reconciliationNote.trim(),
+      autoDebitState: bill.autoDebitState,
+      paidAt: billPayments(bill.id).firstOrNull?.date ?? bill.paidAt,
       origin: bill.origin,
     );
     final items = [...data.bills];
     final index = items.indexWhere((item) => item.id == bill.id);
     index < 0 ? items.add(normalized) : items[index] = normalized;
-    await _commit(data.copyWith(bills: items));
+    final adjustmentId = 'card-bill-reconciliation:${bill.id}';
+    final transactions = data.transactions
+        .where((item) => item.id != adjustmentId)
+        .toList();
+    final liabilityId = cardById(bill.cardId)?.liabilityAccountId;
+    if (difference != 0 && liabilityId != null) {
+      transactions.add(
+        FinancialTransaction(
+          id: adjustmentId,
+          userId: bill.userId,
+          date: normalized.dueDate,
+          type: FinancialTransactionType.balanceAdjustment,
+          label: '${cardById(bill.cardId)?.name ?? '信用卡'} ${bill.month} 帳單核對差額',
+          amountMinor: difference.abs(),
+          currency: 'TWD',
+          note: normalized.reconciliationNote,
+          relatedEntityType: 'cardBillReconciliation',
+          relatedEntityId: bill.id,
+          impacts: [
+            AccountImpact(
+              accountId: liabilityId,
+              amountMinor: difference,
+              currency: 'TWD',
+            ),
+          ],
+          origin: bill.origin,
+        ),
+      );
+    }
+    lastSyncError = null;
+    await _commit(data.copyWith(bills: items, transactions: transactions));
   }
 
   Future<void> payBill(String id) async {
     final source = data.bills.where((item) => item.id == id).firstOrNull;
     if (source == null) return;
     final card = cardById(source.cardId);
-    final bills = data.bills.map((bill) {
-      if (bill.id != id) return bill;
-      return CardBill(
-        id: bill.id,
-        userId: bill.userId,
-        cardId: bill.cardId,
-        month: bill.month,
-        chargeIds: bill.chargeIds,
-        manualAdjustmentMinor: bill.manualAdjustmentMinor,
-        paidMinor: billAmount(bill),
-        paidAt: DateTime.now(),
-        dueDate: bill.dueDate,
-        autoDebitDate: bill.autoDebitDate,
-        note: bill.note,
-        origin: bill.origin,
-      );
-    }).toList();
-    final amount = billAmount(source);
+    final amount = outstandingBillMinor(source);
+    if (card == null || amount <= 0) return;
+    await upsertBillPayment(
+      billId: id,
+      paymentId: newId(),
+      amountMinor: amount,
+      date: DateTime.now(),
+      accountId: card.debitAccountId,
+      note: '自動扣款確認成功',
+      autoDebitSucceeded: true,
+    );
+  }
+
+  Future<void> upsertBillPayment({
+    required String billId,
+    required String paymentId,
+    required int amountMinor,
+    required DateTime date,
+    required String accountId,
+    String note = '',
+    bool autoDebitSucceeded = false,
+  }) async {
+    final bill = data.bills.where((item) => item.id == billId).firstOrNull;
+    final card = bill == null ? null : cardById(bill.cardId);
     final liabilityId = card?.liabilityAccountId;
-    final payment = card == null || liabilityId == null
-        ? null
-        : FinancialTransaction(
-            id: 'card-payment:$id',
-            userId: source.userId,
-            date: DateTime.now(),
-            type: FinancialTransactionType.cardPayment,
-            label: '${card.name} ${source.month} 帳單',
-            amountMinor: amount,
-            currency: 'TWD',
-            note: source.note,
-            relatedEntityType: 'cardBill',
-            relatedEntityId: id,
-            impacts: [
-              AccountImpact(
-                accountId: card.debitAccountId,
-                amountMinor: -amount,
-                currency: accountById(card.debitAccountId)?.currency ?? 'TWD',
-              ),
-              AccountImpact(
-                accountId: liabilityId,
-                amountMinor: -amount,
-                currency: 'TWD',
-              ),
-            ],
-            origin: source.origin,
-          );
+    if (bill == null || card == null || liabilityId == null) return;
+    final transactionId = paymentId.startsWith('card-payment:')
+        ? paymentId
+        : 'card-payment:$billId:$paymentId';
+    final otherPaid = billPayments(billId)
+        .where((item) => item.id != transactionId)
+        .fold(0, (sum, item) => sum + item.amountMinor);
+    if (amountMinor <= 0 || otherPaid + amountMinor > billAmount(bill)) {
+      lastSyncError = '繳款金額必須大於 0，且不得超過帳單剩餘金額';
+      notifyListeners();
+      return;
+    }
+    final account = accountById(accountId);
+    if (account == null || account.kind != FinancialAccountKind.asset) {
+      lastSyncError = '請選擇有效的扣款帳戶';
+      notifyListeners();
+      return;
+    }
+    final transaction = FinancialTransaction(
+      id: transactionId,
+      userId: bill.userId,
+      date: date,
+      type: FinancialTransactionType.cardPayment,
+      label: '${card.name} ${bill.month} 帳單繳款',
+      amountMinor: amountMinor,
+      currency: account.currency,
+      note: note.trim(),
+      relatedEntityType: 'cardBill',
+      relatedEntityId: billId,
+      impacts: [
+        AccountImpact(
+          accountId: accountId,
+          amountMinor: -amountMinor,
+          currency: account.currency,
+        ),
+        AccountImpact(
+          accountId: liabilityId,
+          amountMinor: -amountMinor,
+          currency: 'TWD',
+        ),
+      ],
+      origin: bill.origin,
+    );
+    final transactions = _replaceTransaction(transactionId, transaction);
+    final payments = transactions.where(
+      (item) =>
+          item.type == FinancialTransactionType.cardPayment &&
+          item.relatedEntityType == 'cardBill' &&
+          item.relatedEntityId == billId,
+    );
+    final total = payments.fold(0, (sum, item) => sum + item.amountMinor);
+    final latest = payments.fold<DateTime?>(
+      null,
+      (value, item) =>
+          value == null || item.date.isAfter(value) ? item.date : value,
+    );
+    final bills = [
+      for (final item in data.bills)
+        if (item.id == billId)
+          item.copyWith(
+            paidMinor: total,
+            paidAt: latest,
+            autoDebitState: autoDebitSucceeded
+                ? CardBillAutoDebitState.succeeded
+                : item.autoDebitState,
+          )
+        else
+          item,
+    ];
+    lastSyncError = null;
+    await _commit(data.copyWith(bills: bills, transactions: transactions));
+  }
+
+  Future<void> deleteBillPayment(String billId, String transactionId) async {
+    final transactions = data.transactions
+        .where((item) => item.id != transactionId)
+        .toList();
+    final remaining = transactions.where(
+      (item) =>
+          item.type == FinancialTransactionType.cardPayment &&
+          item.relatedEntityType == 'cardBill' &&
+          item.relatedEntityId == billId,
+    );
+    final total = remaining.fold(0, (sum, item) => sum + item.amountMinor);
+    final latest = remaining.fold<DateTime?>(
+      null,
+      (value, item) =>
+          value == null || item.date.isAfter(value) ? item.date : value,
+    );
     await _commit(
       data.copyWith(
-        bills: bills,
-        transactions: payment == null
-            ? data.transactions
-            : _replaceTransaction(payment.id, payment),
+        transactions: transactions,
+        bills: [
+          for (final bill in data.bills)
+            if (bill.id == billId)
+              bill.copyWith(
+                paidMinor: total,
+                paidAt: latest,
+                clearPaidAt: latest == null,
+                autoDebitState: CardBillAutoDebitState.pending,
+              )
+            else
+              bill,
+        ],
+      ),
+    );
+  }
+
+  Future<void> markBillAutoDebitFailed(String billId) async {
+    await _commit(
+      data.copyWith(
+        bills: [
+          for (final bill in data.bills)
+            bill.id == billId
+                ? bill.copyWith(autoDebitState: CardBillAutoDebitState.failed)
+                : bill,
+        ],
       ),
     );
   }
@@ -1344,7 +1969,12 @@ class AppStore extends ChangeNotifier {
     data.copyWith(
       bills: data.bills.where((item) => item.id != id).toList(),
       transactions: data.transactions
-          .where((item) => item.id != 'card-payment:$id')
+          .where(
+            (item) =>
+                item.relatedEntityId != id ||
+                (item.relatedEntityType != 'cardBill' &&
+                    item.relatedEntityType != 'cardBillReconciliation'),
+          )
           .toList(),
     ),
   );
@@ -2120,7 +2750,6 @@ class AppStore extends ChangeNotifier {
       data.copyWith(
         settings: data.settings.copyWith(
           defaultCollectionAccountId: bank.id,
-          linePayQrData: 'https://pay.line.me/quick-ledger-demo',
           bankQrData: 'BANK:808;ACCOUNT:012345678901',
           bankAccountInfo: '玉山銀行 808｜帳號 0123-4567-8901',
           fxRates: rates,
@@ -2271,13 +2900,30 @@ class AppStore extends ChangeNotifier {
   ]);
 
   Future<void> exportBills() => _csv.export('快記帳_信用卡帳單.csv', [
-    ['月份', '信用卡', '帳單金額', '已繳金額', '截止日', '自動扣款日'],
+    [
+      '月份',
+      '信用卡',
+      '銀行實際總額',
+      '系統明細合計',
+      '核對差額',
+      '差異原因',
+      '已繳金額',
+      '剩餘待繳',
+      '狀態',
+      '截止日',
+      '自動扣款日',
+    ],
     for (final item in data.bills)
       [
         item.month,
         cardById(item.cardId)?.name ?? '',
         billAmount(item) / 100,
-        item.paidMinor / 100,
+        calculatedBillAmount(item) / 100,
+        reconciliationDifference(item) / 100,
+        item.reconciliationReason.label,
+        paidBillMinor(item) / 100,
+        outstandingBillMinor(item) / 100,
+        billStatus(item).label,
         item.dueDate.toIso8601String(),
         item.autoDebitDate.toIso8601String(),
       ],
@@ -2370,7 +3016,10 @@ class AppStore extends ChangeNotifier {
   }
 
   FinancialTransaction _orderFinancialTransaction(GroupOrder order) {
-    final liabilityId = cardById(order.cardId)?.liabilityAccountId;
+    final card = cardById(order.cardId);
+    final liabilityId = card?.isCredit == true
+        ? card?.liabilityAccountId
+        : null;
     return FinancialTransaction(
       id: 'order-charge:${order.id}',
       userId: order.userId,

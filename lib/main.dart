@@ -14,6 +14,7 @@ import 'data/local_repositories.dart';
 import 'data/local_ocr_import_repository.dart';
 import 'data/oauth_navigation.dart';
 import 'data/supabase_finance_repository.dart';
+import 'data/supabase_market_data_repository.dart';
 import 'data/supabase_public_collection_repository.dart';
 import 'presentation/app_shell.dart';
 import 'presentation/pages/accounts_page.dart';
@@ -22,7 +23,6 @@ import 'presentation/pages/collection_page.dart';
 import 'presentation/pages/dashboard_page.dart';
 import 'presentation/pages/expenses_page.dart';
 import 'presentation/pages/investments_page.dart';
-import 'presentation/pages/line_import_review_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/pages/orders_page.dart';
 import 'presentation/pages/reports_page.dart';
@@ -107,6 +107,9 @@ Future<void> main() async {
     publicCollectionRepository: supabaseConfigured
         ? SupabasePublicCollectionRepository(Supabase.instance.client)
         : null,
+    marketDataRepository: supabaseConfigured
+        ? SupabaseMarketDataRepository(Supabase.instance.client, preferences)
+        : null,
   );
   await store.initialize();
   runApp(
@@ -170,11 +173,7 @@ class _QuickLedgerAppState extends State<QuickLedgerApp> {
         builder: (context, state) =>
             CollectionPage(token: state.pathParameters['token']!),
       ),
-      GoRoute(
-        path: '/line-import/:token',
-        builder: (context, state) =>
-            LineImportReviewPage(token: state.pathParameters['token']!),
-      ),
+      GoRoute(path: '/line-import/:token', redirect: (_, __) => '/orders'),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [

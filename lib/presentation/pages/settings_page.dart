@@ -7,11 +7,30 @@ import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../widgets/common.dart';
 
-class SettingsPage extends ConsumerWidget {
+String _syncSettingsText(AppStore store) {
+  if (store.isOffline) return '目前離線，資料僅供查看';
+  if (store.hasConflict) return '雲端資料有更新，請重新載入';
+  if (store.isSaving) return '正在同步資料';
+  final updated = store.cloudUpdatedAt?.toLocal();
+  if (updated == null) return '已連線至雲端';
+  return '最後同步 ${dateText(updated)} '
+      '${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}';
+}
+
+enum _SettingsTab { preferences, categories, sync, data }
+
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  _SettingsTab _tab = _SettingsTab.preferences;
+
+  @override
+  Widget build(BuildContext context) {
     final store = ref.watch(appStoreProvider);
     final settings = store.data.settings;
     final latestRatesByPair = <String, FxRate>{};
@@ -27,252 +46,276 @@ class SettingsPage extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const PageHeader(title: '設定', subtitle: '預設值、匯率、收款資訊、提醒與本機資料管理'),
+        const PageHeader(title: '設定', subtitle: '記帳偏好、分類、同步與資料管理'),
+        const SizedBox(height: 14),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<_SettingsTab>(
+            segments: const [
+              ButtonSegment(
+                value: _SettingsTab.preferences,
+                label: Text('記帳偏好'),
+              ),
+              ButtonSegment(value: _SettingsTab.categories, label: Text('分類')),
+              ButtonSegment(value: _SettingsTab.sync, label: Text('通知與同步')),
+              ButtonSegment(value: _SettingsTab.data, label: Text('資料管理')),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (value) => setState(() => _tab = value.single),
+          ),
+        ),
         const SizedBox(height: 22),
-        _Section(
-          title: '一般偏好',
-          icon: Icons.tune,
-          children: [
-            ListTile(
-              title: const Text('預設幣別'),
-              subtitle: Text(settings.defaultCurrency),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showPreferences(context, ref),
-            ),
-            ListTile(
-              title: const Text('預設付款方式'),
-              subtitle: Text(settings.defaultPaymentMethod.label),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showPreferences(context, ref),
-            ),
-            ListTile(
-              title: const Text('預設消費分類'),
-              subtitle: Text(settings.defaultCategory),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showPreferences(context, ref),
-            ),
-            SwitchListTile(
-              title: const Text('遮罩財務金額'),
-              subtitle: const Text('在首頁與清單隱藏敏感金額'),
-              value: settings.maskBalances,
-              onChanged: (value) =>
-                  store.updateSettings(settings.copyWith(maskBalances: value)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const _Section(
-          title: '記帳分類',
-          icon: Icons.category_outlined,
-          children: [_CategoryManager()],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          title: '匯率',
-          icon: Icons.currency_exchange,
-          trailing: TextButton.icon(
-            onPressed: () => _showFxRate(context, ref),
-            icon: const Icon(Icons.add),
-            label: const Text('新增／更新'),
-          ),
-          children: [
-            if (latestRates.isEmpty)
-              const ListTile(
-                title: Text('尚未設定外幣匯率'),
-                subtitle: Text('沒有匯率的外幣不會併入首頁總額'),
-              )
-            else
-              for (final rate in latestRates)
-                ListTile(
-                  leading: CircleAvatar(child: Text(rate.from)),
-                  title: Text('1 ${rate.from} = ${rate.rate} ${rate.to}'),
-                  subtitle: Text('更新 ${dateText(rate.updatedAt)}'),
-                  trailing: IconButton(
-                    tooltip: '刪除匯率',
-                    onPressed: () => store.updateSettings(
-                      settings.copyWith(
-                        fxRates: settings.fxRates
-                            .where(
-                              (item) =>
-                                  item.from != rate.from || item.to != rate.to,
-                            )
-                            .toList(),
-                      ),
-                    ),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
+        if (_tab == _SettingsTab.preferences)
+          _Section(
+            title: '一般偏好',
+            icon: Icons.tune,
+            children: [
+              ListTile(
+                title: const Text('預設幣別'),
+                subtitle: Text(settings.defaultCurrency),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showPreferences(context, ref),
+              ),
+              ListTile(
+                title: const Text('預設付款方式'),
+                subtitle: Text(settings.defaultPaymentMethod.label),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showPreferences(context, ref),
+              ),
+              ListTile(
+                title: const Text('預設消費分類'),
+                subtitle: Text(settings.defaultCategory),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showPreferences(context, ref),
+              ),
+              SwitchListTile(
+                title: const Text('遮罩財務金額'),
+                subtitle: const Text('在首頁與清單隱藏敏感金額'),
+                value: settings.maskBalances,
+                onChanged: (value) => store.updateSettings(
+                  settings.copyWith(maskBalances: value),
                 ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          title: '收款資訊',
-          icon: Icons.qr_code_2,
-          trailing: TextButton(
-            onPressed: () => _showCollectionSettings(context, ref),
-            child: const Text('編輯'),
+              ),
+            ],
           ),
-          children: [
-            ListTile(
-              title: const Text('預設銀行轉入帳戶'),
-              subtitle: Text(
-                accountName(store, store.defaultBankTransferAccountId),
-              ),
-            ),
-            ListTile(
-              title: const Text('銀行帳號資訊'),
-              subtitle: Text(
-                settings.bankAccountInfo.isEmpty
-                    ? '尚未設定'
-                    : settings.bankAccountInfo,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          title: '提醒',
-          icon: Icons.notifications_none,
-          children: [
-            SwitchListTile(
-              title: const Text('帳單扣款提醒'),
-              subtitle: const Text('信用卡扣款日與固定支出餘額不足提醒'),
-              value: settings.remindersEnabled,
-              onChanged: (value) => store.updateSettings(
-                settings.copyWith(remindersEnabled: value),
-              ),
-            ),
-            SwitchListTile(
-              title: const Text('LINE 提醒'),
-              subtitle: const Text('預留設定；本機原型不會發送 LINE 訊息'),
-              value: settings.lineRemindersEnabled,
-              onChanged: (value) => store.updateSettings(
-                settings.copyWith(lineRemindersEnabled: value),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          title: 'CSV 匯出',
-          icon: Icons.download_outlined,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: store.exportAccounts,
-                    icon: const Icon(Icons.account_balance_wallet_outlined),
-                    label: const Text('帳戶'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: store.exportExpenses,
-                    icon: const Icon(Icons.receipt_long_outlined),
-                    label: const Text('支出'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: store.exportIncomes,
-                    icon: const Icon(Icons.savings_outlined),
-                    label: const Text('收入'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: store.exportInvestments,
-                    icon: const Icon(Icons.trending_up),
-                    label: const Text('投資'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: store.exportBills,
-                    icon: const Icon(Icons.credit_card),
-                    label: const Text('信用卡帳單'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: store.exportOrders,
-                    icon: const Icon(Icons.groups_outlined),
-                    label: const Text('代訂收款'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          title: '原型資料',
-          icon: Icons.science_outlined,
-          children: [
-            ListTile(
-              title: const Text('產生完整測試資料'),
-              subtitle: const Text('重建帳戶、消費、投資、帳單與代訂示範情境'),
-              trailing: FilledButton.tonal(
-                onPressed: () async {
-                  await store.generateDemoData();
-                  if (context.mounted) showSaved(context, '測試資料已產生');
-                },
-                child: const Text('產生'),
-              ),
-            ),
-            ListTile(
-              title: const Text('清除測試資料'),
-              subtitle: const Text('只移除 demo 標記資料，保留自行建立的內容'),
-              trailing: OutlinedButton(
-                onPressed: () async {
-                  final confirmed =
-                      await showDialog<bool>(
-                        context: context,
-                        builder: (dialogContext) => AlertDialog(
-                          title: const Text('清除測試資料？'),
-                          content: const Text('自行建立的資料與設定不會被刪除。'),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, false),
-                              child: const Text('取消'),
-                            ),
-                            FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, true),
-                              child: const Text('清除'),
-                            ),
-                          ],
-                        ),
-                      ) ??
-                      false;
-                  if (confirmed) {
-                    await store.clearDemoData();
-                    if (context.mounted) showSaved(context, '測試資料已清除');
-                  }
-                },
-                child: const Text('清除'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: Color(0xFFDFF4EA),
-              child: Icon(Icons.chat_bubble_outline, color: Color(0xFF0E7C66)),
-            ),
-            title: const Text('Demo LINE 使用者'),
-            subtitle: const Text('所有資料只保存在這個瀏覽器'),
+        if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.categories)
+          const _Section(
+            title: '記帳分類',
+            icon: Icons.category_outlined,
+            children: [_CategoryManager()],
+          ),
+        if (_tab == _SettingsTab.preferences || _tab == _SettingsTab.categories)
+          const SizedBox(height: 16),
+        if (_tab == _SettingsTab.preferences)
+          _Section(
+            title: '匯率',
+            icon: Icons.currency_exchange,
             trailing: TextButton.icon(
-              onPressed: store.signOut,
-              icon: const Icon(Icons.logout),
-              label: const Text('登出'),
+              onPressed: () => _showFxRate(context, ref),
+              icon: const Icon(Icons.add),
+              label: const Text('新增／更新'),
+            ),
+            children: [
+              if (latestRates.isEmpty)
+                const ListTile(
+                  title: Text('尚未設定外幣匯率'),
+                  subtitle: Text('沒有匯率的外幣不會併入首頁總額'),
+                )
+              else
+                for (final rate in latestRates)
+                  ListTile(
+                    leading: CircleAvatar(child: Text(rate.from)),
+                    title: Text('1 ${rate.from} = ${rate.rate} ${rate.to}'),
+                    subtitle: Text('更新 ${dateText(rate.updatedAt)}'),
+                    trailing: IconButton(
+                      tooltip: '刪除匯率',
+                      onPressed: () => store.updateSettings(
+                        settings.copyWith(
+                          fxRates: settings.fxRates
+                              .where(
+                                (item) =>
+                                    item.from != rate.from ||
+                                    item.to != rate.to,
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ),
+            ],
+          ),
+        if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.preferences)
+          _Section(
+            title: '收款資訊',
+            icon: Icons.qr_code_2,
+            trailing: TextButton(
+              onPressed: () => _showCollectionSettings(context, ref),
+              child: const Text('編輯'),
+            ),
+            children: [
+              ListTile(
+                title: const Text('預設銀行轉入帳戶'),
+                subtitle: Text(
+                  accountName(store, store.defaultBankTransferAccountId),
+                ),
+              ),
+              ListTile(
+                title: const Text('銀行帳號資訊'),
+                subtitle: Text(
+                  settings.bankAccountInfo.isEmpty
+                      ? '尚未設定'
+                      : settings.bankAccountInfo,
+                ),
+              ),
+            ],
+          ),
+        if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.sync)
+          _Section(
+            title: '提醒',
+            icon: Icons.notifications_none,
+            children: [
+              SwitchListTile(
+                title: const Text('帳單扣款提醒'),
+                subtitle: const Text('信用卡扣款日與固定支出餘額不足提醒'),
+                value: settings.remindersEnabled,
+                onChanged: (value) => store.updateSettings(
+                  settings.copyWith(remindersEnabled: value),
+                ),
+              ),
+            ],
+          ),
+        if (_tab == _SettingsTab.sync) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.data)
+          _Section(
+            title: 'CSV 匯出',
+            icon: Icons.download_outlined,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: store.exportAccounts,
+                      icon: const Icon(Icons.account_balance_wallet_outlined),
+                      label: const Text('帳戶'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportExpenses,
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label: const Text('支出'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportIncomes,
+                      icon: const Icon(Icons.savings_outlined),
+                      label: const Text('收入'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportInvestments,
+                      icon: const Icon(Icons.trending_up),
+                      label: const Text('投資'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportBills,
+                      icon: const Icon(Icons.credit_card),
+                      label: const Text('信用卡帳單'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportOrders,
+                      icon: const Icon(Icons.groups_outlined),
+                      label: const Text('代訂收款'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        if (_tab == _SettingsTab.data) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.data)
+          _Section(
+            title: '原型資料',
+            icon: Icons.science_outlined,
+            children: [
+              ListTile(
+                title: const Text('產生完整測試資料'),
+                subtitle: const Text('重建帳戶、消費、投資、帳單與代訂示範情境'),
+                trailing: FilledButton.tonal(
+                  onPressed: () async {
+                    await store.generateDemoData();
+                    if (context.mounted) showSaved(context, '測試資料已產生');
+                  },
+                  child: const Text('產生'),
+                ),
+              ),
+              ListTile(
+                title: const Text('清除測試資料'),
+                subtitle: const Text('只移除 demo 標記資料，保留自行建立的內容'),
+                trailing: OutlinedButton(
+                  onPressed: () async {
+                    final confirmed =
+                        await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('清除測試資料？'),
+                            content: const Text('自行建立的資料與設定不會被刪除。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('取消'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('清除'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
+                    if (confirmed) {
+                      await store.clearDemoData();
+                      if (context.mounted) showSaved(context, '測試資料已清除');
+                    }
+                  },
+                  child: const Text('清除'),
+                ),
+              ),
+            ],
+          ),
+        if (_tab == _SettingsTab.data) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.data)
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFDFF4EA),
+                child: Icon(
+                  Icons.chat_bubble_outline,
+                  color: Color(0xFF0E7C66),
+                ),
+              ),
+              title: Text(store.userDisplayName ?? 'LINE 帳號已登入'),
+              subtitle: Text(_syncSettingsText(store)),
+              trailing: TextButton.icon(
+                onPressed: store.signOut,
+                icon: const Icon(Icons.logout),
+                label: const Text('登出'),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 24),
-        const Center(
-          child: Text(
-            '快記帳互動原型 v0.1.0｜尚未連線 Supabase',
-            style: TextStyle(color: Colors.black45, fontSize: 12),
+        if (_tab == _SettingsTab.data) const SizedBox(height: 24),
+        if (_tab == _SettingsTab.data)
+          const Center(
+            child: Text(
+              '快記帳｜個人財務管理',
+              style: TextStyle(color: Colors.black45, fontSize: 12),
+            ),
           ),
-        ),
       ],
     );
   }

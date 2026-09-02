@@ -259,7 +259,7 @@ AppData rewriteFinanceUserIds(AppData data, String userId) {
 }
 
 AppData mergeFinanceData(AppData cloud, AppData local) => AppData(
-  schemaVersion: 7,
+  schemaVersion: 9,
   settings: _mergeSettings(cloud.settings, local.settings),
   categories: _cloudFirst(
     cloud.categories,
@@ -332,11 +332,9 @@ UserSettings _mergeSettings(UserSettings cloud, UserSettings local) {
     defaultCategory: cloud.defaultCategory,
     defaultExpenseCategoryId: cloud.defaultExpenseCategoryId,
     defaultCollectionAccountId: cloud.defaultCollectionAccountId,
-    linePayQrData: cloud.linePayQrData,
     bankQrData: cloud.bankQrData,
     bankAccountInfo: cloud.bankAccountInfo,
     remindersEnabled: cloud.remindersEnabled,
-    lineRemindersEnabled: cloud.lineRemindersEnabled,
     maskBalances: cloud.maskBalances,
     fxRates: [
       ...cloud.fxRates,

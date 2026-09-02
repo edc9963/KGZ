@@ -36,23 +36,19 @@ if (validateOnly) {
 }
 if (!token) throw new Error('請先設定 LINE_CHANNEL_ACCESS_TOKEN')
 
-const cellWidth = [834, 833, 833]
-const x = [0, 834, 1667]
 const actions = [
   postback('menu:summary', '財務總覽'),
   postback('expense:start', '快速支出'),
   postback('receivables:list', '待收款'),
-  postback('menu:help', '使用說明'),
-  postback('ocr:disabled', '上傳訂單'),
   appLoginUrl
     ? { type: 'uri', label: '開啟快記帳', uri: appLoginUrl }
     : postback('web:disabled', '開啟快記帳'),
 ]
 const areas = actions.map((action, index) => ({
   bounds: {
-    x: x[index % 3],
-    y: index < 3 ? 0 : 843,
-    width: cellWidth[index % 3],
+    x: (index % 2) * 1250,
+    y: index < 2 ? 0 : 843,
+    width: 1250,
     height: 843,
   },
   action,

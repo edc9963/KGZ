@@ -22,6 +22,9 @@ class MockAuthRepository implements AuthRepository {
       _preferences.getBool(_sessionKey) == true ? demoUserId : null;
 
   @override
+  String? get currentUserDisplayName => isSignedIn ? 'LINE 使用者' : null;
+
+  @override
   bool get isSignedIn => currentUserId != null;
 
   @override
@@ -53,6 +56,16 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   String? get currentUserId => _client.auth.currentUser?.id;
+
+  @override
+  String? get currentUserDisplayName {
+    final metadata = _client.auth.currentUser?.userMetadata;
+    final value =
+        metadata?['name'] ??
+        metadata?['full_name'] ??
+        metadata?['display_name'];
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
 
   @override
   bool get isSignedIn => _client.auth.currentSession != null;
@@ -108,6 +121,8 @@ class UnconfiguredAuthRepository implements AuthRepository {
   const UnconfiguredAuthRepository();
   @override
   String? get currentUserId => null;
+  @override
+  String? get currentUserDisplayName => null;
   @override
   bool get isSignedIn => false;
   @override
@@ -242,10 +257,11 @@ class LocalFinanceRepository implements FinanceRepository {
 
 Json migrateLocalFinanceJson(Json source) {
   final version = source['schemaVersion'] as int? ?? 0;
-  if (version >= 7) return source;
+  if (version >= 9) return source;
+  if (version == 8) return _migrateBillsToV9(source);
   final normalized = <String, dynamic>{
     ...source,
-    'schemaVersion': 7,
+    'schemaVersion': 9,
     'settings': source['settings'] ?? <String, dynamic>{},
     for (final key in const [
       'accounts',
@@ -283,6 +299,15 @@ Json migrateLocalFinanceJson(Json source) {
               (((raw['paidMinor'] as int? ?? 0) > 0)
                   ? raw['autoDebitDate']
                   : null),
+          'statementAmountMinor': _legacyBillAmount(raw, normalized),
+          'reconciliationReason':
+              (raw['manualAdjustmentMinor'] as int? ?? 0) == 0
+              ? 'none'
+              : 'legacyAdjustment',
+          'reconciliationNote': (raw['manualAdjustmentMinor'] as int? ?? 0) == 0
+              ? ''
+              : (raw['note'] as String? ?? ''),
+          'autoDebitState': 'pending',
         },
   ];
   if ((normalized['investmentPriceHistory'] as List).isEmpty) {
@@ -417,6 +442,10 @@ Json migrateLocalFinanceJson(Json source) {
   );
   for (final raw in normalized['cards'] as List) {
     if (raw is! Map) continue;
+    if ((raw['cardType'] as String? ?? 'credit') != 'credit') {
+      raw['liabilityAccountId'] = null;
+      continue;
+    }
     final liabilityId =
         raw['liabilityAccountId'] as String? ?? 'card-liability-${raw['id']}';
     raw['liabilityAccountId'] = liabilityId;
@@ -431,7 +460,7 @@ Json migrateLocalFinanceJson(Json source) {
 
   final cardLiabilityById = <String, String>{
     for (final raw in normalized['cards'] as List)
-      if (raw is Map)
+      if (raw is Map && (raw['cardType'] as String? ?? 'credit') == 'credit')
         raw['id'] as String:
             raw['liabilityAccountId'] as String? ??
             'card-liability-${raw['id']}',
@@ -679,6 +708,55 @@ Json migrateLocalFinanceJson(Json source) {
       .toList();
   normalized['transactions'] = transactions;
   return normalized;
+}
+
+Json _migrateBillsToV9(Json source) {
+  final normalized = <String, dynamic>{...source, 'schemaVersion': 9};
+  normalized['bills'] = [
+    for (final raw in source['bills'] as List? ?? const [])
+      if (raw is Map)
+        {
+          ...Map<String, dynamic>.from(raw),
+          'statementAmountMinor':
+              raw['statementAmountMinor'] ?? _legacyBillAmount(raw, source),
+          'reconciliationReason':
+              raw['reconciliationReason'] ??
+              ((raw['manualAdjustmentMinor'] as int? ?? 0) == 0
+                  ? 'none'
+                  : 'legacyAdjustment'),
+          'reconciliationNote':
+              raw['reconciliationNote'] ??
+              ((raw['manualAdjustmentMinor'] as int? ?? 0) == 0
+                  ? ''
+                  : (raw['note'] as String? ?? '')),
+          'autoDebitState': raw['autoDebitState'] ?? 'pending',
+        },
+  ];
+  return normalized;
+}
+
+int _legacyBillAmount(Map rawBill, Map source) {
+  var total = rawBill['manualAdjustmentMinor'] as int? ?? 0;
+  final chargeIds = (rawBill['chargeIds'] as List? ?? const [])
+      .whereType<String>();
+  final expenses = {
+    for (final raw in source['expenses'] as List? ?? const [])
+      if (raw is Map && raw['id'] is String)
+        raw['id'] as String: raw['amountMinor'] as int? ?? 0,
+  };
+  final orders = {
+    for (final raw in source['orders'] as List? ?? const [])
+      if (raw is Map && raw['id'] is String)
+        raw['id'] as String: raw['totalMinor'] as int? ?? 0,
+  };
+  for (final id in chargeIds) {
+    if (id.startsWith('expense:')) {
+      total += expenses[id.substring('expense:'.length)] ?? 0;
+    } else if (id.startsWith('order:')) {
+      total += orders[id.substring('order:'.length)] ?? 0;
+    }
+  }
+  return total < 0 ? 0 : total;
 }
 
 String _firstUserId(Json data) {

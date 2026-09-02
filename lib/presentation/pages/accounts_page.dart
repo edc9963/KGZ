@@ -20,6 +20,7 @@ class AccountsPage extends ConsumerWidget {
     final accounts = store.data.accounts
         .where((item) => item.kind == FinancialAccountKind.asset)
         .toList();
+    final canTransfer = store.activeAssetAccounts.length >= 2;
     final mask = store.data.settings.maskBalances;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -27,10 +28,23 @@ class AccountsPage extends ConsumerWidget {
         PageHeader(
           title: '帳戶管理',
           subtitle: '銀行、現金、外幣與電子支付帳戶集中管理',
-          action: FilledButton.icon(
-            onPressed: () => _showAccountDialog(context, ref),
-            icon: const Icon(Icons.add),
-            label: const Text('新增帳戶'),
+          action: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: canTransfer
+                    ? () => _showTransferDialog(context, ref)
+                    : null,
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('轉帳'),
+              ),
+              FilledButton.icon(
+                onPressed: () => _showAccountDialog(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('新增帳戶'),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 24),
@@ -44,11 +58,21 @@ class AccountsPage extends ConsumerWidget {
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.totalAssetsMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.account_balance_wallet_outlined,
             ),
             SummaryCard(
               label: '信用卡負債',
               value: moneyText(
+                store.pendingCardDefaultMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
+              compactValue: compactMoneyText(
                 store.pendingCardDefaultMinor,
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
@@ -63,11 +87,21 @@ class AccountsPage extends ConsumerWidget {
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
               ),
+              compactValue: compactMoneyText(
+                store.receivablesDefaultMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
               icon: Icons.request_quote_outlined,
             ),
             SummaryCard(
               label: '淨資產',
               value: moneyText(
+                store.netWorthMinor,
+                currency: store.data.settings.defaultCurrency,
+                mask: mask,
+              ),
+              compactValue: compactMoneyText(
                 store.netWorthMinor,
                 currency: store.data.settings.defaultCurrency,
                 mask: mask,
@@ -104,6 +138,22 @@ class AccountsPage extends ConsumerWidget {
                               _showAccountDialog(context, ref, accounts[index]),
                     onAdjust: () =>
                         _showAdjustmentDialog(context, ref, accounts[index]),
+                    onTransfer: canTransfer && accounts[index].isActive
+                        ? () => _showTransferDialog(
+                            context,
+                            ref,
+                            fromAccount: accounts[index],
+                          )
+                        : null,
+                    onMerge:
+                        accounts[index].id == systemCashAccountId ||
+                            !accounts.any(
+                              (item) =>
+                                  item.id != accounts[index].id &&
+                                  item.currency == accounts[index].currency,
+                            )
+                        ? null
+                        : () => _showMergeDialog(context, ref, accounts[index]),
                     onDelete: accounts[index].id == systemCashAccountId
                         ? null
                         : () async {
@@ -311,6 +361,13 @@ class AccountsPage extends ConsumerWidget {
         if (item != null) {
           await _showAdjustmentDialog(context, ref, account, item);
         }
+      case 'transfer':
+        final item = store.data.transactions
+            .where((item) => item.id == entry.sourceId)
+            .firstOrNull;
+        if (item != null) {
+          await _showTransferDialog(context, ref, existing: item);
+        }
       case 'expense':
         await _pushEditor(
           context,
@@ -367,6 +424,7 @@ class AccountsPage extends ConsumerWidget {
     }
     final label = switch (entry.sourceType) {
       'balanceAdjustment' => '餘額調整',
+      'transfer' => '轉帳',
       'expense' => '消費',
       'income' => '收入',
       'investment' => '投資交易',
@@ -377,6 +435,8 @@ class AccountsPage extends ConsumerWidget {
     switch (entry.sourceType) {
       case 'balanceAdjustment':
         await store.deleteBalanceAdjustment(entry.sourceId);
+      case 'transfer':
+        await store.deleteAccountTransfer(entry.sourceId);
       case 'expense':
         await store.deleteExpense(entry.sourceId);
       case 'income':
@@ -415,6 +475,7 @@ class AccountsPage extends ConsumerWidget {
   String _sourceLabel(String type) => switch (type) {
     'openingBalance' => '期初餘額',
     'balanceAdjustment' => '餘額調整',
+    'transfer' => '帳戶轉帳',
     'expense' => '消費扣帳',
     'income' => '收入入帳',
     'investment' => '投資交易',
@@ -585,6 +646,7 @@ class AccountsPage extends ConsumerWidget {
     );
     final reason = TextEditingController(text: existing?.reason ?? '餘額盤點調整');
     var date = existing?.date ?? DateTime.now();
+    var mode = 'difference';
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -599,6 +661,24 @@ class AccountsPage extends ConsumerWidget {
                   '目前餘額：${moneyText(store.accountBalance(account.id), currency: account.currency)}',
                 ),
                 const SizedBox(height: 16),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'difference',
+                      label: Text('增加／減少'),
+                      icon: Icon(Icons.exposure),
+                    ),
+                    ButtonSegment(
+                      value: 'total',
+                      label: Text('直接改總額'),
+                      icon: Icon(Icons.account_balance_wallet_outlined),
+                    ),
+                  ],
+                  selected: {mode},
+                  onSelectionChanged: (value) =>
+                      setState(() => mode = value.single),
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: amount,
                   autofocus: true,
@@ -606,9 +686,11 @@ class AccountsPage extends ConsumerWidget {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: '調整金額',
-                    helperText: '增加填正數，減少填負數',
+                  decoration: InputDecoration(
+                    labelText: mode == 'difference' ? '調整金額' : '調整後總額',
+                    helperText: mode == 'difference'
+                        ? '增加填正數，減少填負數'
+                        : '輸入希望這個帳戶顯示的總餘額',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -643,13 +725,29 @@ class AccountsPage extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () async {
-              if (parseMoney(amount.text) == 0) return;
+              final parsed = double.tryParse(
+                amount.text.trim().replaceAll(',', ''),
+              );
+              if (parsed == null) {
+                ScaffoldMessenger.of(
+                  dialogContext,
+                ).showSnackBar(const SnackBar(content: Text('請輸入正確金額')));
+                return;
+              }
+              final entered = (parsed * 100).round();
+              final adjustment = mode == 'total'
+                  ? entered - store.accountBalance(account.id)
+                  : entered;
+              if (adjustment == 0) {
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                return;
+              }
               await store.upsertBalanceAdjustment(
                 BalanceAdjustment(
                   id: existing?.id ?? store.newId(),
                   userId: store.userId,
                   accountId: account.id,
-                  amountMinor: parseMoney(amount.text),
+                  amountMinor: adjustment,
                   date: date,
                   reason: reason.text.trim(),
                   origin: existing?.origin ?? DataOrigin.user,
@@ -663,6 +761,354 @@ class AccountsPage extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _showMergeDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Account source,
+  ) async {
+    final store = ref.read(appStoreProvider);
+    final targets = store.data.accounts
+        .where(
+          (item) =>
+              item.kind == FinancialAccountKind.asset &&
+              item.id != source.id &&
+              item.currency == source.currency,
+        )
+        .toList();
+    if (targets.isEmpty) return;
+    var targetId = targets.first.id;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('合併 ${source.name}'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('選擇要保留的帳戶：'),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: targetId,
+                  decoration: const InputDecoration(labelText: '保留帳戶'),
+                  items: [
+                    for (final account in targets)
+                      DropdownMenuItem(
+                        value: account.id,
+                        child: Text(
+                          '${account.name}・${account.institution}・${account.currency}',
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => targetId = value ?? targetId),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '「${source.name}」的餘額與所有帳務紀錄會移到保留帳戶，'
+                  '之後刪除這筆重複帳戶。此動作無法復原。',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await store.mergeAccounts(
+                  sourceAccountId: source.id,
+                  targetAccountId: targetId,
+                );
+                if (dialogContext.mounted && store.lastSyncError == null) {
+                  Navigator.pop(dialogContext);
+                }
+              },
+              child: const Text('確認合併'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTransferDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    Account? fromAccount,
+    FinancialTransaction? existing,
+  }) async {
+    final store = ref.read(appStoreProvider);
+    final accounts = store.activeAssetAccounts;
+    if (accounts.length < 2) return;
+    final existingFromId = existing?.impacts
+        .where((impact) => impact.amountMinor < 0)
+        .firstOrNull
+        ?.accountId;
+    final existingToId = existing?.impacts
+        .where((impact) => impact.amountMinor > 0)
+        .firstOrNull
+        ?.accountId;
+    var fromId = existingFromId ?? fromAccount?.id ?? accounts.first.id;
+    var toId =
+        existingToId ??
+        accounts
+            .where(
+              (item) =>
+                  item.id != fromId &&
+                  item.currency == store.accountById(fromId)?.currency,
+            )
+            .firstOrNull
+            ?.id;
+    final amount = TextEditingController(
+      text: existing == null ? '' : (existing.amountMinor / 100).toString(),
+    );
+    final note = TextEditingController(text: existing?.note);
+    var date = existing?.date ?? DateTime.now();
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          final from = store.accountById(fromId)!;
+          final compatibleTargets = accounts
+              .where(
+                (item) => item.id != fromId && item.currency == from.currency,
+              )
+              .toList();
+          if (!compatibleTargets.any((item) => item.id == toId)) {
+            toId = compatibleTargets.firstOrNull?.id;
+          }
+          final to = toId == null ? null : store.accountById(toId!);
+          final parsedAmount = parseMoney(amount.text);
+          final fromBalance = store.accountBalance(from.id);
+          return AlertDialog(
+            title: Text(existing == null ? '帳戶間轉帳' : '編輯轉帳'),
+            content: SizedBox(
+              width: 520,
+              child: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('transfer-from-$fromId'),
+                        initialValue: fromId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '從哪個帳戶轉出',
+                          prefixIcon: Icon(Icons.north_east),
+                        ),
+                        items: [
+                          for (final account in accounts)
+                            DropdownMenuItem(
+                              value: account.id,
+                              child: Text(
+                                '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) => setState(() {
+                          fromId = value!;
+                          toId = null;
+                        }),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Center(
+                          child: IconButton.filledTonal(
+                            tooltip: '交換轉出與轉入帳戶',
+                            onPressed: to == null
+                                ? null
+                                : () => setState(() {
+                                    final previousFrom = fromId;
+                                    fromId = to.id;
+                                    toId = previousFrom;
+                                  }),
+                            icon: const Icon(Icons.swap_vert),
+                          ),
+                        ),
+                      ),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('transfer-to-$fromId-$toId'),
+                        initialValue: toId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '轉入哪個帳戶',
+                          prefixIcon: Icon(Icons.south_west),
+                        ),
+                        items: [
+                          for (final account in compatibleTargets)
+                            DropdownMenuItem(
+                              value: account.id,
+                              child: Text(
+                                '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        validator: (value) =>
+                            value == null ? '沒有可用的同幣別轉入帳戶' : null,
+                        onChanged: (value) => setState(() => toId = value),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: amount,
+                        autofocus: true,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                        decoration: InputDecoration(
+                          labelText: '轉帳金額',
+                          prefixText: '${from.currency} ',
+                        ),
+                        validator: (value) =>
+                            parseMoney(value ?? '') <= 0 ? '請輸入大於 0 的金額' : null,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _TransferBalancePreview(
+                                label: '轉出後',
+                                account: from,
+                                balance: fromBalance - parsedAmount,
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward, size: 20),
+                            Expanded(
+                              child: _TransferBalancePreview(
+                                label: '轉入後',
+                                account: to,
+                                balance: to == null
+                                    ? 0
+                                    : store.accountBalance(to.id) +
+                                          parsedAmount,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: date,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                          );
+                          if (picked != null) setState(() => date = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: '轉帳日期',
+                            prefixIcon: Icon(Icons.calendar_today_outlined),
+                          ),
+                          child: Text(dateText(date)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: note,
+                        decoration: const InputDecoration(labelText: '備註（選填）'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton.icon(
+                onPressed: to == null
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        await store.upsertAccountTransfer(
+                          id: existing?.id ?? store.newId(),
+                          fromAccountId: fromId,
+                          toAccountId: toId!,
+                          amountMinor: parseMoney(amount.text),
+                          date: date,
+                          note: note.text,
+                        );
+                        if (dialogContext.mounted &&
+                            store.lastSyncError == null) {
+                          Navigator.pop(dialogContext);
+                        }
+                      },
+                icon: const Icon(Icons.swap_horiz),
+                label: Text(existing == null ? '確認轉帳' : '儲存轉帳'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    amount.dispose();
+    note.dispose();
+  }
+}
+
+class _TransferBalancePreview extends StatelessWidget {
+  const _TransferBalancePreview({
+    required this.label,
+    required this.account,
+    required this.balance,
+  });
+
+  final String label;
+  final Account? account;
+  final int balance;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.labelMedium),
+      const SizedBox(height: 3),
+      Text(
+        account == null ? '—' : moneyText(balance, currency: account!.currency),
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: balance < 0 ? Theme.of(context).colorScheme.error : null,
+        ),
+      ),
+      Text(
+        account?.name ?? '請選擇帳戶',
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ],
+  );
 }
 
 class _AccountRow extends StatelessWidget {
@@ -673,6 +1119,8 @@ class _AccountRow extends StatelessWidget {
     required this.onTap,
     required this.onEdit,
     required this.onAdjust,
+    required this.onTransfer,
+    required this.onMerge,
     required this.onDelete,
   });
 
@@ -682,6 +1130,8 @@ class _AccountRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onEdit;
   final VoidCallback onAdjust;
+  final VoidCallback? onTransfer;
+  final VoidCallback? onMerge;
   final VoidCallback? onDelete;
 
   @override
@@ -734,12 +1184,18 @@ class _AccountRow extends StatelessWidget {
             onSelected: (value) {
               if (value == 'edit') onEdit?.call();
               if (value == 'adjust') onAdjust();
+              if (value == 'transfer') onTransfer?.call();
+              if (value == 'merge') onMerge?.call();
               if (value == 'delete') onDelete?.call();
             },
             itemBuilder: (context) => [
               if (onEdit != null)
                 const PopupMenuItem(value: 'edit', child: Text('編輯')),
               const PopupMenuItem(value: 'adjust', child: Text('餘額調整')),
+              if (onTransfer != null)
+                const PopupMenuItem(value: 'transfer', child: Text('從這個帳戶轉出')),
+              if (onMerge != null)
+                const PopupMenuItem(value: 'merge', child: Text('合併至其他帳戶')),
               if (onDelete != null)
                 const PopupMenuItem(value: 'delete', child: Text('刪除')),
             ],
