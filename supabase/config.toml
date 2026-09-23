@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.investment-quotes]
 verify_jwt = false
+
+[functions.card-bill-reminders]
+verify_jwt = false

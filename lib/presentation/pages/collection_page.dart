@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../application/providers.dart';
 import '../../data/repositories.dart';
 import '../../domain/models.dart';
+import '../design_tokens.dart';
 import '../widgets/brand_icon.dart';
 import '../widgets/common.dart';
 
@@ -139,7 +140,7 @@ class _CollectionDetailsCard extends StatelessWidget {
                   Text(
                     dateText(details.orderDate),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(color: context.colors.textMuted),
                   ),
                   const SizedBox(height: 26),
                   _InfoRow(label: '付款人', value: details.participantName),
@@ -168,7 +169,7 @@ class _CollectionDetailsCard extends StatelessWidget {
                   Text(
                     details.collectionMethod,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(color: context.colors.textMuted),
                   ),
                   const SizedBox(height: 18),
                   if (isBankTransfer) ...[
@@ -198,7 +199,7 @@ class _CollectionDetailsCard extends StatelessWidget {
                     Text(
                       details.orderNote,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.black54),
+                      style: TextStyle(color: context.colors.textMuted),
                     ),
                   ],
                   if (submitError case final error?) ...[
@@ -233,10 +234,10 @@ class _CollectionDetailsCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     '此頁不會自動確認付款結果，收款人確認後才會入帳。',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    style: TextStyle(fontSize: 12, color: context.colors.textMuted),
                   ),
                 ],
               ),
@@ -254,9 +255,9 @@ class _Notice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      color: Color(0xFFF0F7F4),
-      borderRadius: BorderRadius.all(Radius.circular(12)),
+    decoration: BoxDecoration(
+      color: context.colors.background,
+      borderRadius: const BorderRadius.all(Radius.circular(12)),
     ),
     child: Padding(padding: const EdgeInsets.all(14), child: Text(text)),
   );
@@ -272,7 +273,7 @@ class _InfoRow extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
       children: [
-        Text(label, style: const TextStyle(color: Colors.black54)),
+        Text(label, style: TextStyle(color: context.colors.textMuted)),
         const Spacer(),
         Flexible(
           child: Text(

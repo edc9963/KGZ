@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import '../../data/ocr_models.dart';
 import '../../data/repositories.dart';
 import '../../domain/models.dart';
 import '../../domain/order_allocation.dart';
+import '../design_tokens.dart';
 import '../import_image_picker.dart';
 import '../import_image_picker_models.dart';
 import '../widgets/common.dart';
@@ -93,6 +96,11 @@ class OrdersPage extends ConsumerWidget {
           action: Wrap(
             spacing: 8,
             children: [
+              IconButton.outlined(
+                tooltip: '收款資訊設定',
+                onPressed: () => _showCollectionSettings(context, ref),
+                icon: const Icon(Icons.qr_code_2),
+              ),
               OutlinedButton.icon(
                 onPressed: () => _showImportDialog(context, ref),
                 icon: const Icon(Icons.document_scanner_outlined),
@@ -265,6 +273,82 @@ class OrdersPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _showCollectionSettings(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final store = ref.read(appStoreProvider);
+    final current = store.data.settings;
+    var accountId = store.defaultBankTransferAccountId;
+    final bankQr = TextEditingController(text: current.bankQrData);
+    final bankInfo = TextEditingController(text: current.bankAccountInfo);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('收款資訊'),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        store.bankTransferAccounts.any(
+                          (item) => item.id == accountId,
+                        )
+                        ? accountId
+                        : null,
+                    decoration: const InputDecoration(labelText: '預設銀行轉入帳戶'),
+                    items: store.bankTransferAccounts
+                        .map(
+                          (account) => DropdownMenuItem(
+                            value: account.id,
+                            child: Text(account.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setState(() => accountId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bankQr,
+                    decoration: const InputDecoration(labelText: '銀行轉帳 QR 內容'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bankInfo,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: '銀行帳號與備註資訊'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await store.updateSettings(
+                  current.copyWith(
+                    defaultCollectionAccountId: accountId,
+                    bankQrData: bankQr.text.trim(),
+                    bankAccountInfo: bankInfo.text.trim(),
+                  ),
+                );
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+              },
+              child: const Text('儲存'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showImportDialog(BuildContext context, WidgetRef ref) async {
     final store = ref.read(appStoreProvider);
     if (!store.data.cards.any((card) => card.isCredit)) {
@@ -380,6 +464,16 @@ class OrdersPage extends ConsumerWidget {
     var editorStep = 0;
     var includeSelfInDeliveryFee = existing?.includeSelfInDeliveryFee ?? false;
     var includeSelfInServiceFee = existing?.includeSelfInServiceFee ?? false;
+    // Which category the order's own (isSelf) consumption is grouped under
+    // in reports — defaults to the built-in 餐飲 category both for a brand
+    // new order and for an existing one that predates this field (null),
+    // matching how `financial_reports.dart` resolves a null
+    // selfExpenseCategoryId.
+    var selfExpenseCategoryId =
+        existing?.selfExpenseCategoryId ??
+        store.categoryById('expense-food')?.id ??
+        store.categoryByName('餐飲', BookkeepingCategoryKind.expense)?.id ??
+        store.data.settings.defaultExpenseCategoryId;
     final defaultCollectionMethod = store.lastCollectionMethod;
     final defaultCollectionAccountId =
         defaultCollectionMethod == collectionMethodCash
@@ -401,27 +495,6 @@ class OrdersPage extends ConsumerWidget {
                 ),
               )
               .toList();
-    bool orderAmountsUnchanged() {
-      if (existing == null || existing.participants.length != drafts.length) {
-        return false;
-      }
-      if (parseMoney(total.text) != existing.totalMinor ||
-          parseMoney(delivery.text) != existing.deliveryFeeMinor ||
-          parseMoney(service.text) != existing.serviceFeeMinor ||
-          parseMoney(discount.text) != existing.discountMinor) {
-        return false;
-      }
-      final existingById = {
-        for (final participant in existing.participants)
-          participant.id: participant,
-      };
-      return drafts.every((draft) {
-        final participant = existingById[draft.id];
-        return participant != null &&
-            parseMoney(draft.amount.text) == participant.itemAmountMinor;
-      });
-    }
-
     bool feeTotalsUnchanged() =>
         existing != null &&
         parseMoney(delivery.text) == existing.deliveryFeeMinor &&
@@ -619,7 +692,9 @@ class OrdersPage extends ConsumerWidget {
               : null,
           title: Text(existing == null ? '新增代訂' : '編輯代訂'),
           content: SizedBox(
-            width: 720,
+            width: MediaQuery.sizeOf(context).width < 600
+                ? double.infinity
+                : 720,
             height: MediaQuery.sizeOf(context).width < 600
                 ? MediaQuery.sizeOf(context).height - 180
                 : null,
@@ -628,7 +703,7 @@ class OrdersPage extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      for (var index = 0; index < 3; index++) ...[
+                      for (var index = 0; index < 2; index++) ...[
                         CircleAvatar(
                           radius: 14,
                           backgroundColor: index <= editorStep
@@ -637,7 +712,7 @@ class OrdersPage extends ConsumerWidget {
                                   context,
                                 ).colorScheme.surfaceContainerHighest,
                           foregroundColor: index <= editorStep
-                              ? Colors.white
+                              ? Theme.of(context).colorScheme.onPrimary
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                           child: Text(
                             '${index + 1}',
@@ -645,8 +720,8 @@ class OrdersPage extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(const ['訂單資訊', '人員與分攤', '確認'][index]),
-                        if (index < 2) ...[
+                        Text(const ['訂單資訊', '人員與分攤'][index]),
+                        if (index < 1) ...[
                           const SizedBox(width: 8),
                           const Expanded(child: Divider()),
                           const SizedBox(width: 8),
@@ -732,7 +807,7 @@ class OrdersPage extends ConsumerWidget {
                                 style: TextStyle(
                                   color: matches
                                       ? const Color(0xFF0E7C66)
-                                      : Colors.black54,
+                                      : context.colors.textMuted,
                                   fontWeight: matches
                                       ? FontWeight.w700
                                       : FontWeight.normal,
@@ -807,35 +882,111 @@ class OrdersPage extends ConsumerWidget {
                     ),
                   if (editorStep == 0) const SizedBox(height: 12),
                   if (editorStep == 0)
-                    Row(
-                      children: [
-                        for (final field in [
-                          ('總刷卡金額', total),
-                          ('外送費', delivery),
-                          ('服務費', service),
-                          ('折扣', discount),
-                        ])
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                right: field.$1 == '折扣' ? 0 : 8,
-                              ),
-                              child: TextField(
-                                controller: field.$2,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: field.$1,
-                                ),
-                                onChanged: (_) => setState(() {
-                                  if (field.$1 == '折扣') syncDiscounts();
-                                }),
-                              ),
-                            ),
+                    Builder(
+                      builder: (context) {
+                        final categories = store.categoriesFor(
+                          BookkeepingCategoryKind.expense,
+                          activeOnly: true,
+                        );
+                        final selected = store.categoryById(
+                          selfExpenseCategoryId,
+                        );
+                        final items = [
+                          ...categories,
+                          if (selected != null &&
+                              !categories.any((item) => item.id == selected.id))
+                            selected,
+                        ];
+                        return DropdownButtonFormField<String>(
+                          initialValue: items.any(
+                            (item) => item.id == selfExpenseCategoryId,
+                          )
+                              ? selfExpenseCategoryId
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: '本人消費分類',
+                            helperText: '此代訂中屬於自己（非代墊）的消費，記帳分類要歸到哪一類',
                           ),
-                      ],
+                          items: [
+                            for (final category in items)
+                              DropdownMenuItem(
+                                value: category.id,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 7,
+                                      backgroundColor: bookkeepingCategoryVisual(
+                                        category,
+                                        context.colors,
+                                      ).color,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(category.name),
+                                  ],
+                                ),
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => selfExpenseCategoryId = value!),
+                        );
+                      },
+                    ),
+                  if (editorStep == 0) const SizedBox(height: 12),
+                  if (editorStep == 0)
+                    Builder(
+                      // Deliberately reading MediaQuery instead of using a
+                      // LayoutBuilder here: this sits inside an AlertDialog
+                      // whose content column can be asked for its intrinsic
+                      // width (e.g. by the dialog's own sizing/animation),
+                      // and LayoutBuilder's render object throws
+                      // "does not support returning intrinsic dimensions"
+                      // whenever that happens. MediaQuery is a plain
+                      // InheritedWidget read, so it doesn't participate in
+                      // the intrinsic-size protocol at all. The width read
+                      // here is the screen width rather than this widget's
+                      // exact local constraint, which can slightly
+                      // overestimate available space on very narrow dialogs
+                      // -- harmless, since Wrap still reflows on its real
+                      // incoming constraints regardless of this estimate.
+                      builder: (context) {
+                        final compact =
+                            MediaQuery.sizeOf(context).width < 480;
+                        final columns = compact ? 2 : 4;
+                        const spacing = 8.0;
+                        final fieldWidth =
+                            (MediaQuery.sizeOf(context).width -
+                                spacing * (columns - 1)) /
+                            columns;
+                        return Wrap(
+                          spacing: spacing,
+                          runSpacing: 8,
+                          children: [
+                            for (final field in [
+                              ('總刷卡金額', total),
+                              ('外送費', delivery),
+                              ('服務費', service),
+                              ('折扣', discount),
+                            ])
+                              SizedBox(
+                                width: fieldWidth,
+                                child: TextField(
+                                  controller: field.$2,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: InputDecoration(
+                                    labelText: field.$1,
+                                  ),
+                                  onChanged: (_) => setState(() {
+                                    if (field.$1 == '折扣') syncDiscounts();
+                                  }),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   if (editorStep == 1) const SizedBox(height: 12),
                   if (editorStep == 1)
@@ -891,27 +1042,10 @@ class OrdersPage extends ConsumerWidget {
                     ),
                   if (editorStep == 1) const SizedBox(height: 10),
                   if (editorStep == 1)
-                    Row(
-                      children: [
-                        Text(
-                          '參與人員與品項',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const Spacer(),
-                        TextButton.icon(
-                          onPressed: () => setState(
-                            () => drafts.add(
-                              _ParticipantDraft.empty(
-                                collectionMethod: defaultCollectionMethod,
-                                collectionAccountId: defaultCollectionAccountId,
-                              ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.person_add_alt),
-                          label: const Text('新增人員'),
-                        ),
-                      ],
+                    Text(
+                      '參與人員與品項',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   if (editorStep == 1)
                     for (var index = 0; index < drafts.length; index++)
@@ -950,8 +1084,60 @@ class OrdersPage extends ConsumerWidget {
                             syncFees();
                             error = null;
                           }),
+                          savedMembers: store.data.settings.savedOrderMembers,
+                          onSaveMember: (name) {
+                            store.saveOrderMember(name).then((_) {
+                              if (dialogContext.mounted) setState(() {});
+                            });
+                          },
+                          onRemoveMember: (name) {
+                            store.removeOrderMember(name).then((_) {
+                              if (dialogContext.mounted) setState(() {});
+                            });
+                          },
+                          onNameCommitted: (name) {
+                            if (drafts[index].isSelf) return;
+                            final preference = store
+                                .collectionPreferenceForMember(name);
+                            if (preference == null) return;
+                            setState(() {
+                              drafts[index].collectionMethod =
+                                  preference.method;
+                              drafts[index].collectionAccountId =
+                                  preference.method == collectionMethodCash
+                                  ? systemCashAccountId
+                                  : (store.bankTransferAccounts.any(
+                                          (account) =>
+                                              account.id ==
+                                              preference.accountId,
+                                        )
+                                        ? preference.accountId
+                                        : store.bankTransferAccounts
+                                              .firstOrNull
+                                              ?.id);
+                            });
+                          },
                         ),
                       ),
+                  if (editorStep == 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setState(
+                            () => drafts.add(
+                              _ParticipantDraft.empty(
+                                collectionMethod: defaultCollectionMethod,
+                                collectionAccountId: defaultCollectionAccountId,
+                              ),
+                            ),
+                          ),
+                          icon: const Icon(Icons.person_add_alt),
+                          label: const Text('新增人員'),
+                        ),
+                      ),
+                    ),
                   if (editorStep == 1)
                     Builder(
                       builder: (context) {
@@ -982,24 +1168,8 @@ class OrdersPage extends ConsumerWidget {
                               );
                       },
                     ),
-                  if (editorStep == 2) ...[
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.receipt_long_outlined),
-                      title: Text(
-                        name.text.trim().isEmpty ? '未命名代訂' : name.text.trim(),
-                      ),
-                      subtitle: Text(
-                        '${drafts.length} 位參與者・${splitMethod.label}',
-                      ),
-                      trailing: Text(
-                        moneyText(parseMoney(total.text)),
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (editorStep == 2)
+                  if (editorStep == 1) const SizedBox(height: 12),
+                  if (editorStep == 1)
                     TextField(
                       controller: note,
                       decoration: const InputDecoration(labelText: '備註'),
@@ -1039,21 +1209,6 @@ class OrdersPage extends ConsumerWidget {
                   });
                   return;
                 }
-                if (editorStep == 1) {
-                  if (drafts.any(
-                    (item) =>
-                        item.name.text.trim().isEmpty ||
-                        item.item.text.trim().isEmpty,
-                  )) {
-                    setState(() => error = '請填寫所有參與人員與品項。');
-                    return;
-                  }
-                  setState(() {
-                    editorStep = 2;
-                    error = null;
-                  });
-                  return;
-                }
                 final itemTotal = drafts.fold<int>(
                   0,
                   (sum, draft) => sum + parseMoney(draft.amount.text),
@@ -1069,12 +1224,8 @@ class OrdersPage extends ConsumerWidget {
                 final expected = itemTotal + fee - discountMinor;
                 if (name.text.trim().isEmpty ||
                     cardId == null ||
-                    drafts.any(
-                      (item) =>
-                          item.name.text.trim().isEmpty ||
-                          item.item.text.trim().isEmpty,
-                    )) {
-                  setState(() => error = '請填寫名稱、信用卡與所有參與人員品項。');
+                    drafts.any((item) => item.name.text.trim().isEmpty)) {
+                  setState(() => error = '請填寫名稱、信用卡與所有參與人員姓名。');
                   return;
                 }
                 if (drafts
@@ -1098,12 +1249,6 @@ class OrdersPage extends ConsumerWidget {
                 if (total.text.trim().isEmpty && expected > 0) {
                   totalMinor = expected;
                   total.text = (expected / 100).toStringAsFixed(2);
-                }
-                if (totalMinor != expected && !orderAmountsUnchanged()) {
-                  setState(
-                    () => error = '金額不一致：品項＋費用－折扣應為 ${moneyText(expected)}。',
-                  );
-                  return;
                 }
                 final allocation = currentAllocation(reportError: true);
                 if (allocation == null) {
@@ -1195,6 +1340,7 @@ class OrdersPage extends ConsumerWidget {
                       participants: participants,
                       billId: existing?.billId,
                       origin: existing?.origin ?? DataOrigin.user,
+                      selfExpenseCategoryId: selfExpenseCategoryId,
                     ),
                   );
                   if (dialogContext.mounted) {
@@ -1204,7 +1350,7 @@ class OrdersPage extends ConsumerWidget {
                   setState(() => error = '儲存失敗：$exception');
                 }
               },
-              child: Text(editorStep < 2 ? '下一步' : '儲存代訂'),
+              child: Text(editorStep == 0 ? '下一步' : '儲存代訂'),
             ),
           ],
         ),
@@ -1278,6 +1424,9 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
   bool _loading = false;
   bool _recognitionAttempted = false;
   OcrProgress? _ocrProgress;
+  Timer? _heartbeatTimer;
+  DateTime? _lastProgressAt;
+  int _stalledSeconds = 0;
   String? _error;
   bool _includeDelivery = false;
   bool _includeService = false;
@@ -1302,6 +1451,15 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       _ocrProgress = null;
       _error = null;
       _confirmedOrderFields.clear();
+      _lastProgressAt = DateTime.now();
+      _stalledSeconds = 0;
+    });
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _lastProgressAt == null) return;
+      setState(() {
+        _stalledSeconds = DateTime.now().difference(_lastProgressAt!).inSeconds;
+      });
     });
     try {
       final imported = await ref
@@ -1310,7 +1468,11 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
             _images,
             onProgress: (progress) {
               if (!mounted) return;
-              setState(() => _ocrProgress = progress);
+              setState(() {
+                _ocrProgress = progress;
+                _lastProgressAt = DateTime.now();
+                _stalledSeconds = 0;
+              });
             },
           );
       final store = ref.read(appStoreProvider);
@@ -1366,6 +1528,8 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     } on Object catch (error) {
       setState(() => _error = error.toString());
     } finally {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -1673,12 +1837,22 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                   chargedFee -
                   allocation.discountShares[i])
               .clamp(0, 999999999);
+      // Reuse this person's own past collection method/account when they've
+      // paid before, so recurring participants don't need re-selecting each
+      // time; otherwise fall back to whatever was last used for anyone.
+      final preference = draft.isSelf
+          ? null
+          : store.collectionPreferenceForMember(draft.name.text);
+      final resolvedCollectionMethod =
+          preference?.method ?? store.lastCollectionMethod;
       participants.add(
         OrderParticipant(
           id: store.newId(),
           name: draft.name.text.trim(),
           isSelf: draft.isSelf,
-          itemName: '餐點',
+          itemName: draft.item.text.trim().isEmpty
+              ? '餐點'
+              : draft.item.text.trim(),
           itemAmountMinor: _wholeMinor(draft.amount)!,
           sharedFeeMinor: actualFeeShares[i],
           discountMinor: allocation.discountShares[i],
@@ -1689,12 +1863,18 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
           status: draft.isSelf
               ? CollectionStatus.paid
               : CollectionStatus.unpaid,
-          collectionMethod: draft.isSelf ? '' : store.lastCollectionMethod,
+          collectionMethod: draft.isSelf ? '' : resolvedCollectionMethod,
           collectionAccountId: draft.isSelf
               ? null
-              : (store.lastCollectionMethod == collectionMethodCash
+              : (resolvedCollectionMethod == collectionMethodCash
                     ? systemCashAccountId
-                    : store.defaultBankTransferAccountId),
+                    : (preference != null &&
+                              store.bankTransferAccounts.any(
+                                (account) =>
+                                    account.id == preference.accountId,
+                              )
+                          ? preference.accountId
+                          : store.defaultBankTransferAccountId)),
           token: store.newId(),
           note: '',
         ),
@@ -1873,12 +2053,21 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 _ocrProgress?.message ??
                     '首次使用需下載 OCR 模型；'
                         '下載後會保存在此裝置。',
-                style: const TextStyle(color: Colors.black54),
+                style: TextStyle(color: context.colors.textMuted),
               ),
               if ((_ocrProgress?.engine ?? '').isNotEmpty)
                 Text(
                   _ocrProgress!.engine,
-                  style: const TextStyle(color: Colors.black45, fontSize: 12),
+                  style: TextStyle(color: context.colors.textMuted, fontSize: 12),
+                ),
+              if (_stalledSeconds >= 4)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '仍在辨識中，較密集或較寬的文字列需要更久，請耐心等候'
+                    '（已等待 $_stalledSeconds 秒）',
+                    style: TextStyle(color: context.colors.textMuted, fontSize: 12),
+                  ),
                 ),
             ],
             for (var i = 0; i < _images.length; i++)
@@ -2083,10 +2272,8 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 ])
                   SizedBox(
                     width: compact ? double.infinity : 165,
-                    child: TextField(
+                    child: MoneyField(
                       controller: entry.$3,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration:
                           _ocrDecoration(
                             '${entry.$1}（元）',
@@ -2189,50 +2376,43 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: _responsivePair(
-                              compact: compact,
-                              first: TextField(
-                                controller: _people[i].name,
-                                decoration: _ocrDecoration(
-                                  _people[i].isSelf ? '姓名（自己）' : '姓名',
-                                  lowConfidence:
-                                      _people[i].nameConfidence < 0.75,
-                                ),
-                                onChanged: (_) => setState(
-                                  () => _people[i].nameConfidence = 1,
-                                ),
-                              ),
-                              second: TextField(
-                                controller: _people[i].amount,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
-                                decoration: _ocrDecoration(
-                                  '餐點（元）',
-                                  lowConfidence:
-                                      _people[i].amountConfidence < 0.75,
-                                ),
-                                onChanged: (_) => setState(() {
-                                  _people[i].amountConfidence = 1;
-                                  _syncDiscounts();
-                                  _syncFees();
-                                }),
-                              ),
-                              desktopSecondWidth: 130,
-                            ),
+                      _NameItemAmountRow(
+                        nameField: TextField(
+                          controller: _people[i].name,
+                          decoration: _ocrDecoration(
+                            _people[i].isSelf ? '姓名（自己）' : '姓名',
+                            lowConfidence: _people[i].nameConfidence < 0.75,
                           ),
-                          IconButton(
-                            key: ValueKey('import-remove-person-$i'),
-                            tooltip: _people[i].isSelf ? '移除本人' : '移除參與者',
-                            onPressed: () => _removePerson(i),
-                            icon: const Icon(Icons.close),
+                          onChanged: (_) =>
+                              setState(() => _people[i].nameConfidence = 1),
+                        ),
+                        itemField: TextField(
+                          controller: _people[i].item,
+                          decoration: _ocrDecoration(
+                            '品項',
+                            lowConfidence: _people[i].itemConfidence < 0.75,
                           ),
-                        ],
+                          onChanged: (_) =>
+                              setState(() => _people[i].itemConfidence = 1),
+                        ),
+                        amountField: MoneyField(
+                          controller: _people[i].amount,
+                          decoration: _ocrDecoration(
+                            '餐點（元）',
+                            lowConfidence: _people[i].amountConfidence < 0.75,
+                          ),
+                          onChanged: (_) => setState(() {
+                            _people[i].amountConfidence = 1;
+                            _syncDiscounts();
+                            _syncFees();
+                          }),
+                        ),
+                        trailing: IconButton(
+                          key: ValueKey('import-remove-person-$i'),
+                          tooltip: _people[i].isSelf ? '移除本人' : '移除參與者',
+                          onPressed: () => _removePerson(i),
+                          icon: const Icon(Icons.close),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Builder(
@@ -2254,13 +2434,9 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                               }),
                             ),
                           );
-                          final discount = TextField(
+                          final discount = MoneyField(
                             controller: _people[i].discount,
                             enabled: _people[i].discountEligible,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
                             decoration: InputDecoration(
                               labelText: _people[i].discountIsFixed
                                   ? '折扣（固定）'
@@ -2436,6 +2612,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
 
   @override
   void dispose() {
+    _heartbeatTimer?.cancel();
     _scrollController.dispose();
     _name.dispose();
     _platform.dispose();
@@ -3422,6 +3599,10 @@ class _ParticipantEditor extends StatelessWidget {
     required this.onChanged,
     required this.onFeeDelta,
     required this.onResetFee,
+    this.savedMembers = const [],
+    this.onSaveMember,
+    this.onRemoveMember,
+    this.onNameCommitted,
   });
 
   final _ParticipantDraft draft;
@@ -3433,6 +3614,18 @@ class _ParticipantEditor extends StatelessWidget {
   final ValueChanged<int> onFeeDelta;
   final VoidCallback onResetFee;
 
+  /// Saved 代訂 member names (most recent first) offered as a quick-pick
+  /// dropdown, plus callbacks to save/remove the current name from that list.
+  final List<String> savedMembers;
+  final ValueChanged<String>? onSaveMember;
+  final ValueChanged<String>? onRemoveMember;
+
+  /// Called when the participant's name is "committed" — picked from the
+  /// saved-members dropdown, or submitted from the keyboard after typing —
+  /// so the caller can look up and auto-fill this person's usual collection
+  /// method/account from their past paid history.
+  final ValueChanged<String>? onNameCommitted;
+
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -3443,38 +3636,40 @@ class _ParticipantEditor extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: draft.name,
-                  decoration: InputDecoration(
-                    labelText: draft.isSelf ? '姓名（自己）' : '姓名',
-                  ),
-                ),
+          _NameItemAmountRow(
+            nameField: TextField(
+              controller: draft.name,
+              onChanged: (_) => onChanged(),
+              onSubmitted: (value) => onNameCommitted?.call(value),
+              decoration: InputDecoration(
+                labelText: draft.isSelf ? '姓名（自己）' : '姓名',
+                suffixIcon: draft.isSelf || onSaveMember == null
+                    ? null
+                    : _SavedMemberControls(
+                        currentName: draft.name.text,
+                        savedMembers: savedMembers,
+                        onPick: (value) {
+                          draft.name.text = value;
+                          onChanged();
+                          onNameCommitted?.call(value);
+                        },
+                        onSave: onSaveMember!,
+                        onRemove: onRemoveMember,
+                      ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: draft.item,
-                  decoration: const InputDecoration(labelText: '品項'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: draft.amount,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(labelText: '餐點金額'),
-                  onChanged: (_) => onChanged(),
-                ),
-              ),
-              if (canDelete && !draft.isSelf)
-                IconButton(onPressed: onDelete, icon: const Icon(Icons.close)),
-            ],
+            ),
+            itemField: TextField(
+              controller: draft.item,
+              decoration: const InputDecoration(labelText: '品項'),
+            ),
+            amountField: MoneyField(
+              controller: draft.amount,
+              decoration: const InputDecoration(labelText: '餐點金額'),
+              onChanged: (_) => onChanged(),
+            ),
+            trailing: canDelete && !draft.isSelf
+                ? IconButton(onPressed: onDelete, icon: const Icon(Icons.close))
+                : null,
           ),
           const SizedBox(height: 8),
           LayoutBuilder(
@@ -3500,11 +3695,9 @@ class _ParticipantEditor extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: TextField(
+                    child: MoneyField(
                       controller: draft.discount,
                       enabled: draft.discountEligible,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         labelText: draft.discountIsFixed
                             ? '折扣金額（固定）'
@@ -3564,8 +3757,15 @@ class _ParticipantEditor extends StatelessWidget {
           if (!draft.isSelf) ...[
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
+              // The value suffix forces this field to re-init (picking up
+              // draft.collectionMethod as its initialValue again) whenever
+              // the method is changed programmatically — e.g. auto-filled
+              // from a participant's saved collection preference — since
+              // DropdownButtonFormField otherwise only reads initialValue
+              // once, at first build.
               key: ValueKey(
-                'collection-method-${draft.id ?? draft.name.hashCode}',
+                'collection-method-${draft.id ?? draft.name.hashCode}-'
+                '${draft.collectionMethod}',
               ),
               initialValue:
                   supportedCollectionMethods.contains(draft.collectionMethod)
@@ -3595,8 +3795,11 @@ class _ParticipantEditor extends StatelessWidget {
             if (draft.collectionMethod == collectionMethodBankTransfer) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
+                // Same re-init trick as the method dropdown above, keyed to
+                // draft.collectionAccountId this time.
                 key: ValueKey(
-                  'collection-account-${draft.id ?? draft.name.hashCode}',
+                  'collection-account-${draft.id ?? draft.name.hashCode}-'
+                  '${draft.collectionAccountId}',
                 ),
                 initialValue:
                     accounts.any(
@@ -3625,4 +3828,105 @@ class _ParticipantEditor extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The 姓名 / 品項 / 金額 (name / item / amount) row shared by the manual
+/// participant editor and the Uber Eats screenshot-import review screen, so
+/// the two entry paths always share one layout instead of drifting apart.
+/// Below 460 logical pixels the fields stack full-width instead of squeezing into
+/// one row.
+class _NameItemAmountRow extends StatelessWidget {
+  const _NameItemAmountRow({
+    required this.nameField,
+    required this.itemField,
+    required this.amountField,
+    this.trailing,
+  });
+
+  final Widget nameField;
+  final Widget itemField;
+  final Widget amountField;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < 460) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: nameField),
+                if (trailing != null) ...[const SizedBox(width: 4), trailing!],
+              ],
+            ),
+            const SizedBox(height: 8),
+            itemField,
+            const SizedBox(height: 8),
+            amountField,
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: nameField),
+          const SizedBox(width: 8),
+          Expanded(flex: 2, child: itemField),
+          const SizedBox(width: 8),
+          Expanded(child: amountField),
+          if (trailing != null) trailing!,
+        ],
+      );
+    },
+  );
+}
+
+/// Suffix controls for a participant's name field: a dropdown to quick-pick
+/// a recently-saved member, and a star toggle to save/remove the currently
+/// typed name from that list.
+class _SavedMemberControls extends StatelessWidget {
+  const _SavedMemberControls({
+    required this.currentName,
+    required this.savedMembers,
+    required this.onPick,
+    required this.onSave,
+    this.onRemove,
+  });
+
+  final String currentName;
+  final List<String> savedMembers;
+  final ValueChanged<String> onPick;
+  final ValueChanged<String> onSave;
+  final ValueChanged<String>? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = currentName.trim();
+    final isSaved = trimmed.isNotEmpty && savedMembers.contains(trimmed);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (savedMembers.isNotEmpty)
+          PopupMenuButton<String>(
+            tooltip: '選擇近期成員',
+            icon: const Icon(Icons.expand_more),
+            onSelected: onPick,
+            itemBuilder: (context) => [
+              for (final member in savedMembers)
+                PopupMenuItem(value: member, child: Text(member)),
+            ],
+          ),
+        IconButton(
+          tooltip: isSaved ? '從常用成員移除' : '儲存為常用成員',
+          icon: Icon(isSaved ? Icons.star : Icons.star_border),
+          onPressed: trimmed.isEmpty
+              ? null
+              : () => isSaved && onRemove != null
+                    ? onRemove!(trimmed)
+                    : onSave(trimmed),
+        ),
+      ],
+    );
+  }
 }

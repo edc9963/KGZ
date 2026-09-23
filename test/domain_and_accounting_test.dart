@@ -1580,7 +1580,15 @@ void main() {
         );
         expect(store.outstandingBillMinor(store.data.bills.single), 8000);
         expect(
-          store.billStatus(store.data.bills.single),
+          // `now` pinned to a date before the bill's dueDate (2026-09-15):
+          // without it this falls back to the real wall clock, so the test
+          // silently starts failing once a real run happens after that date
+          // (billStatus() then sees the due date as already past and
+          // reports overdue instead of partiallyPaid).
+          store.billStatus(
+            store.data.bills.single,
+            now: DateTime(2026, 9, 11),
+          ),
           CardBillStatus.partiallyPaid,
         );
 

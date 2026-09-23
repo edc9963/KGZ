@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../application/providers.dart';
 import '../../domain/financial_reports.dart';
+import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../widgets/common.dart';
 
@@ -31,6 +32,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   _PeriodPreset _preset = _PeriodPreset.currentMonth;
   int _assetTouched = -1;
   int _expenseTouched = -1;
+
+  /// Label of the expense category whose transactions are listed under the
+  /// pie chart (null = nothing selected).
+  String? _expenseSelected;
   late DateTime _customStart;
   late DateTime _customEnd;
 
@@ -178,7 +183,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       );
       final cutoff = Text(
         '資產負債截止 ${dateText(_period.end)}',
-        style: const TextStyle(color: Colors.black54),
+        style: TextStyle(color: context.colors.textMuted),
       );
       if (!mobile) {
         return Wrap(
@@ -240,10 +245,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     });
   }
 
-  Widget _issues(FinancialReportSnapshot snapshot) => Card(
-    color: const Color(0xFFFFF8E8),
+  // A dedicated caution amber, distinct from the liability tone (used for
+  // actual liability amounts) — lightened in dark mode for legibility, and
+  // its card background blended against the current surface instead of a
+  // hardcoded pale hex, so it stays readable in both themes.
+  Widget _issues(FinancialReportSnapshot snapshot) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final warning = isDark ? const Color(0xFFE0B34D) : const Color(0xFF9A6A00);
+    return Card(
+    color: Color.alphaBlend(warning.withValues(alpha: .14), context.colors.surface),
     child: ExpansionTile(
-      leading: const Icon(Icons.info_outline, color: Color(0xFF9A6A00)),
+      leading: Icon(Icons.info_outline, color: warning),
       title: Text('有 ${snapshot.issues.length} 項估值或資料品質提示'),
       children: [
         for (final issue in snapshot.issues)
@@ -255,6 +267,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       ],
     ),
   );
+  }
 
   Widget _summary(
     FinancialReportSnapshot data,
@@ -274,7 +287,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               mask: mask,
             ),
             icon: Icons.account_balance_wallet_outlined,
-            tone: AppColors.asset,
+            tone: context.colors.asset,
           ),
           SummaryCard(
             label: '本期收入',
@@ -285,7 +298,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               mask: mask,
             ),
             icon: Icons.south_west_rounded,
-            tone: AppColors.income,
+            tone: context.colors.income,
           ),
           SummaryCard(
             label: '本期支出',
@@ -300,7 +313,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               mask: mask,
             ),
             icon: Icons.north_east_rounded,
-            tone: AppColors.expense,
+            tone: context.colors.expense,
           ),
           SummaryCard(
             label: '本期餘絀',
@@ -311,9 +324,48 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               mask: mask,
             ),
             icon: Icons.balance_outlined,
-            tone: data.netIncome >= 0 ? AppColors.asset : AppColors.expense,
+            tone: data.netIncome >= 0
+                ? context.colors.asset
+                : context.colors.expense,
           ),
         ],
+      ),
+      const SizedBox(height: 18),
+      // 期間支出分類 (with the tap-to-expand transaction list) comes before the
+      // 淨資產趨勢 chart.
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 900;
+          final charts = <Widget>[
+            _pieCard(
+              '期間支出分類',
+              data.expenseAllocation,
+              currency,
+              mask,
+              asset: false,
+              details: data.expenseDetails,
+              selectedLabel: _expenseSelected,
+              onSelect: (label) => setState(
+                () => _expenseSelected = _expenseSelected == label
+                    ? null
+                    : label,
+              ),
+            ),
+            _cashFlowCard(data, currency, mask),
+          ];
+          return wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: charts[0]),
+                    const SizedBox(width: 16),
+                    Expanded(child: charts[1]),
+                  ],
+                )
+              : Column(
+                  children: [charts[0], const SizedBox(height: 16), charts[1]],
+                );
+        },
       ),
       const SizedBox(height: 18),
       LayoutBuilder(
@@ -331,34 +383,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           ];
           return wide
               ? Row(
-                  children: [
-                    Expanded(child: charts[0]),
-                    const SizedBox(width: 16),
-                    Expanded(child: charts[1]),
-                  ],
-                )
-              : Column(
-                  children: [charts[0], const SizedBox(height: 16), charts[1]],
-                );
-        },
-      ),
-      const SizedBox(height: 18),
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          final charts = <Widget>[
-            _pieCard(
-              '期間支出分類',
-              data.expenseAllocation,
-              currency,
-              mask,
-              asset: false,
-            ),
-            _cashFlowCard(data, currency, mask),
-          ];
-          return wide
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: charts[0]),
                     const SizedBox(width: 16),
@@ -415,8 +439,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                                 currency: currency,
                                 mask: mask,
                               ),
-                        style: const TextStyle(
-                          color: AppColors.asset,
+                        style: TextStyle(
+                          color: context.colors.asset,
                           fontWeight: FontWeight.w800,
                         ),
                       );
@@ -438,11 +462,14 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               },
             ),
             const SizedBox(height: 6),
-            const Row(
+            Row(
               children: [
-                Icon(Icons.circle, color: AppColors.asset, size: 10),
-                SizedBox(width: 6),
-                Text('資產扣除負債', style: TextStyle(color: AppColors.textMuted)),
+                Icon(Icons.circle, color: context.colors.asset, size: 10),
+                const SizedBox(width: 6),
+                Text(
+                  '資產扣除負債',
+                  style: TextStyle(color: context.colors.textMuted),
+                ),
               ],
             ),
             const SizedBox(height: 18),
@@ -512,13 +539,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                               points[i].amountMinor.toDouble(),
                             ),
                         ],
-                        color: AppColors.asset,
+                        color: context.colors.asset,
                         barWidth: 3,
                         isCurved: false,
                         dotData: const FlDotData(show: true),
                         belowBarData: BarAreaData(
                           show: true,
-                          color: AppColors.assetPale.withValues(alpha: .7),
+                          color: context.colors.assetPale.withValues(alpha: .7),
                         ),
                       ),
                     ],
@@ -540,13 +567,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     int total(List<StatementLine> lines) =>
         lines.fold(0, (sum, line) => sum + line.amountMinor);
     final rows = <(String, int, Color)>[
-      ('營業活動', total(data.operatingCashFlow), AppColors.income),
-      ('投資活動', total(data.investingCashFlow), const Color(0xFF6075A6)),
-      ('融資活動', total(data.financingCashFlow), AppColors.liability),
+      ('營業活動', total(data.operatingCashFlow), context.colors.income),
+      ('投資活動', total(data.investingCashFlow), const Color(0xFF4A58B5)),
+      ('融資活動', total(data.financingCashFlow), context.colors.liability),
       (
         '其他活動',
         total(data.otherCashFlow) + data.fxEffect,
-        const Color(0xFF7B8B91),
+        const Color(0xFFB28434),
       ),
     ];
     final maxAmount = rows.fold<int>(
@@ -600,8 +627,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                         textAlign: TextAlign.end,
                         style: TextStyle(
                           color: row.$2 >= 0
-                              ? AppColors.income
-                              : AppColors.expense,
+                              ? context.colors.income
+                              : context.colors.expense,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -620,8 +647,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 moneyText(data.cashChange, currency: currency, mask: mask),
                 style: TextStyle(
                   color: data.cashChange >= 0
-                      ? AppColors.asset
-                      : AppColors.expense,
+                      ? context.colors.asset
+                      : context.colors.expense,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
@@ -639,28 +666,58 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     String currency,
     bool mask, {
     required bool asset,
+    Map<String, List<ExpenseDetail>> details = const {},
+    String? selectedLabel,
+    ValueChanged<String>? onSelect,
   }) {
+    // Pie slices always carry a white title label directly on the fill (see
+    // titleStyle below), so this palette is deliberately fixed — always
+    // dark/mid-saturation — rather than following the app's light/dark
+    // theme, unlike most other color usage on this page.
     const assetColors = [
-      AppColors.asset,
+      AppColors.primary,
       Color(0xFF568EAE),
       Color(0xFF6075A6),
       Color(0xFF719681),
       Color(0xFF7B8B91),
     ];
-    Color sliceColor(int index) => asset
-        ? assetColors[index % assetColors.length]
-        : categoryVisual(slices[index].label).color;
+    // For expense slices, prefer the actual category's user-chosen color
+    // (kept in sync with the palette picker in 設定 → 分類) so the pie chart
+    // always matches what the user picked there; fall back to the
+    // name-based `categoryVisual` heuristic for a label that no longer
+    // matches any category (e.g. from old/imported data).
+    Color sliceColor(int index) {
+      if (asset) return assetColors[index % assetColors.length];
+      final label = slices[index].label;
+      final category = ref
+          .read(appStoreProvider)
+          .categoryByName(label, BookkeepingCategoryKind.expense);
+      if (category != null) {
+        return bookkeepingCategoryVisual(category, context.colors).color;
+      }
+      return categoryVisual(label, context.colors).color;
+    }
     final total = slices.fold(0, (sum, item) => sum + item.amountMinor);
     final touched = asset ? _assetTouched : _expenseTouched;
+    // Index of the slice whose transactions are currently expanded (a period
+    // change can drop the selected category, in which case nothing is shown).
+    final selected = selectedLabel == null
+        ? -1
+        : slices.indexWhere((slice) => slice.label == selectedLabel);
     Widget chart() => PieChart(
       PieChartData(
         centerSpaceRadius: 44,
         sectionsSpace: 2,
         pieTouchData: PieTouchData(
           touchCallback: (event, response) {
-            final next = event.isInterestedForInteractions
-                ? response?.touchedSection?.touchedSectionIndex ?? -1
-                : -1;
+            final index = response?.touchedSection?.touchedSectionIndex ?? -1;
+            if (onSelect != null &&
+                event is FlTapUpEvent &&
+                index >= 0 &&
+                index < slices.length) {
+              onSelect(slices[index].label);
+            }
+            final next = event.isInterestedForInteractions ? index : -1;
             if (next == touched) return;
             setState(() {
               if (asset) {
@@ -676,7 +733,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             PieChartSectionData(
               color: sliceColor(i),
               value: slices[i].amountMinor.toDouble(),
-              radius: touched == i ? 80 : 72,
+              radius: touched == i || selected == i ? 80 : 72,
               title: '${(slices[i].amountMinor / total * 100).round()}%',
               titleStyle: const TextStyle(
                 color: Colors.white,
@@ -688,36 +745,65 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       ),
     );
     Widget legendRow(int i, {required bool compact}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: sliceColor(i),
-              shape: BoxShape.circle,
-            ),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onSelect == null ? null : () => onSelect(slices[i].label),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected == i
+                ? sliceColor(i).withValues(alpha: .14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(slices[i].label, overflow: TextOverflow.ellipsis),
-          ),
-          Text(
-            compact
-                ? compactMoneyText(
-                    slices[i].amountMinor,
-                    currency: currency,
-                    mask: mask,
-                  )
-                : moneyText(
-                    slices[i].amountMinor,
-                    currency: currency,
-                    mask: mask,
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: sliceColor(i),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  slices[i].label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: selected == i ? FontWeight.w800 : null,
                   ),
-            style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                compact
+                    ? compactMoneyText(
+                        slices[i].amountMinor,
+                        currency: currency,
+                        mask: mask,
+                      )
+                    : moneyText(
+                        slices[i].amountMinor,
+                        currency: currency,
+                        mask: mask,
+                      ),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              if (onSelect != null) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  selected == i
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: context.colors.textMuted,
+                ),
+              ],
+            ],
           ),
-        ],
+        ),
       ),
     );
     return Card(
@@ -794,8 +880,155 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 ),
               ),
             ],
+            if (onSelect != null && total > 0 && selected >= 0) ...[
+              const SizedBox(height: 14),
+              _expenseDetailPanel(
+                slices[selected].label,
+                details[slices[selected].label] ?? const [],
+                sliceColor(selected),
+                currency,
+                mask,
+                onClose: () => onSelect(slices[selected].label),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// The 日期／項目／金額 list shown under the expense pie chart for the
+  /// selected category. Scrolls inside a capped height so a long period
+  /// (e.g. 今年) does not push the rest of the page far down.
+  Widget _expenseDetailPanel(
+    String label,
+    List<ExpenseDetail> items,
+    Color color,
+    String currency,
+    bool mask, {
+    required VoidCallback onClose,
+  }) {
+    final muted = context.colors.textMuted;
+    final total = items.fold(0, (sum, item) => sum + item.amountMinor);
+    final headerStyle = TextStyle(
+      color: muted,
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    );
+    const dateWidth = 84.0;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
+          alpha: .5,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .4)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$label 消費明細・${items.length} 筆',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: '收合明細',
+                visualDensity: VisualDensity.compact,
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              children: [
+                SizedBox(width: dateWidth, child: Text('日期', style: headerStyle)),
+                Expanded(child: Text('項目', style: headerStyle)),
+                Text('金額', style: headerStyle),
+              ],
+            ),
+          ),
+          const Divider(height: 14),
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text('本期間無明細', style: TextStyle(color: muted)),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 340),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(right: 8),
+                itemCount: items.length,
+                separatorBuilder: (context, index) =>
+                    Divider(height: 1, color: muted.withValues(alpha: .18)),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: dateWidth,
+                          child: Text(
+                            dateText(item.date),
+                            style: TextStyle(color: muted, fontSize: 13),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            item.item,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          moneyText(
+                            item.amountMinor,
+                            currency: currency,
+                            mask: mask,
+                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          const Divider(height: 14),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text('合計', style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                Text(
+                  moneyText(total, currency: currency, mask: mask),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -822,12 +1055,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            const Row(
+            Row(
               children: [
-                Icon(Icons.square, color: AppColors.income, size: 14),
-                Text(' 收入   '),
-                Icon(Icons.square, color: AppColors.expense, size: 14),
-                Text(' 支出'),
+                Icon(Icons.square, color: context.colors.income, size: 14),
+                const Text(' 收入   '),
+                Icon(Icons.square, color: context.colors.expense, size: 14),
+                const Text(' 支出'),
               ],
             ),
             const SizedBox(height: 18),
@@ -892,7 +1125,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                         barRods: [
                           BarChartRodData(
                             toY: points[i].incomeMinor.toDouble(),
-                            color: AppColors.income,
+                            color: context.colors.income,
                             width: 9,
                             borderRadius: const BorderRadius.vertical(
                               top: Radius.circular(3),
@@ -900,7 +1133,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                           ),
                           BarChartRodData(
                             toY: points[i].expenseMinor.toDouble(),
-                            color: AppColors.expense,
+                            color: context.colors.expense,
                             width: 9,
                             borderRadius: const BorderRadius.vertical(
                               top: Radius.circular(3),
@@ -1035,9 +1268,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           ),
           const SizedBox(height: 12),
           if (lines.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Text('本期間無資料', style: TextStyle(color: Colors.black54)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Text(
+                '本期間無資料',
+                style: TextStyle(color: context.colors.textMuted),
+              ),
             )
           else
             for (final line in lines)
@@ -1121,15 +1357,21 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     );
   }
 
+  // A dedicated success teal for the "balanced" state, distinct from the
+  // income tone (used for actual amounts) — its card background blended
+  // against the current surface instead of a hardcoded pale hex, so it
+  // stays readable in both themes.
   Widget _totalCard(
     String label,
     int value,
     String currency,
     bool mask,
     bool balanced,
-  ) => Card(
+  ) {
+    const success = Color(0xFF0E7C66);
+    return Card(
     color: balanced
-        ? const Color(0xFFEAF7F3)
+        ? Color.alphaBlend(success.withValues(alpha: .14), context.colors.surface)
         : Theme.of(context).colorScheme.errorContainer,
     child: Padding(
       padding: const EdgeInsets.all(20),
@@ -1138,7 +1380,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           Icon(
             balanced ? Icons.check_circle_outline : Icons.error_outline,
             color: balanced
-                ? const Color(0xFF0E7C66)
+                ? success
                 : Theme.of(context).colorScheme.error,
           ),
           const SizedBox(width: 12),
@@ -1164,4 +1406,5 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       ),
     ),
   );
+  }
 }

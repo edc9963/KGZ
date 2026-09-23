@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'application/app_store.dart';
 import 'application/providers.dart';
+import 'application/theme_mode_controller.dart';
 import 'data/download_service.dart';
 import 'data/local_repositories.dart';
 import 'data/local_ocr_import_repository.dart';
@@ -27,10 +28,87 @@ import 'presentation/pages/login_page.dart';
 import 'presentation/pages/orders_page.dart';
 import 'presentation/pages/reports_page.dart';
 import 'presentation/pages/settings_page.dart';
+import 'presentation/design_tokens.dart';
 import 'presentation/theme.dart';
+import 'presentation/widgets/brand_icon.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Read local preferences first (fast, no network) so even the splash
+  // screen's first frame already knows the user's light/dark/system choice
+  // instead of flashing light and then flipping to dark.
+  final preferences = await SharedPreferences.getInstance();
+  final themeModeController = ThemeModeController(
+    preferences,
+    initialMode: ThemeModeController.readStored(preferences),
+  );
+  // Get pixels on screen before doing any network/storage work below, so the
+  // user sees a branded splash immediately instead of a blank page while
+  // Supabase, auth and the initial cloud sync are still loading.
+  runApp(_SplashApp(themeMode: themeModeController.mode));
+  final bootstrap = await _bootstrapApp(preferences);
+  runApp(
+    ProviderScope(
+      overrides: [
+        appStoreProvider.overrideWith((ref) => bootstrap.store),
+        themeModeControllerProvider.overrideWith((ref) => themeModeController),
+      ],
+      child: QuickLedgerApp(
+        store: bootstrap.store,
+        themeModeController: themeModeController,
+        startupAuthError: bootstrap.startupAuthError,
+        startupAuthNotice: bootstrap.startupAuthNotice,
+      ),
+    ),
+  );
+}
+
+class _SplashApp extends StatelessWidget {
+  const _SplashApp({required this.themeMode});
+
+  final ThemeMode themeMode;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: buildAppTheme(Brightness.light),
+    darkTheme: buildAppTheme(Brightness.dark),
+    themeMode: themeMode,
+    home: Builder(
+      builder: (context) => Scaffold(
+        backgroundColor: context.colors.mobileBackground,
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BrandIcon(size: 72, borderRadius: 18),
+              SizedBox(height: 24),
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _BootstrapResult {
+  const _BootstrapResult({
+    required this.store,
+    this.startupAuthError,
+    this.startupAuthNotice,
+  });
+
+  final AppStore store;
+  final String? startupAuthError;
+  final String? startupAuthNotice;
+}
+
+Future<_BootstrapResult> _bootstrapApp(SharedPreferences preferences) async {
   final initialBrowserUri = kIsWeb ? currentBrowserUri() : null;
   final returningFromOAuth =
       initialBrowserUri?.queryParameters['auth_return'] == '1';
@@ -84,7 +162,6 @@ Future<void> main() async {
       }
     }
   }
-  final preferences = await SharedPreferences.getInstance();
   final auth = supabaseConfigured
       ? SupabaseAuthRepository(Supabase.instance.client)
       : const UnconfiguredAuthRepository();
@@ -112,26 +189,23 @@ Future<void> main() async {
         : null,
   );
   await store.initialize();
-  runApp(
-    ProviderScope(
-      overrides: [appStoreProvider.overrideWith((ref) => store)],
-      child: QuickLedgerApp(
-        store: store,
-        startupAuthError: startupAuthError,
-        startupAuthNotice: startupAuthNotice,
-      ),
-    ),
+  return _BootstrapResult(
+    store: store,
+    startupAuthError: startupAuthError,
+    startupAuthNotice: startupAuthNotice,
   );
 }
 
 class QuickLedgerApp extends StatefulWidget {
   const QuickLedgerApp({
     required this.store,
+    required this.themeModeController,
     this.startupAuthError,
     this.startupAuthNotice,
     super.key,
   });
   final AppStore store;
+  final ThemeModeController themeModeController;
   final String? startupAuthError;
   final String? startupAuthNotice;
 
@@ -174,55 +248,88 @@ class _QuickLedgerAppState extends State<QuickLedgerApp> {
             CollectionPage(token: state.pathParameters['token']!),
       ),
       GoRoute(path: '/line-import/:token', redirect: (_, __) => '/orders'),
-      ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
-        routes: [
-          GoRoute(
-            path: '/dashboard',
-            builder: (context, state) => const DashboardPage(),
-          ),
-          GoRoute(
-            path: '/reports',
-            builder: (context, state) => const ReportsPage(),
-          ),
-          GoRoute(
-            path: '/accounts',
-            builder: (context, state) => const AccountsPage(),
-          ),
-          GoRoute(
-            path: '/expenses',
-            builder: (context, state) => ExpensesPage(
-              createOnOpen: const {
-                '1',
-                'expense',
-              }.contains(state.uri.queryParameters['create']),
-              createIncomeOnOpen:
-                  state.uri.queryParameters['create'] == 'income',
-              editExpenseId: state.uri.queryParameters['edit'],
-            ),
-          ),
-          GoRoute(
-            path: '/investments',
-            builder: (context, state) => const InvestmentsPage(),
-          ),
-          GoRoute(
-            path: '/cards',
-            builder: (context, state) => const CardsPage(),
-          ),
-          GoRoute(
-            path: '/orders',
-            builder: (context, state) => const OrdersPage(),
+      // Each branch below gets its own Navigator that `StatefulShellRoute`
+      // keeps alive (as an IndexedStack) once built. Switching between the
+      // bottom-nav/sidebar destinations therefore just swaps which branch is
+      // on screen instead of disposing and rebuilding the destination page
+      // from scratch on every tap — that full rebuild (on top of an already
+      // expensive one, see `LedgerQueries`) racing the page-switch animation
+      // was what caused the visible stutter/ghosting when switching tabs.
+      // Branches are grouped to match `AppShell`'s `_destinations` /
+      // `_workspaceTabs`: each top-level destination plus the secondary
+      // workspace tab (報表/卡片/投資) that lives under it share a branch, so
+      // switching between those two still preserves the *other* branches'
+      // state even though it's a normal push within this branch's stack.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
             routes: [
               GoRoute(
-                path: ':id',
-                builder: (context, state) =>
-                    OrderDetailPage(orderId: state.pathParameters['id']!),
+                path: '/dashboard',
+                builder: (context, state) => const DashboardPage(),
+              ),
+              GoRoute(
+                path: '/reports',
+                builder: (context, state) => const ReportsPage(),
               ),
             ],
           ),
-          GoRoute(
-            path: '/settings',
-            builder: (context, state) => const SettingsPage(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/expenses',
+                builder: (context, state) => ExpensesPage(
+                  createOnOpen: const {
+                    '1',
+                    'expense',
+                  }.contains(state.uri.queryParameters['create']),
+                  createIncomeOnOpen:
+                      state.uri.queryParameters['create'] == 'income',
+                  editExpenseId: state.uri.queryParameters['edit'],
+                ),
+              ),
+              GoRoute(
+                path: '/cards',
+                builder: (context, state) => const CardsPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/accounts',
+                builder: (context, state) => const AccountsPage(),
+              ),
+              GoRoute(
+                path: '/investments',
+                builder: (context, state) => const InvestmentsPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/orders',
+                builder: (context, state) => const OrdersPage(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) =>
+                        OrderDetailPage(orderId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                builder: (context, state) => const SettingsPage(),
+              ),
+            ],
           ),
         ],
       ),
@@ -230,34 +337,40 @@ class _QuickLedgerAppState extends State<QuickLedgerApp> {
   );
 
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
-    title: '快記帳',
-    debugShowCheckedModeBanner: false,
-    theme: buildAppTheme(),
-    locale: const Locale('zh', 'TW'),
-    supportedLocales: const [Locale('zh', 'TW')],
-    localizationsDelegates: const [
-      GlobalMaterialLocalizations.delegate,
-      GlobalWidgetsLocalizations.delegate,
-      GlobalCupertinoLocalizations.delegate,
-    ],
-    builder: (context, child) => Column(
-      children: [
-        if (_showStartupAuthNotice && widget.startupAuthNotice != null)
-          MaterialBanner(
-            content: Text(widget.startupAuthNotice!),
-            leading: const Icon(Icons.open_in_browser),
-            actions: [
-              TextButton(
-                onPressed: () => setState(() => _showStartupAuthNotice = false),
-                child: const Text('知道了'),
-              ),
-            ],
-          ),
-        Expanded(child: child ?? const SizedBox.shrink()),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.themeModeController,
+    builder: (context, _) => MaterialApp.router(
+      title: '快記帳',
+      debugShowCheckedModeBanner: false,
+      theme: buildAppTheme(Brightness.light),
+      darkTheme: buildAppTheme(Brightness.dark),
+      themeMode: widget.themeModeController.mode,
+      locale: const Locale('zh', 'TW'),
+      supportedLocales: const [Locale('zh', 'TW')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
       ],
+      builder: (context, child) => Column(
+        children: [
+          if (_showStartupAuthNotice && widget.startupAuthNotice != null)
+            MaterialBanner(
+              content: Text(widget.startupAuthNotice!),
+              leading: const Icon(Icons.open_in_browser),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _showStartupAuthNotice = false),
+                  child: const Text('知道了'),
+                ),
+              ],
+            ),
+          Expanded(child: child ?? const SizedBox.shrink()),
+        ],
+      ),
+      routerConfig: _router,
     ),
-    routerConfig: _router,
   );
 }
 

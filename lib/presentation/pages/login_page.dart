@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
+import '../design_tokens.dart';
 import '../widgets/brand_icon.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -54,13 +55,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
     body: DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFE9F7F2), Color(0xFFF7FAF9)],
+          colors: isDark
+              ? const [Color(0xFF102420), Color(0xFF14181A)]
+              : const [Color(0xFFE9F7F2), Color(0xFFF7FAF9)],
         ),
       ),
       child: Center(
@@ -113,9 +118,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 10),
-                          const Text(
+                          Text(
                             '登入後查看你的財務總覽',
-                            style: TextStyle(color: Colors.black54),
+                            style: TextStyle(color: context.colors.textMuted),
                           ),
                           if (widget.startupError case final error?) ...[
                             const SizedBox(height: 12),
@@ -130,10 +135,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ],
                           if (widget.autoSignIn && _autoSignInStarted) ...[
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               '正在從 LINE 官方帳號安全登入；若授權未完成，可使用下方按鈕重試。',
                               style: TextStyle(
-                                color: Colors.black54,
+                                color: context.colors.textMuted,
                                 fontSize: 13,
                                 height: 1.45,
                               ),
@@ -141,12 +146,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ],
                           if (widget.standaloneMode) ...[
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'LINE 授權完成後，系統可能改用一般瀏覽器開啟。'
                               '看到登入完成提示後，可回到已安裝的快記帳；'
                               '若安裝版未同步登入，請在該瀏覽器繼續使用。',
                               style: TextStyle(
-                                color: Colors.black54,
+                                color: context.colors.textMuted,
                                 fontSize: 13,
                                 height: 1.45,
                               ),
@@ -183,14 +188,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                   ),
                           ),
                           const SizedBox(height: 20),
-                          const DecoratedBox(
+                          DecoratedBox(
                             decoration: BoxDecoration(
-                              color: Color(0xFFF1F5F3),
-                              borderRadius: BorderRadius.all(
+                              color: context.colors.background,
+                              borderRadius: const BorderRadius.all(
                                 Radius.circular(12),
                               ),
                             ),
-                            child: Padding(
+                            child: const Padding(
                               padding: EdgeInsets.all(14),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,4 +229,5 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     ),
   );
+  }
 }

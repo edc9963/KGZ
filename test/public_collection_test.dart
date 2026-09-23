@@ -8,6 +8,7 @@ import 'package:quick_ledger/application/providers.dart';
 import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/pages/collection_page.dart';
+import 'package:quick_ledger/presentation/theme.dart';
 
 void main() {
   testWidgets('public collection loads without a signed-in finance snapshot', (
@@ -25,7 +26,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: const MaterialApp(home: CollectionPage(token: 'public-token')),
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const CollectionPage(token: 'public-token'),
+        ),
       ),
     );
     await tester.pumpAndSettle();

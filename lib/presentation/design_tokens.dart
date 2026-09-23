@@ -2,24 +2,231 @@ import 'package:flutter/material.dart';
 
 import '../domain/models.dart';
 
+/// Colors that stay fixed regardless of the app's light/dark theme —
+/// brand-identity hues, and everything tied to the desktop navigation rail's
+/// sidebar, which is deliberately always dark graphite in both themes (see
+/// the button-hierarchy notes in the design canvas). Anything that instead
+/// needs to flip between a light and dark value lives in [AppSemanticColors]
+/// and is reached through `context.colors` (see the [AppColorsContext]
+/// extension below), not through this class.
 abstract final class AppColors {
-  static const primary = Color(0xFF2387B8);
-  static const primaryHover = Color(0xFF176A91);
-  static const graphite = Color(0xFF26343A);
-  static const background = Color(0xFFF4F6F7);
-  static const surface = Colors.white;
-  static const text = Color(0xFF1F2D33);
-  static const textMuted = Color(0xFF68777D);
-  static const border = Color(0xFFDCE3E6);
+  /// Net-worth / data color — deliberately decoupled from the interactive
+  /// accent so the app has exactly one interactive hue instead of "data that
+  /// happens to look like a button." Kept here only as the seed fed to
+  /// [ColorScheme.fromSeed]; the themed ink color used on screen is
+  /// `context.colors.asset`.
+  static const primary = Color(0xFF1F2D33);
+  /// Hover/pressed state for a link rendered in the accent hue.
+  static const primaryHover = Color(0xFF06606B);
 
-  static const asset = primary;
-  static const assetPale = Color(0xFFE4F3FA);
-  static const income = Color(0xFF2A9D8F);
-  static const incomePale = Color(0xFFE5F5F1);
-  static const expense = Color(0xFFD65A52);
-  static const expensePale = Color(0xFFFBEAE8);
-  static const liability = Color(0xFFB07A32);
-  static const liabilityPale = Color(0xFFF7F0E5);
+  /// Desktop/tablet navigation rail background — always dark graphite,
+  /// independent of the app's overall light/dark theme.
+  static const graphite = Color(0xFF26343A);
+  /// Unselected icon/label color on the graphite sidebar.
+  static const graphiteMuted = Color(0xFFDCE5E8);
+
+  /// Brand accent (teal-blue, echoes the app icon), used only as the seed
+  /// color for [ColorScheme.fromSeed]. UI code should use
+  /// `context.colors.accent` instead, which is tuned per theme.
+  static const accent = Color(0xFF0D80A0);
+  /// Translucent wash of [accent], used behind the selected item in the
+  /// desktop sidebar's navigation rail indicator — fixed because the
+  /// sidebar itself is always dark graphite.
+  static const accentSoft = Color(0x290D80A0);
+  /// Lightened tint of [accent] for use on the dark graphite sidebar — the
+  /// desktop navigation's selected-item icon, where [accent] itself falls
+  /// short of the WCAG 3:1 minimum for UI components. Fixed for the same
+  /// reason as [accentSoft].
+  static const accentOnDark = Color(0xFF7CBACC);
+
+  /// Level-1 "spotlight" button fill (goose-yellow) — reserved for the
+  /// single highest-emphasis action per screen (the quick-entry FAB).
+  /// Deliberately used nowhere else, so it keeps reading as "the one main
+  /// action" rather than one color among several, and deliberately the same
+  /// in both themes so it always pops off the surrounding surface.
+  static const highlight = Color(0xFFFFC83D);
+  /// Icon/label color on a solid [highlight] fill.
+  static const highlightOn = graphite;
+  /// Shadow color under a [highlight] surface (e.g. the FAB).
+  static const highlightShadow = Color(0x59FFC83D);
+  /// Darkened [highlight] hue for text on a light highlight wash (not a
+  /// solid fill, where [highlightOn] applies instead).
+  static const highlightText = Color(0xFF9C7016);
+}
+
+/// Everything that flips between the app's light and dark theme: page and
+/// card surfaces, text, borders, and the semantic finance colors
+/// (asset/income/expense/liability) plus their pale washes.
+///
+/// Registered on [ThemeData.extensions] by `buildAppTheme` (see
+/// `presentation/theme.dart`) and read back with `context.colors` — the
+/// [AppColorsContext] extension below — instead of the old static
+/// `AppColors.xxx` constants, so every screen automatically follows the
+/// user's light/dark/system choice.
+@immutable
+class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
+  const AppSemanticColors({
+    required this.background,
+    required this.surface,
+    required this.mobileBackground,
+    required this.text,
+    required this.textMuted,
+    required this.border,
+    required this.asset,
+    required this.assetPale,
+    required this.income,
+    required this.incomePale,
+    required this.expense,
+    required this.expensePale,
+    required this.liability,
+    required this.liabilityPale,
+    required this.accent,
+    required this.accentPale,
+    required this.accentPaleText,
+  });
+
+  /// Desktop/tablet page background.
+  final Color background;
+  /// Card and sheet surfaces.
+  final Color surface;
+  /// Mobile app shell background (app bar, scaffold, bottom navigation).
+  final Color mobileBackground;
+  /// Primary text/ink color.
+  final Color text;
+  /// Secondary/caption text color.
+  final Color textMuted;
+  /// Card, divider and input borders.
+  final Color border;
+
+  /// Net-worth / data color — deliberately the same as [text] so net worth
+  /// reads as ink, not as a colored call-to-action.
+  final Color asset;
+  final Color assetPale;
+  final Color income;
+  final Color incomePale;
+  final Color expense;
+  final Color expensePale;
+  final Color liability;
+  final Color liabilityPale;
+
+  /// The app's one interactive hue — outlined/text/filled buttons,
+  /// interactive icons, and links on ordinary (themed) surfaces.
+  final Color accent;
+  /// Very light wash of [accent] for pill/badge backgrounds (a selected
+  /// top-level tab, an info panel), paired with [accentPaleText].
+  final Color accentPale;
+  final Color accentPaleText;
+
+  static const light = AppSemanticColors(
+    background: Color(0xFFF4F6F7),
+    surface: Colors.white,
+    mobileBackground: Color(0xFFFBF8F3),
+    text: Color(0xFF1F2D33),
+    textMuted: Color(0xFF68777D),
+    border: Color(0xFFDCE3E6),
+    asset: Color(0xFF1F2D33),
+    assetPale: Color(0xFFE4E6E7),
+    income: Color(0xFF3B9166),
+    incomePale: Color(0xFFE4F0EA),
+    expense: Color(0xFFD35645),
+    expensePale: Color(0xFFF9E9E7),
+    liability: Color(0xFF7A8F3D),
+    liabilityPale: Color(0xFFEBEEE2),
+    accent: Color(0xFF0D80A0),
+    accentPale: Color(0xFFE2F0F4),
+    accentPaleText: Color(0xFF096771),
+  );
+
+  static const dark = AppSemanticColors(
+    background: Color(0xFF14181A),
+    surface: Color(0xFF1E262A),
+    mobileBackground: Color(0xFF1B1815),
+    text: Color(0xFFEDF1F2),
+    textMuted: Color(0xFF93A3A9),
+    border: Color(0xFF333D41),
+    asset: Color(0xFFEDF1F2),
+    assetPale: Color(0xFF2A3236),
+    income: Color(0xFF54BD8B),
+    incomePale: Color(0xFF203029),
+    expense: Color(0xFFE58579),
+    expensePale: Color(0xFF382522),
+    liability: Color(0xFFA3B95F),
+    liabilityPale: Color(0xFF2A2E1F),
+    accent: Color(0xFF5BC2E0),
+    accentPale: Color(0xFF1C2E33),
+    accentPaleText: Color(0xFF8FD8E8),
+  );
+
+  @override
+  AppSemanticColors copyWith({
+    Color? background,
+    Color? surface,
+    Color? mobileBackground,
+    Color? text,
+    Color? textMuted,
+    Color? border,
+    Color? asset,
+    Color? assetPale,
+    Color? income,
+    Color? incomePale,
+    Color? expense,
+    Color? expensePale,
+    Color? liability,
+    Color? liabilityPale,
+    Color? accent,
+    Color? accentPale,
+    Color? accentPaleText,
+  }) => AppSemanticColors(
+    background: background ?? this.background,
+    surface: surface ?? this.surface,
+    mobileBackground: mobileBackground ?? this.mobileBackground,
+    text: text ?? this.text,
+    textMuted: textMuted ?? this.textMuted,
+    border: border ?? this.border,
+    asset: asset ?? this.asset,
+    assetPale: assetPale ?? this.assetPale,
+    income: income ?? this.income,
+    incomePale: incomePale ?? this.incomePale,
+    expense: expense ?? this.expense,
+    expensePale: expensePale ?? this.expensePale,
+    liability: liability ?? this.liability,
+    liabilityPale: liabilityPale ?? this.liabilityPale,
+    accent: accent ?? this.accent,
+    accentPale: accentPale ?? this.accentPale,
+    accentPaleText: accentPaleText ?? this.accentPaleText,
+  );
+
+  @override
+  AppSemanticColors lerp(ThemeExtension<AppSemanticColors>? other, double t) {
+    if (other is! AppSemanticColors) return this;
+    return AppSemanticColors(
+      background: Color.lerp(background, other.background, t)!,
+      surface: Color.lerp(surface, other.surface, t)!,
+      mobileBackground: Color.lerp(mobileBackground, other.mobileBackground, t)!,
+      text: Color.lerp(text, other.text, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      border: Color.lerp(border, other.border, t)!,
+      asset: Color.lerp(asset, other.asset, t)!,
+      assetPale: Color.lerp(assetPale, other.assetPale, t)!,
+      income: Color.lerp(income, other.income, t)!,
+      incomePale: Color.lerp(incomePale, other.incomePale, t)!,
+      expense: Color.lerp(expense, other.expense, t)!,
+      expensePale: Color.lerp(expensePale, other.expensePale, t)!,
+      liability: Color.lerp(liability, other.liability, t)!,
+      liabilityPale: Color.lerp(liabilityPale, other.liabilityPale, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
+      accentPale: Color.lerp(accentPale, other.accentPale, t)!,
+      accentPaleText: Color.lerp(accentPaleText, other.accentPaleText, t)!,
+    );
+  }
+}
+
+/// Reads the current [AppSemanticColors] off the nearest [Theme] — the
+/// replacement for the old direct `AppColors.xxx` references. `buildAppTheme`
+/// always registers one, so the `!` is safe for any widget under
+/// `MaterialApp`.
+extension AppColorsContext on BuildContext {
+  AppSemanticColors get colors => Theme.of(this).extension<AppSemanticColors>()!;
 }
 
 abstract final class AppBreakpoints {
@@ -79,11 +286,41 @@ const categoryIconOptions = <String, IconData>{
   'other': Icons.more_horiz,
 };
 
-CategoryVisual bookkeepingCategoryVisual(BookkeepingCategory category) {
-  final color = categoryColorOptions[category.colorKey] ?? AppColors.textMuted;
+/// Parses a `#RRGGBB` (or bare `RRGGBB`) hex string into a fully-opaque
+/// [Color]. Returns null if [value] isn't a valid 6-digit hex color — used
+/// to tell a user-picked custom category color (stored directly as its hex
+/// string in [BookkeepingCategory.colorKey]) apart from a plain, unrecognized
+/// key.
+Color? parseHexColor(String value) {
+  final match = RegExp(r'^#?([0-9A-Fa-f]{6})$').firstMatch(value.trim());
+  if (match == null) return null;
+  return Color(int.parse('FF${match.group(1)}', radix: 16));
+}
+
+/// Renders [color] back as an uppercase `#RRGGBB` hex string, the inverse of
+/// [parseHexColor].
+String colorToHex(Color color) =>
+    '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+/// Resolves a stored [BookkeepingCategory.colorKey] to an actual [Color] —
+/// either one of the curated [categoryColorOptions] swatches, or a
+/// user-chosen custom color stored directly as a `#RRGGBB` hex string (see
+/// [CategoryColorPicker] in `presentation/widgets/common.dart`). Falls back
+/// to [AppSemanticColors.textMuted] for an unrecognized/legacy key.
+Color resolveCategoryColorKey(String colorKey, AppSemanticColors colors) =>
+    categoryColorOptions[colorKey] ?? parseHexColor(colorKey) ?? colors.textMuted;
+
+/// [colors] resolves the pale wash against the current theme's surface
+/// (light or dark) instead of always blending against white, so custom
+/// category chips stay legible in dark mode too.
+CategoryVisual bookkeepingCategoryVisual(
+  BookkeepingCategory category,
+  AppSemanticColors colors,
+) {
+  final color = resolveCategoryColorKey(category.colorKey, colors);
   return CategoryVisual(
     color,
-    Color.alphaBlend(color.withValues(alpha: .12), Colors.white),
+    Color.alphaBlend(color.withValues(alpha: .12), colors.surface),
     categoryIconOptions[category.iconKey] ?? Icons.label_outline,
   );
 }
@@ -114,137 +351,59 @@ const incomeCategoryOptions = <String>[
   '其他收入',
 ];
 
-const _categoryVisuals = <String, CategoryVisual>{
-  '餐飲': CategoryVisual(
-    Color(0xFFE4765B),
-    Color(0xFFFBECE8),
-    Icons.restaurant_outlined,
-  ),
-  '交通': CategoryVisual(
-    Color(0xFF568EAE),
-    Color(0xFFEAF2F6),
-    Icons.directions_subway_outlined,
-  ),
-  '購物': CategoryVisual(
-    Color(0xFF9277A6),
-    Color(0xFFF1ECF4),
-    Icons.shopping_bag_outlined,
-  ),
-  '居家': CategoryVisual(
-    Color(0xFF719681),
-    Color(0xFFEBF2ED),
-    Icons.home_outlined,
-  ),
-  '房租': CategoryVisual(
-    Color(0xFF719681),
-    Color(0xFFEBF2ED),
-    Icons.home_outlined,
-  ),
-  '水電瓦斯': CategoryVisual(
-    Color(0xFF4E9295),
-    Color(0xFFE7F2F2),
-    Icons.bolt_outlined,
-  ),
-  '娛樂': CategoryVisual(
-    Color(0xFFB8893E),
-    Color(0xFFF6F0E5),
-    Icons.movie_outlined,
-  ),
-  '醫療': CategoryVisual(
-    Color(0xFFBC7182),
-    Color(0xFFF6EAED),
-    Icons.medical_services_outlined,
-  ),
-  '訂閱': CategoryVisual(
-    Color(0xFF6075A6),
-    Color(0xFFEBEEF5),
-    Icons.event_repeat_outlined,
-  ),
-  '保險': CategoryVisual(
-    Color(0xFF748A96),
-    Color(0xFFEDF1F3),
-    Icons.health_and_safety_outlined,
-  ),
-  '旅遊': CategoryVisual(
-    Color(0xFF4B8E9F),
-    Color(0xFFE8F2F4),
-    Icons.flight_outlined,
-  ),
-  '投資': CategoryVisual(
-    Color(0xFF6075A6),
-    Color(0xFFEBEEF5),
-    Icons.trending_up_outlined,
-  ),
-  '投資收益': CategoryVisual(
-    Color(0xFF6075A6),
-    Color(0xFFEBEEF5),
-    Icons.query_stats_outlined,
-  ),
-  '股息收入': CategoryVisual(
-    Color(0xFF6075A6),
-    Color(0xFFEBEEF5),
-    Icons.query_stats_outlined,
-  ),
-  '代訂墊付': CategoryVisual(
-    Color(0xFFA36F5A),
-    Color(0xFFF4ECE8),
-    Icons.groups_outlined,
-  ),
-  '代訂本人消費': CategoryVisual(
-    Color(0xFFE4765B),
-    Color(0xFFFBECE8),
-    Icons.restaurant_outlined,
-  ),
-  '薪資': CategoryVisual(
-    AppColors.income,
-    AppColors.incomePale,
-    Icons.work_outline,
-  ),
-  '獎金': CategoryVisual(
-    Color(0xFF3C88A8),
-    Color(0xFFE6F1F5),
-    Icons.emoji_events_outlined,
-  ),
-  '利息': CategoryVisual(
-    Color(0xFF6075A6),
-    Color(0xFFEBEEF5),
-    Icons.savings_outlined,
-  ),
-  '自由業': CategoryVisual(
-    Color(0xFF568EAE),
-    Color(0xFFEAF2F6),
-    Icons.laptop_outlined,
-  ),
-  '租金': CategoryVisual(
-    Color(0xFF719681),
-    Color(0xFFEBF2ED),
-    Icons.home_work_outlined,
-  ),
-  '退款': CategoryVisual(
-    Color(0xFFB8893E),
-    Color(0xFFF6F0E5),
-    Icons.replay_outlined,
-  ),
-  '其他': CategoryVisual(Color(0xFF7B8B91), Color(0xFFEEF1F2), Icons.more_horiz),
-  '其他收入': CategoryVisual(
-    Color(0xFF7B8B91),
-    Color(0xFFEEF1F2),
-    Icons.more_horiz,
-  ),
+// The hue/icon pairing below is each category's fixed visual identity and
+// stays the same across themes; only the pale wash (computed in
+// [categoryVisual] against the current theme's surface) changes with
+// light/dark.
+const _categoryVisuals = <String, (Color, IconData)>{
+  '餐飲': (Color(0xFFD2664B), Icons.restaurant_outlined),
+  '交通': (Color(0xFF4179C8), Icons.directions_subway_outlined),
+  '購物': (Color(0xFFB83D66), Icons.shopping_bag_outlined),
+  '居家': (Color(0xFF719681), Icons.home_outlined),
+  '房租': (Color(0xFF719681), Icons.home_outlined),
+  '水電瓦斯': (Color(0xFF4E9295), Icons.bolt_outlined),
+  '娛樂': (Color(0xFF6A44A7), Icons.movie_outlined),
+  '醫療': (Color(0xFFBC7182), Icons.medical_services_outlined),
+  '訂閱': (Color(0xFF6075A6), Icons.event_repeat_outlined),
+  '保險': (Color(0xFF748A96), Icons.health_and_safety_outlined),
+  '旅遊': (Color(0xFF4B8E9F), Icons.flight_outlined),
+  '投資': (Color(0xFF6075A6), Icons.trending_up_outlined),
+  '投資收益': (Color(0xFF6075A6), Icons.query_stats_outlined),
+  '股息收入': (Color(0xFF6075A6), Icons.query_stats_outlined),
+  '代訂墊付': (Color(0xFFA36F5A), Icons.groups_outlined),
+  '代訂本人消費': (Color(0xFFD2664B), Icons.restaurant_outlined),
+  '薪資': (Color(0xFF3B9166), Icons.work_outline),
+  '獎金': (Color(0xFF3C88A8), Icons.emoji_events_outlined),
+  '利息': (Color(0xFF6075A6), Icons.savings_outlined),
+  '自由業': (Color(0xFF568EAE), Icons.laptop_outlined),
+  '租金': (Color(0xFF719681), Icons.home_work_outlined),
+  '退款': (Color(0xFFB8893E), Icons.replay_outlined),
+  '其他': (Color(0xFF7B8B91), Icons.more_horiz),
+  '其他收入': (Color(0xFF7B8B91), Icons.more_horiz),
 };
 
-const _fallbackVisuals = <CategoryVisual>[
-  CategoryVisual(Color(0xFF568EAE), Color(0xFFEAF2F6), Icons.label_outline),
-  CategoryVisual(Color(0xFF9277A6), Color(0xFFF1ECF4), Icons.label_outline),
-  CategoryVisual(Color(0xFF719681), Color(0xFFEBF2ED), Icons.label_outline),
-  CategoryVisual(Color(0xFFB8893E), Color(0xFFF6F0E5), Icons.label_outline),
-  CategoryVisual(Color(0xFFBC7182), Color(0xFFF6EAED), Icons.label_outline),
-  CategoryVisual(Color(0xFF6075A6), Color(0xFFEBEEF5), Icons.label_outline),
+const _fallbackVisuals = <(Color, IconData)>[
+  (Color(0xFF568EAE), Icons.label_outline),
+  (Color(0xFF9277A6), Icons.label_outline),
+  (Color(0xFF719681), Icons.label_outline),
+  (Color(0xFFB8893E), Icons.label_outline),
+  (Color(0xFFBC7182), Icons.label_outline),
+  (Color(0xFF6075A6), Icons.label_outline),
 ];
 
-CategoryVisual categoryVisual(String category) {
-  final known = _categoryVisuals[category];
-  if (known != null) return known;
+/// [colors] resolves the pale wash against the current theme's surface
+/// (light or dark) instead of always blending against white, so category
+/// chips/avatars stay legible in dark mode too.
+CategoryVisual categoryVisual(String category, AppSemanticColors colors) {
+  final (color, icon) = _categoryVisuals[category] ?? _fallbackFor(category);
+  return CategoryVisual(
+    color,
+    Color.alphaBlend(color.withValues(alpha: .12), colors.surface),
+    icon,
+  );
+}
+
+(Color, IconData) _fallbackFor(String category) {
   var checksum = 0;
   for (final unit in category.codeUnits) {
     checksum = (checksum * 31 + unit) & 0x7fffffff;

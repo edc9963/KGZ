@@ -20,9 +20,37 @@
     mobileRecognizer: 16_534_782,
     dictionary: 74_012,
   };
+  const ORT_SCRIPT_URL = `${ASSET_ROOT}ort.webgpu.min.js`;
+  const TESSERACT_SCRIPT_URL = `${TESSERACT_ROOT}tesseract.min.js`;
 
   let runtimePromise;
   let tesseractWorkerPromise;
+  const loadedScripts = new Set();
+
+  // The ORT (~20MB wasm) and Tesseract (~10MB wasm+lang data) engines used to
+  // be loaded unconditionally by <script> tags in index.html, which meant
+  // every page load paid their parse/compile memory cost even for people who
+  // never import a screenshot. Loading them on demand, only when an import
+  // actually starts, leaves more headroom for low-memory phones during the
+  // rest of the app (including the CanvasKit-heavy review page that follows
+  // a successful import).
+  function ensureScript(src) {
+    if (loadedScripts.has(src)) return Promise.resolve();
+    if (document.querySelector(`script[src="${src}"]`)) {
+      loadedScripts.add(src);
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => {
+        loadedScripts.add(src);
+        resolve();
+      };
+      script.onerror = () => reject(new Error(`無法載入 OCR 元件：${src}`));
+      document.head.appendChild(script);
+    });
+  }
 
   function progress(stage, value, message, current, total, engine) {
     if (typeof window.kgzOcrProgress !== "function") return;
@@ -55,14 +83,6 @@
       /iPad|iPhone|iPod|Android/.test(agent) || iPadDesktopMode;
     const memory = Number(navigator.deviceMemory || 0);
     return mobileDevice || (memory > 0 && memory <= 4);
-  }
-
-  function needsIphoneLowMemoryMode() {
-    const agent = navigator.userAgent || "";
-    return (
-      /iPad|iPhone|iPod/.test(agent) ||
-      (/Macintosh/.test(agent) && Number(navigator.maxTouchPoints || 0) > 1)
-    );
   }
 
   async function fetchCached(url, onBytes) {
@@ -136,6 +156,7 @@
   async function loadRuntime() {
     if (runtimePromise) return runtimePromise;
     runtimePromise = (async () => {
+      await ensureScript(ORT_SCRIPT_URL);
       if (!window.ort) throw new Error("ONNX Runtime Web 尚未載入");
       progress("runtime", 0.02, "正在載入本機 OCR 執行環境");
       ort.env.wasm.wasmPaths = ASSET_ROOT;
@@ -256,13 +277,39 @@
     }
   }
 
+  // The decoded source canvas stays alive for the whole page (detection +
+  // every line's recognition crop), so its size sets a floor on peak memory.
+  // Cap it instead of trusting whatever resolution the screenshot happens to
+  // be (a scrolling/"long" screenshot can easily be 4000px+ tall) - OCR text
+  // is still comfortably legible well below this cap.
+  const MAX_SOURCE_DIMENSION = 2400;
+
   function imageCanvas(image) {
+    const scale = Math.min(
+      1,
+      MAX_SOURCE_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight)
+    );
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext("2d", { willReadFrequently: true });
-    context.drawImage(image, 0, 0);
+    context.drawImage(image, 0, 0, width, height);
     return canvas;
+  }
+
+  // iOS WebKit is slow to reclaim <canvas> backing-store memory once a
+  // canvas element becomes unreachable; under GC pressure it can hold on to
+  // dozens of full-resolution pixel buffers long enough to have the page
+  // killed for excessive memory use. Explicitly zeroing width/height forces
+  // WebKit to release the backing store immediately. Call this the moment a
+  // canvas's pixels have been consumed (drawn elsewhere or read into a
+  // tensor) and it is no longer needed.
+  function releaseCanvas(canvas) {
+    if (!canvas) return;
+    canvas.width = 0;
+    canvas.height = 0;
   }
 
   function resizeCanvas(source, width, height, fillWhite) {
@@ -449,6 +496,7 @@
       [0.485, 0.456, 0.406],
       [0.229, 0.224, 0.225]
     );
+    releaseCanvas(resized);
     const name = runtime.detector.inputNames[0];
     const output = await runtime.detector.run({ [name]: input });
     const tensor = output[runtime.detector.outputNames[0]];
@@ -518,6 +566,7 @@
       const height = Math.min(tileHeight, cropBottom - top);
       const tile = cropCanvas(source, 0, top, source.width, height);
       boxes.push(...(await detectTile(runtime, tile, top)));
+      releaseCanvas(tile);
     }
     return deduplicateBoxes(boxes);
   }
@@ -604,7 +653,9 @@
       Math.max(1, Math.round((crop.width / crop.height) * height))
     );
     context.drawImage(crop, 0, 0, drawnWidth, height);
+    releaseCanvas(crop);
     const input = canvasTensor(canvas, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]);
+    releaseCanvas(canvas);
     const name = runtime.recognizer.inputNames[0];
     const output = await runtime.recognizer.run({ [name]: input });
     const decoded = decodeCtc(
@@ -732,36 +783,39 @@
       );
       recognized.push(await recognizeBox(runtime, source, boxes[index]));
     }
-    const rows = groupRows(recognized, source.width, source.height);
+    const pageWidth = source.width;
+    const pageHeight = source.height;
+    releaseCanvas(source);
+    const rows = groupRows(recognized, pageWidth, pageHeight);
     const lines = rows.map((row) => row.normalized);
     for (const row of rows) {
       for (const component of row.components) {
         if (
-          component.left / source.width > 0.58 &&
+          component.left / pageWidth > 0.58 &&
           isMoney(component.text)
         ) {
           lines.push({
             text: component.text,
-            left: component.left / source.width,
-            top: component.top / source.height,
-            right: component.right / source.width,
-            bottom: component.bottom / source.height,
+            left: component.left / pageWidth,
+            top: component.top / pageHeight,
+            right: component.right / pageWidth,
+            bottom: component.bottom / pageHeight,
             polygon: [
               {
-                x: component.left / source.width,
-                y: component.top / source.height,
+                x: component.left / pageWidth,
+                y: component.top / pageHeight,
               },
               {
-                x: component.right / source.width,
-                y: component.top / source.height,
+                x: component.right / pageWidth,
+                y: component.top / pageHeight,
               },
               {
-                x: component.right / source.width,
-                y: component.bottom / source.height,
+                x: component.right / pageWidth,
+                y: component.bottom / pageHeight,
               },
               {
-                x: component.left / source.width,
-                y: component.bottom / source.height,
+                x: component.left / pageWidth,
+                y: component.bottom / pageHeight,
               },
             ],
             confidence: Math.min(
@@ -788,6 +842,7 @@
   async function loadTesseractWorker() {
     if (tesseractWorkerPromise) return tesseractWorkerPromise;
     tesseractWorkerPromise = (async () => {
+      await ensureScript(TESSERACT_SCRIPT_URL);
       if (!window.Tesseract) {
         throw new Error("Tesseract OCR 尚未載入");
       }
@@ -914,6 +969,40 @@
     return pages;
   }
 
+  // Both engines keep their model weights resident in WASM memory for as
+  // long as the session/worker lives, which used to mean the whole tab
+  // session. Releasing them the moment recognition is done frees that memory
+  // back up before Flutter navigates to the (CanvasKit-heavy) review page -
+  // exactly the point at which low-memory phones were getting OOM-killed.
+  // The next import simply recreates them (fast: models are already cached
+  // by fetchCached), which is a fair trade for not crashing the tab.
+  function releaseOcrRuntime(runtime) {
+    if (!runtime) return;
+    try {
+      runtime.detector.release();
+    } catch (_) {
+      // Already released or never fully initialized.
+    }
+    try {
+      runtime.recognizer.release();
+    } catch (_) {
+      // Already released or never fully initialized.
+    }
+    runtimePromise = null;
+  }
+
+  async function releaseTesseractWorker() {
+    if (!tesseractWorkerPromise) return;
+    const pending = tesseractWorkerPromise;
+    tesseractWorkerPromise = null;
+    try {
+      const worker = await pending;
+      await worker.terminate();
+    } catch (_) {
+      // Worker already failed/terminated; nothing left to clean up.
+    }
+  }
+
   window.kgzOcrRecognize = async function (imagesJson) {
     const sources = JSON.parse(imagesJson);
     if (!Array.isArray(sources) || sources.length === 0) {
@@ -921,16 +1010,12 @@
     }
     let runtime;
     let pages;
-    if (needsIphoneLowMemoryMode()) {
-      await deleteOldModelCaches();
-      pages = await recognizeWithTesseract(
-        sources,
-        new Error("iPhone uses the low-memory OCR path")
-      );
-    } else try {
+    try {
       // Safari supports the WASM execution provider even when WebGPU is not
-      // available. Always try PP-OCR first so mobile and desktop use the same
-      // detector and recognizer; Tesseract remains the runtime-failure fallback.
+      // available. Always try PP-OCR first, iPhone included (it lands on the
+      // lightweight mobile recognizer via prefersMobileRecognizer), so every
+      // platform gets PP-OCR's accuracy; Tesseract remains only the
+      // runtime-failure fallback.
       runtime = await loadRuntime();
       pages = [];
       for (let pageIndex = 0; pageIndex < sources.length; pageIndex += 1) {
@@ -938,10 +1023,20 @@
         pages.push(
           await recognizePage(runtime, image, pageIndex, sources.length)
         );
+        // Drop the decoded bitmap and give WebKit a chance to actually
+        // reclaim the canvases released during this page before the next
+        // (memory-heavy) page starts. iOS is otherwise prone to killing the
+        // tab/app under sustained pressure from several screenshots in a row.
+        image.src = "";
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
       }
     } catch (error) {
+      releaseOcrRuntime(runtime);
       runtime = null;
       pages = await recognizeWithTesseract(sources, error);
+    } finally {
+      releaseOcrRuntime(runtime);
+      await releaseTesseractWorker();
     }
     progress(
       "parse",

@@ -63,6 +63,30 @@ export async function replyLine(
   }
 }
 
+// Unlike replyLine, this is not tied to a webhook event - used for
+// proactively-initiated messages such as the daily auto-debit reminder.
+export async function pushLine(
+  channelAccessToken: string,
+  lineUserId: string,
+  messages: LineMessage[],
+): Promise<void> {
+  const response = await fetch(`${LINE_API}/message/push`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${channelAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: lineUserId,
+      messages: messages.slice(0, 5),
+    }),
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`line_push_${response.status}:${body.slice(0, 300)}`)
+  }
+}
+
 function fromBase64(value: string): Uint8Array {
   const binary = atob(value)
   return Uint8Array.from(binary, (char) => char.charCodeAt(0))

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
 import '../../domain/models.dart';
+import '../design_tokens.dart';
 import 'cards_page.dart';
 import 'expenses_page.dart';
 import 'investments_page.dart';
@@ -169,10 +170,10 @@ class AccountsPage extends ConsumerWidget {
             ),
           ),
         const SizedBox(height: 18),
-        const Text(
+        Text(
           '目前餘額 = 期初餘額＋所有消費、投資、帳單、收款及調整紀錄。'
           '編輯來源資料會自動重新計算。',
-          style: TextStyle(color: Colors.black54),
+          style: TextStyle(color: context.colors.textMuted),
         ),
       ],
     );
@@ -571,11 +572,8 @@ class AccountsPage extends ConsumerWidget {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextFormField(
+                          child: MoneyField(
                             controller: balance,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
                             decoration: const InputDecoration(
                               labelText: '期初餘額',
                             ),
@@ -679,13 +677,9 @@ class AccountsPage extends ConsumerWidget {
                       setState(() => mode = value.single),
                 ),
                 const SizedBox(height: 16),
-                TextField(
+                MoneyField(
                   controller: amount,
                   autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                    signed: true,
-                  ),
                   decoration: InputDecoration(
                     labelText: mode == 'difference' ? '調整金額' : '調整後總額',
                     helperText: mode == 'difference'
@@ -962,12 +956,9 @@ class AccountsPage extends ConsumerWidget {
                         onChanged: (value) => setState(() => toId = value),
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
+                      MoneyField(
                         controller: amount,
                         autofocus: true,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
                         style: Theme.of(context).textTheme.headlineSmall
                             ?.copyWith(fontWeight: FontWeight.w900),
                         decoration: InputDecoration(
