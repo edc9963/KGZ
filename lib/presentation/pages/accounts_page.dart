@@ -108,6 +108,7 @@ class AccountsPage extends ConsumerWidget {
                 mask: mask,
               ),
               icon: Icons.insights_outlined,
+              tone: context.colors.asset,
             ),
           ],
         ),
