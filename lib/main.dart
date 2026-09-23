@@ -162,9 +162,14 @@ Future<_BootstrapResult> _bootstrapApp(SharedPreferences preferences) async {
       }
     }
   }
+  // Without Supabase configured there is no real LINE OAuth to complete, so
+  // fall back to a locally-simulated sign-in (MockAuthRepository) instead of
+  // UnconfiguredAuthRepository's "throw on sign-in" — this is what lets
+  // `flutter run --dart-define=SUPABASE_URL= --dart-define=SUPABASE_PUBLISHABLE_KEY=`
+  // preview the signed-in app locally without a real account.
   final auth = supabaseConfigured
       ? SupabaseAuthRepository(Supabase.instance.client)
-      : const UnconfiguredAuthRepository();
+      : MockAuthRepository(preferences);
   final persistence = UserScopedSharedPreferencesPersistence(
     preferences,
     () => auth.currentUserId,
