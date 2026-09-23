@@ -29,12 +29,17 @@ void main() {
     final router = GoRouter(
       initialLocation: '/cards',
       routes: [
-        ShellRoute(
-          builder: (context, state, child) => AppShell(child: child),
-          routes: [
-            GoRoute(
-              path: '/cards',
-              builder: (context, state) => const CardsPage(),
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) =>
+              AppShell(navigationShell: navigationShell),
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/cards',
+                  builder: (context, state) => const CardsPage(),
+                ),
+              ],
             ),
           ],
         ),
@@ -44,7 +49,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();
@@ -75,9 +80,10 @@ void main() {
       final router = GoRouter(
         initialLocation: '/reports',
         routes: [
-          ShellRoute(
-            builder: (context, state, child) => AppShell(child: child),
-            routes: [
+          StatefulShellRoute.indexedStack(
+            builder: (context, state, navigationShell) =>
+                AppShell(navigationShell: navigationShell),
+            branches: [
               for (final path in const [
                 '/dashboard',
                 '/reports',
@@ -88,7 +94,14 @@ void main() {
                 '/orders',
                 '/settings',
               ])
-                GoRoute(path: path, builder: (context, state) => Text(path)),
+                StatefulShellBranch(
+                  routes: [
+                    GoRoute(
+                      path: path,
+                      builder: (context, state) => Text(path),
+                    ),
+                  ],
+                ),
             ],
           ),
         ],
@@ -98,7 +111,7 @@ void main() {
         ProviderScope(
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp.router(
-            theme: buildAppTheme(),
+            theme: buildAppTheme(Brightness.light),
             routerConfig: router,
           ),
         ),
@@ -146,9 +159,10 @@ void main() {
     final router = GoRouter(
       initialLocation: '/dashboard',
       routes: [
-        ShellRoute(
-          builder: (context, state, child) => AppShell(child: child),
-          routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) =>
+              AppShell(navigationShell: navigationShell),
+          branches: [
             for (final path in const [
               '/dashboard',
               '/reports',
@@ -159,7 +173,11 @@ void main() {
               '/orders',
               '/settings',
             ])
-              GoRoute(path: path, builder: (context, state) => Text(path)),
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(path: path, builder: (context, state) => Text(path)),
+                ],
+              ),
           ],
         ),
       ],
@@ -168,7 +186,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();

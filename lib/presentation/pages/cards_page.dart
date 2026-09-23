@@ -457,12 +457,8 @@ class _CardsPageState extends ConsumerState<CardsPage>
                                 : selected.remove(item.id);
                           }),
                         ),
-                    TextField(
+                    MoneyField(
                       controller: adjustment,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
                       decoration: const InputDecoration(
                         labelText: '帳單人工調整',
                         helperText: '回饋或折抵可填負數',
@@ -470,11 +466,8 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
+                    MoneyField(
                       controller: paid,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
                       decoration: const InputDecoration(
                         labelText: '已繳金額',
                         helperText: '可記錄部分繳款；繳款會扣除自動扣款帳戶',
@@ -597,11 +590,12 @@ class _CardsPageState extends ConsumerState<CardsPage>
           autoDebitDate: now.add(const Duration(days: 21)),
         );
       }
-      return store.cardBillingDates(
+      final cursor = store.cardCycleCursorForLabel(
         card,
         int.tryParse(parts[0]) ?? now.year,
         int.tryParse(parts[1]) ?? now.month,
       );
+      return store.cardBillingDates(card, cursor.year, cursor.month);
     }
 
     var dueDate = existing?.dueDate ?? dates().dueDate;
@@ -807,11 +801,8 @@ class _CardsPageState extends ConsumerState<CardsPage>
                           }),
                         ),
                     const Divider(height: 24),
-                    TextField(
+                    MoneyField(
                       controller: actualAmount,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
                       decoration: const InputDecoration(
                         labelText: '銀行實際帳單總額',
                         helperText: '此金額是待繳金額的唯一依據',
@@ -948,6 +939,8 @@ class _CardsPageState extends ConsumerState<CardsPage>
                                 existing?.autoDebitState ??
                                 CardBillAutoDebitState.pending,
                             paidAt: existing?.paidAt,
+                            reminderDismissed:
+                                existing?.reminderDismissed ?? false,
                             origin: existing?.origin ?? DataOrigin.user,
                           ),
                         );
@@ -1467,11 +1460,8 @@ class _BillsListState extends ConsumerState<_BillsList> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
+                MoneyField(
                   controller: amount,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
                   decoration: InputDecoration(
                     labelText: '繳款金額',
                     helperText:

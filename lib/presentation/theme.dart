@@ -2,93 +2,166 @@ import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
 
-ThemeData buildAppTheme() {
+/// Builds the app's [ThemeData] for either brightness. Both the light and
+/// dark theme share this one function — only the [AppSemanticColors]
+/// instance backing them differs — so a color change here (or in
+/// [AppSemanticColors]) automatically applies to both. The resolved
+/// [AppSemanticColors] is registered as a [ThemeExtension] so screens can
+/// read it back via `context.colors` (see `AppColorsContext` in
+/// design_tokens.dart) instead of the old static `AppColors.xxx` constants.
+ThemeData buildAppTheme(Brightness brightness) {
+  final colors = brightness == Brightness.dark
+      ? AppSemanticColors.dark
+      : AppSemanticColors.light;
   final scheme = ColorScheme.fromSeed(
-    seedColor: AppColors.primary,
-    brightness: Brightness.light,
-    surface: AppColors.surface,
-    error: AppColors.expense,
+    seedColor: AppColors.accent,
+    brightness: brightness,
+    surface: colors.surface,
+    error: colors.expense,
   );
-  final baseTextTheme = ThemeData.light().textTheme.copyWith(
-    headlineLarge: const TextStyle(fontSize: 32, height: 1.2),
-    headlineMedium: const TextStyle(fontSize: 26, height: 1.25),
-    headlineSmall: const TextStyle(fontSize: 22, height: 1.3),
-    titleLarge: const TextStyle(fontSize: 20, height: 1.35),
-    titleMedium: const TextStyle(fontSize: 16, height: 1.4),
-    bodyLarge: const TextStyle(fontSize: 16, height: 1.55),
-    bodyMedium: const TextStyle(fontSize: 15, height: 1.5),
-    bodySmall: const TextStyle(fontSize: 13, height: 1.45),
-  );
+  final baseTextTheme =
+      (brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light())
+          .textTheme
+          .copyWith(
+            headlineLarge: const TextStyle(fontSize: 32, height: 1.2),
+            headlineMedium: const TextStyle(fontSize: 26, height: 1.25),
+            headlineSmall: const TextStyle(fontSize: 22, height: 1.3),
+            titleLarge: const TextStyle(fontSize: 20, height: 1.35),
+            titleMedium: const TextStyle(fontSize: 16, height: 1.4),
+            bodyLarge: const TextStyle(fontSize: 16, height: 1.55),
+            bodyMedium: const TextStyle(fontSize: 15, height: 1.5),
+            bodySmall: const TextStyle(fontSize: 13, height: 1.45),
+          );
   return ThemeData(
     useMaterial3: true,
+    brightness: brightness,
     colorScheme: scheme,
-    scaffoldBackgroundColor: AppColors.background,
+    scaffoldBackgroundColor: colors.background,
+    extensions: [colors],
     fontFamilyFallback: const [
       'Noto Sans TC',
       'Microsoft JhengHei',
       'sans-serif',
     ],
-    cardTheme: const CardThemeData(
+    cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,
-      color: AppColors.surface,
+      color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(14)),
-        side: BorderSide(color: AppColors.border),
+        borderRadius: const BorderRadius.all(Radius.circular(16)),
+        side: BorderSide(color: colors.border),
       ),
     ),
-    inputDecorationTheme: const InputDecorationTheme(
+    inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: colors.surface,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-        borderSide: BorderSide(color: AppColors.border),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: colors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-        borderSide: BorderSide(color: AppColors.border),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: colors.border),
       ),
-      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
     ),
+    // The desktop navigation rail's sidebar is deliberately always dark
+    // graphite in both themes (see AppColors.graphite), so its colors come
+    // from the fixed AppColors constants, not from [colors].
     navigationRailTheme: const NavigationRailThemeData(
       backgroundColor: AppColors.graphite,
-      indicatorColor: AppColors.primary,
+      indicatorColor: AppColors.accentSoft,
       selectedIconTheme: IconThemeData(color: Colors.white),
-      unselectedIconTheme: IconThemeData(color: Color(0xFFDCE5E8)),
+      unselectedIconTheme: IconThemeData(color: AppColors.graphiteMuted),
       selectedLabelTextStyle: TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.w700,
       ),
-      unselectedLabelTextStyle: TextStyle(color: Color(0xFFDCE5E8)),
+      unselectedLabelTextStyle: TextStyle(color: AppColors.graphiteMuted),
     ),
-    navigationBarTheme: const NavigationBarThemeData(
-      backgroundColor: Colors.white,
-      indicatorColor: AppColors.assetPale,
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: colors.mobileBackground,
+      indicatorColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? colors.accent
+              : colors.textMuted,
+        ),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontSize: 12,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w800
+              : FontWeight.w500,
+          color: states.contains(WidgetState.selected)
+              ? colors.accent
+              : colors.textMuted,
+        ),
+      ),
     ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.white,
-      foregroundColor: AppColors.text,
+    // Level-1 "spotlight" treatment: solid highlight (goose-yellow) fill
+    // with dark graphite icon/text — the one action per screen that gets
+    // a filled, colored button. See the button-hierarchy notes in the
+    // design canvas. Fixed across themes, like AppColors.highlight itself.
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: AppColors.highlight,
+      foregroundColor: AppColors.highlightOn,
+      extendedTextStyle: TextStyle(fontWeight: FontWeight.w800),
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: colors.surface,
+      foregroundColor: colors.text,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
-      shape: Border(bottom: BorderSide(color: AppColors.border)),
+      shape: Border(bottom: BorderSide(color: colors.border)),
     ),
-    dividerTheme: const DividerThemeData(color: AppColors.border),
+    dividerTheme: DividerThemeData(color: colors.border),
+    // Deliberately hollow, not solid-filled: every button in the app (main
+    // call-to-action included) reads as an outlined pill so a FilledButton
+    // and an OutlinedButton look identical — one consistent button style
+    // instead of two competing weights.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: Colors.transparent,
+        foregroundColor: colors.accent,
+        side: BorderSide(color: colors.accent),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, AppSpacing.controlMinHeight),
+        foregroundColor: colors.accent,
+        side: BorderSide(color: colors.accent),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        minimumSize: const Size(48, AppSpacing.controlMinHeight),
+        foregroundColor: colors.accent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: SegmentedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        selectedBackgroundColor: colors.accentPale,
+        selectedForegroundColor: colors.accentPaleText,
+        side: BorderSide(color: colors.border),
       ),
     ),
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      side: const BorderSide(color: AppColors.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      side: BorderSide(color: colors.border),
     ),
     textTheme: baseTextTheme.apply(
-      bodyColor: AppColors.text,
-      displayColor: AppColors.text,
+      bodyColor: colors.text,
+      displayColor: colors.text,
     ),
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
   );

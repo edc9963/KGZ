@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/app_store.dart';
@@ -149,6 +150,7 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                 onSelectionChanged: _submitting
                     ? null
                     : (value) => setState(() {
+                        HapticFeedback.selectionClick();
                         _kind = value.single;
                         _category = null;
                         _error = null;
@@ -159,13 +161,9 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      TextFormField(
+                      MoneyField(
                         controller: _amount,
                         autofocus: true,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        textInputAction: TextInputAction.next,
                         style: Theme.of(context).textTheme.headlineMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
                         decoration: const InputDecoration(
@@ -422,6 +420,7 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
     }
     if (!mounted) return;
     if (store.lastSyncError == null && !store.hasConflict) {
+      HapticFeedback.lightImpact();
       final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
       messenger.showSnackBar(

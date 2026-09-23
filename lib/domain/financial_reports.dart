@@ -47,6 +47,21 @@ class ChartSlice {
   final int amountMinor;
 }
 
+/// One line of the per-category expense breakdown shown under the expense pie
+/// chart (date / item / amount). [amountMinor] is already converted to the
+/// default currency, so the lines of a category add up to its pie slice.
+class ExpenseDetail {
+  const ExpenseDetail({
+    required this.date,
+    required this.item,
+    required this.amountMinor,
+  });
+
+  final DateTime date;
+  final String item;
+  final int amountMinor;
+}
+
 class MonthlyReportPoint {
   const MonthlyReportPoint({
     required this.month,
@@ -81,6 +96,7 @@ class FinancialReportSnapshot {
     required this.cashChange,
     required this.assetAllocation,
     required this.expenseAllocation,
+    this.expenseDetails = const {},
     required this.monthlyTrend,
     required this.issues,
   });
@@ -98,6 +114,10 @@ class FinancialReportSnapshot {
   final int cashChange;
   final List<ChartSlice> assetAllocation;
   final List<ChartSlice> expenseAllocation;
+
+  /// Transactions behind each [expenseAllocation] slice, keyed by the slice's
+  /// label (including the merged 其他 slice), newest first.
+  final Map<String, List<ExpenseDetail>> expenseDetails;
   final List<MonthlyReportPoint> monthlyTrend;
   final List<ReportDataQualityIssue> issues;
 
@@ -124,6 +144,30 @@ class FinancialReportService {
 
   final AppData data;
   final List<ReportDataQualityIssue> _issues = [];
+
+  /// The category name a 代訂 order's own (`isSelf`) consumption is grouped
+  /// under in the expense breakdown/pie chart — the order's chosen
+  /// [GroupOrder.selfExpenseCategoryId] (picked in the 代訂 editor) if it
+  /// still resolves to a real category, otherwise the built-in 餐飲 category.
+  /// Every order created before this was configurable has a null
+  /// [GroupOrder.selfExpenseCategoryId], so this is also what makes old
+  /// 代訂 data default to 餐飲.
+  String _orderSelfExpenseCategoryName(GroupOrder order) {
+    final id = order.selfExpenseCategoryId ?? 'expense-food';
+    final byId = data.categories
+        .where(
+          (item) => item.id == id && item.kind == BookkeepingCategoryKind.expense,
+        )
+        .firstOrNull;
+    if (byId != null) return byId.name;
+    final byName = data.categories
+        .where(
+          (item) =>
+              item.kind == BookkeepingCategoryKind.expense && item.name == '餐飲',
+        )
+        .firstOrNull;
+    return byName?.name ?? '餐飲';
+  }
 
   List<NetWorthTrendPoint> netWorthTrend(DateTime end, {int months = 6}) {
     assert(months > 0);
@@ -255,7 +299,8 @@ class FinancialReportService {
       for (final line in assets)
         if (line.amountMinor > 0) ChartSlice(line.label, line.amountMinor),
     ];
-    final expenseAllocation = _groupExpenses(period);
+    final grouped = _groupExpenses(period);
+    final expenseAllocation = grouped.slices;
     final monthlyTrend = _monthlyTrend(period.end);
 
     return FinancialReportSnapshot(
@@ -272,6 +317,7 @@ class FinancialReportService {
       cashChange: cashChange,
       assetAllocation: assetAllocation,
       expenseAllocation: expenseAllocation,
+      expenseDetails: grouped.details,
       monthlyTrend: monthlyTrend,
       issues: List.unmodifiable(_issues),
     );
@@ -527,11 +573,25 @@ class FinancialReportService {
     return (priceMinor: product.currentPriceMinor, estimated: true);
   }
 
+  /// Groups the period's income/expenses by category. When [details] is
+  /// given, every expense contribution is also recorded there (per category)
+  /// so the pie chart can list the transactions behind each slice.
   ({List<StatementLine> income, List<StatementLine> expenses}) _profitAndLoss(
-    ReportPeriod period,
-  ) {
+    ReportPeriod period, {
+    Map<String, List<ExpenseDetail>>? details,
+  }) {
     final income = <String, int>{};
     final expenses = <String, int>{};
+    void addExpense(String category, int amount, DateTime date, String item) {
+      expenses.update(
+        category,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+      details?.putIfAbsent(category, () => []).add(
+        ExpenseDetail(date: date, item: item, amountMinor: amount),
+      );
+    }
     for (final item in data.incomes.where(
       (item) => period.contains(item.date),
     )) {
@@ -548,20 +608,24 @@ class FinancialReportService {
     for (final item in data.expenses.where(
       (item) => period.contains(item.date),
     )) {
-      expenses.update(
+      addExpense(
         item.category,
-        (value) => value + _convert(item.amountMinor, 'TWD', item.date),
-        ifAbsent: () => _convert(item.amountMinor, 'TWD', item.date),
+        _convert(item.amountMinor, 'TWD', item.date),
+        item.date,
+        item.item.trim().isNotEmpty
+            ? item.item.trim()
+            : (item.merchant.trim().isNotEmpty ? item.merchant.trim() : '未命名'),
       );
     }
     for (final order in data.orders.where(
       (item) => period.contains(item.date),
     )) {
       if (order.selfExpenseMinor > 0) {
-        expenses.update(
-          '代訂本人消費',
-          (value) => value + order.selfExpenseMinor,
-          ifAbsent: () => order.selfExpenseMinor,
+        addExpense(
+          _orderSelfExpenseCategoryName(order),
+          order.selfExpenseMinor,
+          order.date,
+          order.name.trim().isNotEmpty ? '代訂：${order.name.trim()}' : '代訂',
         );
       }
       for (final participant in order.participants.where(
@@ -571,12 +635,20 @@ class FinancialReportService {
             period.contains(item.collectedAt!),
       )) {
         final result = participant.collectionResultMinor;
-        final target = result >= 0 ? income : expenses;
-        target.update(
-          '代收差額',
-          (value) => value + result.abs(),
-          ifAbsent: () => result.abs(),
-        );
+        if (result >= 0) {
+          income.update(
+            '代收差額',
+            (value) => value + result.abs(),
+            ifAbsent: () => result.abs(),
+          );
+        } else {
+          addExpense(
+            '代收差額',
+            result.abs(),
+            participant.collectedAt!,
+            '代收差額：${participant.name}${order.name.trim().isNotEmpty ? '（${order.name.trim()}）' : ''}',
+          );
+        }
       }
     }
     for (final product in data.products) {
@@ -628,14 +700,16 @@ class FinancialReportService {
               .round();
           final result = tx.grossMinor - tx.feeMinor - tx.taxMinor - basis;
           if (period.contains(tx.date)) {
-            final target = result >= 0 ? income : expenses;
-            final key = result >= 0 ? '已實現投資利得' : '已實現投資損失';
             final amount = _convert(result.abs(), product.currency, tx.date);
-            target.update(
-              key,
-              (value) => value + amount,
-              ifAbsent: () => amount,
-            );
+            if (result >= 0) {
+              income.update(
+                '已實現投資利得',
+                (value) => value + amount,
+                ifAbsent: () => amount,
+              );
+            } else {
+              addExpense('已實現投資損失', amount, tx.date, '${product.name} 賣出損失');
+            }
           }
           final quantity = (holding.quantityMicros - tx.quantityMicros).clamp(
             0,
@@ -819,20 +893,52 @@ class FinancialReportService {
     );
   }
 
-  List<ChartSlice> _groupExpenses(ReportPeriod period) {
-    final pnl = _profitAndLoss(period);
+  ({List<ChartSlice> slices, Map<String, List<ExpenseDetail>> details})
+  _groupExpenses(ReportPeriod period) {
+    final rawDetails = <String, List<ExpenseDetail>>{};
+    final pnl = _profitAndLoss(period, details: rawDetails);
     final values = [
       for (final line in pnl.expenses) ChartSlice(line.label, line.amountMinor),
     ]..sort((a, b) => b.amountMinor.compareTo(a.amountMinor));
-    if (values.length <= 6) return values;
+    int newestFirst(ExpenseDetail a, ExpenseDetail b) {
+      final byDate = b.date.compareTo(a.date);
+      return byDate != 0 ? byDate : b.amountMinor.compareTo(a.amountMinor);
+    }
+
+    if (values.length <= 6) {
+      return (
+        slices: values,
+        details: {
+          for (final slice in values)
+            slice.label: [...?rawDetails[slice.label]]..sort(newestFirst),
+        },
+      );
+    }
     final kept = values.take(5).toList();
+    final rest = values.skip(5).toList();
     kept.add(
-      ChartSlice(
-        '其他',
-        values.skip(5).fold(0, (sum, item) => sum + item.amountMinor),
-      ),
+      ChartSlice('其他', rest.fold(0, (sum, item) => sum + item.amountMinor)),
     );
-    return kept;
+    final details = <String, List<ExpenseDetail>>{
+      for (final slice in kept.take(5))
+        slice.label: [...?rawDetails[slice.label]],
+    };
+    // The merged 其他 slice lists every transaction of the folded-in
+    // categories, with the original category shown in the item text.
+    details.putIfAbsent('其他', () => []).addAll([
+      for (final slice in rest)
+        for (final detail
+            in rawDetails[slice.label] ?? const <ExpenseDetail>[])
+          ExpenseDetail(
+            date: detail.date,
+            item: '${detail.item}（${slice.label}）',
+            amountMinor: detail.amountMinor,
+          ),
+    ]);
+    for (final list in details.values) {
+      list.sort(newestFirst);
+    }
+    return (slices: kept, details: details);
   }
 
   List<MonthlyReportPoint> _monthlyTrend(DateTime end) {

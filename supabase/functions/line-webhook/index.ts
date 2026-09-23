@@ -316,7 +316,28 @@ async function handlePostback(
     )
   }
   if (data === 'receive:cancel') return [textMessage('未變更收款狀態。')]
+  if (data.startsWith('bill:ack:')) {
+    return acknowledgeBillMessages(db, lineUserId, data.substring('bill:ack:'.length))
+  }
   return [helpMessage()]
+}
+
+async function acknowledgeBillMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+  billId: string,
+): Promise<LineMessage[]> {
+  const result = await rpc(db, 'line_acknowledge_bill_reminder', {
+    p_line_user_id: lineUserId,
+    p_bill_id: billId,
+  })
+  if (result.status === 'saved') {
+    return [textMessage(
+      `已確認，${result.cardName}（${result.billMonth}）這筆帳單不會再提醒。`,
+    )]
+  }
+  if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
+  return [textMessage('找不到這筆帳單，可能已經被刪除或修改。')]
 }
 
 async function markReceivedMessages(

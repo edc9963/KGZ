@@ -165,7 +165,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 mask: mask,
               ),
               icon: Icons.south_west_rounded,
-              tone: AppColors.income,
+              tone: context.colors.income,
             ),
             SummaryCard(
               label: '本月支出',
@@ -180,7 +180,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 mask: mask,
               ),
               icon: Icons.north_east_rounded,
-              tone: AppColors.expense,
+              tone: context.colors.expense,
             ),
             SummaryCard(
               label: '本月結餘',
@@ -196,8 +196,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
               ),
               icon: Icons.account_balance_wallet_outlined,
               tone: store.currentMonthBalanceDefaultMinor >= 0
-                  ? AppColors.asset
-                  : AppColors.expense,
+                  ? context.colors.asset
+                  : context.colors.expense,
             ),
           ],
         ),
@@ -329,7 +329,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   label: Text(item),
                   avatar: item == '全部'
                       ? null
-                      : Icon(categoryVisual(item).icon, size: 16),
+                      : Icon(categoryVisual(item, context.colors).icon, size: 16),
                   selected: _category == item,
                   onSelected: (_) => setState(() => _category = item),
                 ),
@@ -389,11 +389,11 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   return Container(
                     width: double.infinity,
                     padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
-                    color: AppColors.background,
+                    color: context.colors.background,
                     child: Text(
                       _dateGroupLabel(record.date),
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
+                      style: TextStyle(
+                        color: context.colors.textMuted,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -424,8 +424,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: record.isIncome
-                          ? AppColors.income
-                          : AppColors.expense,
+                          ? context.colors.income
+                          : context.colors.expense,
                     ),
                   ),
                   if (record.order case final order?)
@@ -518,11 +518,21 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '本月支出分類',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '本月支出分類',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/reports'),
+                  child: const Text('查看完整報表'),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             if (total == 0)
@@ -547,7 +557,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       sections: [
                         for (final entry in entries)
                           PieChartSectionData(
-                            color: categoryVisual(entry.key).color,
+                            color: categoryVisual(entry.key, context.colors).color,
                             value: entry.value.toDouble(),
                             radius: 62,
                             title: '${(entry.value / total * 100).round()}%',
@@ -572,7 +582,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: categoryVisual(entry.key).color,
+                          color: categoryVisual(entry.key, context.colors).color,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -726,11 +736,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
+                    MoneyField(
                       controller: amount,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
                       decoration: const InputDecoration(
                         labelText: '每月金額',
                         prefixText: r'NT$ ',
@@ -1028,11 +1035,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextFormField(
+                          child: MoneyField(
                             controller: amount,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
                             decoration: const InputDecoration(labelText: '金額'),
                             validator: (value) =>
                                 parseMoney(value ?? '') <= 0 ? '金額需大於 0' : null,
@@ -1182,9 +1186,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
       validator: (value) =>
           value == null || value.trim().isEmpty ? '請輸入項目' : null,
     );
-    Widget amountField() => TextFormField(
+    Widget amountField() => MoneyField(
       controller: amount,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
       decoration: const InputDecoration(labelText: '金額', prefixText: r'NT$ '),
       validator: (value) => parseMoney(value ?? '') <= 0 ? '金額需大於 0' : null,
     );

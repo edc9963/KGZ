@@ -1026,6 +1026,7 @@ class CardBill {
     this.reconciliationNote = '',
     this.autoDebitState = CardBillAutoDebitState.pending,
     this.paidAt,
+    this.reminderDismissed = false,
     this.origin = DataOrigin.user,
   });
 
@@ -1044,6 +1045,10 @@ class CardBill {
   final String reconciliationNote;
   final CardBillAutoDebitState autoDebitState;
   final DateTime? paidAt;
+  // Set by the user (in-app or via the LINE reminder's quick reply) once
+  // they've seen the upcoming-auto-debit reminder for this bill; suppresses
+  // further reminders for this specific bill only.
+  final bool reminderDismissed;
   final DataOrigin origin;
 
   CardBill copyWith({
@@ -1061,6 +1066,7 @@ class CardBill {
     CardBillAutoDebitState? autoDebitState,
     DateTime? paidAt,
     bool clearPaidAt = false,
+    bool? reminderDismissed,
   }) => CardBill(
     id: id,
     userId: userId,
@@ -1077,6 +1083,7 @@ class CardBill {
     reconciliationNote: reconciliationNote ?? this.reconciliationNote,
     autoDebitState: autoDebitState ?? this.autoDebitState,
     paidAt: clearPaidAt ? null : paidAt ?? this.paidAt,
+    reminderDismissed: reminderDismissed ?? this.reminderDismissed,
     origin: origin,
   );
 
@@ -1096,6 +1103,7 @@ class CardBill {
     'reconciliationNote': reconciliationNote,
     'autoDebitState': autoDebitState.name,
     'paidAt': paidAt?.toIso8601String(),
+    'reminderDismissed': reminderDismissed,
     'origin': origin.name,
   };
 
@@ -1121,6 +1129,7 @@ class CardBill {
     paidAt: json['paidAt'] == null
         ? null
         : DateTime.parse(json['paidAt'] as String),
+    reminderDismissed: json['reminderDismissed'] as bool? ?? false,
     origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
   );
 }
@@ -1542,6 +1551,7 @@ class GroupOrder {
     required this.participants,
     this.billId,
     this.origin = DataOrigin.user,
+    this.selfExpenseCategoryId,
   });
 
   final String id;
@@ -1566,6 +1576,15 @@ class GroupOrder {
   final List<OrderParticipant> participants;
   final String? billId;
   final DataOrigin origin;
+
+  /// The [BookkeepingCategory.id] the order's own (`isSelf`) consumption
+  /// should be grouped under in reports — chosen in the 代訂 editor. Null for
+  /// every order created before this was configurable (and for any imported
+  /// order that didn't set one); callers resolve a null value to the
+  /// built-in 餐飲 category (`'expense-food'`) rather than assuming any
+  /// particular non-null default here — see `_orderSelfExpenseCategoryName`
+  /// in `domain/financial_reports.dart`.
+  final String? selfExpenseCategoryId;
 
   int get selfExpenseMinor => participants
       .where((participant) => participant.isSelf)
@@ -1610,7 +1629,10 @@ class GroupOrder {
       )
       .fold(0, (sum, participant) => sum + participant.dueMinor);
 
-  GroupOrder copyWith({List<OrderParticipant>? participants}) => GroupOrder(
+  GroupOrder copyWith({
+    List<OrderParticipant>? participants,
+    String? selfExpenseCategoryId,
+  }) => GroupOrder(
     id: id,
     userId: userId,
     name: name,
@@ -1633,6 +1655,7 @@ class GroupOrder {
     participants: participants ?? this.participants,
     billId: billId,
     origin: origin,
+    selfExpenseCategoryId: selfExpenseCategoryId ?? this.selfExpenseCategoryId,
   );
 
   Json toJson() => {
@@ -1658,6 +1681,7 @@ class GroupOrder {
     'participants': participants.map((item) => item.toJson()).toList(),
     'billId': billId,
     'origin': origin.name,
+    'selfExpenseCategoryId': selfExpenseCategoryId,
   };
 
   factory GroupOrder.fromJson(Json json) => GroupOrder(
@@ -1690,6 +1714,7 @@ class GroupOrder {
         .toList(),
     billId: json['billId'] as String?,
     origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
+    selfExpenseCategoryId: json['selfExpenseCategoryId'] as String?,
   );
 }
 
@@ -1705,6 +1730,7 @@ class UserSettings {
     this.remindersEnabled = true,
     this.maskBalances = false,
     this.fxRates = const [],
+    this.savedOrderMembers = const [],
   });
 
   final CurrencyCode defaultCurrency;
@@ -1718,6 +1744,10 @@ class UserSettings {
   final bool maskBalances;
   final List<FxRate> fxRates;
 
+  /// Saved 代訂 participant names (most recently used first), offered as a
+  /// quick-pick dropdown so recurring members don't need to be retyped.
+  final List<String> savedOrderMembers;
+
   UserSettings copyWith({
     String? defaultCurrency,
     PaymentMethod? defaultPaymentMethod,
@@ -1729,6 +1759,7 @@ class UserSettings {
     bool? remindersEnabled,
     bool? maskBalances,
     List<FxRate>? fxRates,
+    List<String>? savedOrderMembers,
   }) => UserSettings(
     defaultCurrency: defaultCurrency ?? this.defaultCurrency,
     defaultPaymentMethod: defaultPaymentMethod ?? this.defaultPaymentMethod,
@@ -1742,6 +1773,7 @@ class UserSettings {
     remindersEnabled: remindersEnabled ?? this.remindersEnabled,
     maskBalances: maskBalances ?? this.maskBalances,
     fxRates: fxRates ?? this.fxRates,
+    savedOrderMembers: savedOrderMembers ?? this.savedOrderMembers,
   );
 
   Json toJson() => {
@@ -1755,6 +1787,7 @@ class UserSettings {
     'remindersEnabled': remindersEnabled,
     'maskBalances': maskBalances,
     'fxRates': fxRates.map((rate) => rate.toJson()).toList(),
+    'savedOrderMembers': savedOrderMembers,
   };
 
   factory UserSettings.fromJson(Json json) => UserSettings(
@@ -1772,6 +1805,9 @@ class UserSettings {
     maskBalances: json['maskBalances'] as bool? ?? false,
     fxRates: (json['fxRates'] as List? ?? const [])
         .map((item) => FxRate.fromJson(item as Json))
+        .toList(),
+    savedOrderMembers: (json['savedOrderMembers'] as List? ?? const [])
+        .map((item) => item as String)
         .toList(),
   );
 }
@@ -1978,6 +2014,7 @@ class ReminderItem {
     required this.date,
     required this.isWarning,
     required this.destination,
+    this.billId,
   });
 
   final String title;
@@ -1985,4 +2022,8 @@ class ReminderItem {
   final DateTime date;
   final bool isWarning;
   final ReminderDestination destination;
+  // Set only for reminders tied to a single CardBill (auto-debit-date
+  // reminders); lets the UI offer a "don't remind me again for this bill"
+  // action without guessing which bill a reminder refers to.
+  final String? billId;
 }

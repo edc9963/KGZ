@@ -67,6 +67,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         const SizedBox(height: 22),
         if (_tab == _SettingsTab.preferences)
           _Section(
+            title: '外觀',
+            icon: Icons.dark_mode_outlined,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: _ThemeModeSelector(
+                  mode: ref.watch(themeModeControllerProvider).mode,
+                  onChanged: (mode) =>
+                      ref.read(themeModeControllerProvider).setMode(mode),
+                ),
+              ),
+            ],
+          ),
+        if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.preferences)
+          _Section(
             title: '一般偏好',
             icon: Icons.tune,
             children: [
@@ -144,32 +160,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       icon: const Icon(Icons.delete_outline),
                     ),
                   ),
-            ],
-          ),
-        if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
-        if (_tab == _SettingsTab.preferences)
-          _Section(
-            title: '收款資訊',
-            icon: Icons.qr_code_2,
-            trailing: TextButton(
-              onPressed: () => _showCollectionSettings(context, ref),
-              child: const Text('編輯'),
-            ),
-            children: [
-              ListTile(
-                title: const Text('預設銀行轉入帳戶'),
-                subtitle: Text(
-                  accountName(store, store.defaultBankTransferAccountId),
-                ),
-              ),
-              ListTile(
-                title: const Text('銀行帳號資訊'),
-                subtitle: Text(
-                  settings.bankAccountInfo.isEmpty
-                      ? '尚未設定'
-                      : settings.bankAccountInfo,
-                ),
-              ),
             ],
           ),
         if (_tab == _SettingsTab.preferences) const SizedBox(height: 16),
@@ -292,9 +282,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (_tab == _SettingsTab.data)
           Card(
             child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: Color(0xFFDFF4EA),
-                child: Icon(
+              leading: CircleAvatar(
+                backgroundColor: Color.alphaBlend(
+                  const Color(0xFF0E7C66).withValues(alpha: .16),
+                  context.colors.surface,
+                ),
+                child: const Icon(
                   Icons.chat_bubble_outline,
                   color: Color(0xFF0E7C66),
                 ),
@@ -310,10 +303,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
         if (_tab == _SettingsTab.data) const SizedBox(height: 24),
         if (_tab == _SettingsTab.data)
-          const Center(
+          Center(
             child: Text(
               '快記帳｜個人財務管理',
-              style: TextStyle(color: Colors.black45, fontSize: 12),
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12),
             ),
           ),
       ],
@@ -500,82 +493,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     );
   }
-
-  Future<void> _showCollectionSettings(
-    BuildContext context,
-    WidgetRef ref,
-  ) async {
-    final store = ref.read(appStoreProvider);
-    final current = store.data.settings;
-    var accountId = store.defaultBankTransferAccountId;
-    final bankQr = TextEditingController(text: current.bankQrData);
-    final bankInfo = TextEditingController(text: current.bankAccountInfo);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('收款資訊'),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue:
-                        store.bankTransferAccounts.any(
-                          (item) => item.id == accountId,
-                        )
-                        ? accountId
-                        : null,
-                    decoration: const InputDecoration(labelText: '預設銀行轉入帳戶'),
-                    items: store.bankTransferAccounts
-                        .map(
-                          (account) => DropdownMenuItem(
-                            value: account.id,
-                            child: Text(account.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setState(() => accountId = value),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: bankQr,
-                    decoration: const InputDecoration(labelText: '銀行轉帳 QR 內容'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: bankInfo,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: '銀行帳號與備註資訊'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                await store.updateSettings(
-                  current.copyWith(
-                    defaultCollectionAccountId: accountId,
-                    bankQrData: bankQr.text.trim(),
-                    bankAccountInfo: bankInfo.text.trim(),
-                  ),
-                );
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              },
-              child: const Text('儲存'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _CategoryManager extends ConsumerStatefulWidget {
@@ -635,7 +552,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
             '拖曳調整選單順序；已使用的分類可停用或合併，但不會直接刪除。',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: context.colors.textMuted),
           ),
           const SizedBox(height: 8),
           ReorderableListView.builder(
@@ -653,7 +570,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
                 : (_, _) {},
             itemBuilder: (context, index) {
               final category = categories[index];
-              final visual = bookkeepingCategoryVisual(category);
+              final visual = bookkeepingCategoryVisual(category, context.colors);
               final mergedInto = store.categoryById(
                 category.mergedIntoCategoryId,
               );
@@ -668,7 +585,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
                 title: Text(
                   category.name,
                   style: TextStyle(
-                    color: category.isActive ? null : AppColors.textMuted,
+                    color: category.isActive ? null : context.colors.textMuted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -806,28 +723,20 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
                       .toList(),
                   onChanged: (value) => setDialogState(() => iconKey = value!),
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: colorKey,
-                  decoration: const InputDecoration(labelText: '色彩'),
-                  items: categoryColorOptions.entries
-                      .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 8,
-                                backgroundColor: entry.value,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(entry.key),
-                            ],
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setDialogState(() => colorKey = value!),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '色彩',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: context.colors.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CategoryColorPicker(
+                  value: colorKey,
+                  onChanged: (value) => setDialogState(() => colorKey = value),
                 ),
               ],
             ),
@@ -953,6 +862,39 @@ class _Section extends StatelessWidget {
         const Divider(height: 1),
         ...children,
       ],
+    ),
+  );
+}
+
+class _ThemeModeSelector extends StatelessWidget {
+  const _ThemeModeSelector({required this.mode, required this.onChanged});
+
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: SegmentedButton<ThemeMode>(
+      segments: const [
+        ButtonSegment(
+          value: ThemeMode.system,
+          label: Text('跟隨系統'),
+          icon: Icon(Icons.brightness_auto_outlined),
+        ),
+        ButtonSegment(
+          value: ThemeMode.light,
+          label: Text('淺色'),
+          icon: Icon(Icons.light_mode_outlined),
+        ),
+        ButtonSegment(
+          value: ThemeMode.dark,
+          label: Text('深色'),
+          icon: Icon(Icons.dark_mode_outlined),
+        ),
+      ],
+      selected: {mode},
+      onSelectionChanged: (value) => onChanged(value.single),
     ),
   );
 }

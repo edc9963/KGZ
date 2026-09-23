@@ -18,8 +18,10 @@
   <title>快記帳</title>
 </head>
 <body>
-  <script src="assets/web/ppocr/ort.webgpu.min.js"></script>
-  <script src="assets/web/tesseract/tesseract.min.js"></script>
+  <!-- ort.webgpu.min.js and tesseract.min.js (~30MB combined of JS+wasm) are
+       loaded on demand by kgz_ocr.js the first time an OCR import actually
+       runs, instead of on every app boot, to leave more memory headroom on
+       low-memory phones. -->
   <script src="assets/web/kgz_ocr.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

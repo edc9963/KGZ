@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quick_ledger/presentation/design_tokens.dart';
+import 'package:quick_ledger/presentation/theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
@@ -15,16 +16,21 @@ void main() {
   });
 
   test('known categories use the approved semantic palette', () {
-    expect(categoryVisual('餐飲').color, const Color(0xFFE4765B));
-    expect(categoryVisual('交通').color, const Color(0xFF568EAE));
-    expect(categoryVisual('購物').color, const Color(0xFF9277A6));
-    expect(categoryVisual('薪資').color, AppColors.income);
-    expect(categoryVisual('投資收益').color, const Color(0xFF6075A6));
+    // These hex values must match `_categoryVisuals` in design_tokens.dart.
+    // 餐飲/交通/購物 were recolored there; 薪資 (via colors.income) and 投資收益
+    // were untouched, which is why only three of the five needed updating.
+    const colors = AppSemanticColors.light;
+    expect(categoryVisual('餐飲', colors).color, const Color(0xFFD2664B));
+    expect(categoryVisual('交通', colors).color, const Color(0xFF4179C8));
+    expect(categoryVisual('購物', colors).color, const Color(0xFFB83D66));
+    expect(categoryVisual('薪資', colors).color, colors.income);
+    expect(categoryVisual('投資收益', colors).color, const Color(0xFF6075A6));
   });
 
   test('unknown category fallback is deterministic', () {
-    final first = categoryVisual('寵物用品');
-    final second = categoryVisual('寵物用品');
+    const colors = AppSemanticColors.light;
+    final first = categoryVisual('寵物用品', colors);
+    final second = categoryVisual('寵物用品', colors);
     expect(second.color, first.color);
     expect(second.pale, first.pale);
   });
@@ -33,8 +39,9 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Row(
+      MaterialApp(
+        theme: buildAppTheme(Brightness.light),
+        home: const Row(
           children: [
             CategoryAvatar(category: '餐飲'),
             CategoryBadge(category: '餐飲'),
@@ -44,7 +51,10 @@ void main() {
     );
 
     final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
-    expect(avatar.backgroundColor, categoryVisual('餐飲').pale);
+    expect(
+      avatar.backgroundColor,
+      categoryVisual('餐飲', AppSemanticColors.light).pale,
+    );
     expect(find.text('餐飲'), findsOneWidget);
   });
 
@@ -55,6 +65,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
       MaterialApp(
+        theme: buildAppTheme(Brightness.light),
         home: Center(
           child: SizedBox(
             width: 240,
@@ -80,8 +91,9 @@ void main() {
     (tester) async {
       final semantics = tester.ensureSemantics();
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Center(
+        MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Center(
             child: SizedBox(
               width: 120,
               child: SummaryCard(
@@ -110,8 +122,9 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Center(
+      MaterialApp(
+        theme: buildAppTheme(Brightness.light),
+        home: const Center(
           child: SizedBox(
             width: 173,
             child: SummaryCard(
@@ -140,6 +153,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         MaterialApp(
+          theme: buildAppTheme(Brightness.light),
           home: Center(
             child: SizedBox(
               width: width,
@@ -181,8 +195,9 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: MediaQuery(
+      MaterialApp(
+        theme: buildAppTheme(Brightness.light),
+        home: const MediaQuery(
           data: MediaQueryData(textScaler: TextScaler.linear(1.3)),
           child: Center(
             child: SizedBox(

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ledger/application/app_store.dart';
 import 'package:quick_ledger/application/providers.dart';
+import 'package:quick_ledger/application/theme_mode_controller.dart';
 import 'package:quick_ledger/data/ocr_models.dart';
 import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
@@ -21,6 +22,51 @@ import 'package:quick_ledger/presentation/pages/orders_page.dart';
 import 'package:quick_ledger/presentation/import_image_picker_models.dart';
 import 'package:quick_ledger/presentation/pages/reports_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/widgets/common.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Enters [value] into a `MoneyField` via its calculator popup instead of
+/// `tester.enterText`, which is a silent no-op on `MoneyField`: it wraps a
+/// `readOnly` text field, and Flutter never opens a text-input connection
+/// for a readOnly field, so `enterText` leaves it unchanged with no error
+/// or exception -- the value just silently never arrives.
+///
+/// Taps [fieldFinder] to open the calculator (a bottom sheet on narrow
+/// layouts, a dialog otherwise -- see `showMoneyCalculator` in
+/// widgets/common.dart), presses the on-screen buttons matching each
+/// character of [value] (commas are stripped; the keypad has no
+/// minus-digit key, so a leading '-' is applied by pressing '±' after all
+/// digits), then taps "確定帶入金額" to write the result back through
+/// `MoneyField.onChanged`.
+Future<void> enterMoneyFieldValue(
+  WidgetTester tester,
+  Finder fieldFinder,
+  String value,
+) async {
+  await tester.tap(fieldFinder);
+  await tester.pumpAndSettle();
+
+  // Scope every button lookup to the calculator's own subtree so a digit
+  // that also happens to appear as plain text elsewhere on the underlying
+  // page (behind the sheet/dialog) can't be mistaken for a keypad button.
+  Finder calculatorRoot() =>
+      find.ancestor(of: find.text('小算盤'), matching: find.byType(SafeArea)).first;
+  Future<void> pressButton(String label) async {
+    await tester.tap(
+      find.descendant(of: calculatorRoot(), matching: find.text(label)).first,
+    );
+    await tester.pump();
+  }
+
+  final negative = value.startsWith('-');
+  final digits = value.replaceAll(',', '').replaceAll('-', '');
+  for (final char in digits.split('')) {
+    await pressButton(char);
+  }
+  if (negative) await pressButton('±');
+  await pressButton('確定帶入金額');
+  await tester.pumpAndSettle();
+}
 
 void main() {
   test(
@@ -137,7 +183,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(18),
@@ -168,7 +214,7 @@ void main() {
         ProviderScope(
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
-            theme: buildAppTheme(),
+            theme: buildAppTheme(Brightness.light),
             home: const Scaffold(
               body: SingleChildScrollView(
                 padding: EdgeInsets.all(18),
@@ -212,7 +258,7 @@ void main() {
         ProviderScope(
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
-            theme: buildAppTheme(),
+            theme: buildAppTheme(Brightness.light),
             home: buildUberEatsImportDialogForTest(
               images: [
                 _testImportImage('ue-1.png'),
@@ -341,7 +387,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: buildUberEatsImportDialogForTest(
             images: [_testImportImage('ue.png')],
           ),
@@ -376,7 +422,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: buildUberEatsImportDialogForTest(
             images: [_testImportImage('ue.png')],
           ),
@@ -414,7 +460,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: buildUberEatsImportDialogForTest(
             images: [
               for (var index = 0; index < 8; index++)
@@ -450,7 +496,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp(theme: buildAppTheme(), home: const LoginPage()),
+        child: MaterialApp(theme: buildAppTheme(Brightness.light), home: const LoginPage()),
       ),
     );
     expect(find.text('歡迎使用快記帳'), findsOneWidget);
@@ -468,7 +514,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const LoginPage(autoSignIn: true, returnPath: '/dashboard'),
         ),
       ),
@@ -491,7 +537,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const LoginPage(autoSignIn: true),
         ),
       ),
@@ -516,7 +562,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const LoginPage(autoSignIn: true),
         ),
       ),
@@ -553,10 +599,19 @@ void main() {
     );
     final store = await _makeStore(auth: auth, finance: finance);
 
+    final themeModeController = await _makeThemeModeController();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: QuickLedgerApp(store: store),
+        overrides: [
+          appStoreProvider.overrideWith((ref) => store),
+          themeModeControllerProvider.overrideWith(
+            (ref) => themeModeController,
+          ),
+        ],
+        child: QuickLedgerApp(
+          store: store,
+          themeModeController: themeModeController,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -580,10 +635,19 @@ void main() {
     );
     final store = await _makeStore(auth: auth, finance: finance);
 
+    final themeModeController = await _makeThemeModeController();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: QuickLedgerApp(store: store),
+        overrides: [
+          appStoreProvider.overrideWith((ref) => store),
+          themeModeControllerProvider.overrideWith(
+            (ref) => themeModeController,
+          ),
+        ],
+        child: QuickLedgerApp(
+          store: store,
+          themeModeController: themeModeController,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -612,10 +676,19 @@ void main() {
     );
     final store = await _makeStore(auth: auth, finance: finance);
 
+    final themeModeController = await _makeThemeModeController();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: QuickLedgerApp(store: store),
+        overrides: [
+          appStoreProvider.overrideWith((ref) => store),
+          themeModeControllerProvider.overrideWith(
+            (ref) => themeModeController,
+          ),
+        ],
+        child: QuickLedgerApp(
+          store: store,
+          themeModeController: themeModeController,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -637,10 +710,19 @@ void main() {
       ),
     );
 
+    final themeModeController = await _makeThemeModeController();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: QuickLedgerApp(store: store),
+        overrides: [
+          appStoreProvider.overrideWith((ref) => store),
+          themeModeControllerProvider.overrideWith(
+            (ref) => themeModeController,
+          ),
+        ],
+        child: QuickLedgerApp(
+          store: store,
+          themeModeController: themeModeController,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -698,7 +780,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: ExpensesPage()),
           ),
@@ -748,7 +830,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: Scaffold(body: buildUberEatsImportDialogForTest()),
         ),
       ),
@@ -847,7 +929,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(body: CardsPage()),
         ),
       ),
@@ -930,7 +1012,7 @@ void main() {
         ProviderScope(
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
-            theme: buildAppTheme(),
+            theme: buildAppTheme(Brightness.light),
             home: const Scaffold(body: CardsPage()),
           ),
         ),
@@ -1041,7 +1123,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(body: CardsPage()),
         ),
       ),
@@ -1108,7 +1190,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: AccountsPage()),
           ),
@@ -1183,7 +1265,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: AccountsPage()),
           ),
@@ -1203,7 +1285,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('直接改總額'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, '10000');
+    await enterMoneyFieldValue(tester, find.byType(TextField).first, '10000');
     await tester.tap(find.text('套用調整'));
     await tester.pumpAndSettle();
 
@@ -1285,7 +1367,7 @@ void main() {
         ProviderScope(
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
-            theme: buildAppTheme(),
+            theme: buildAppTheme(Brightness.light),
             home: const Scaffold(
               body: SingleChildScrollView(
                 padding: EdgeInsets.all(16),
@@ -1343,7 +1425,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
       ),
     );
 
@@ -1406,7 +1488,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: ExpensesPage()),
           ),
@@ -1438,7 +1520,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(
               child: ExpensesPage(createOnOpen: true),
@@ -1481,7 +1563,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(
               child: ExpensesPage(createIncomeOnOpen: true),
@@ -1493,7 +1575,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.widgetWithText(TextFormField, '收入項目'), '八月薪資');
-    await tester.enterText(find.widgetWithText(TextFormField, '金額'), '50000');
+    await enterMoneyFieldValue(
+      tester,
+      find.widgetWithText(TextFormField, '金額'),
+      '50000',
+    );
     await tester.tap(find.widgetWithText(FilledButton, '儲存'));
     await tester.pumpAndSettle();
 
@@ -1515,7 +1601,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -1540,7 +1626,8 @@ void main() {
       find.byKey(const ValueKey('holding-quantity')),
       '10',
     );
-    await tester.enterText(
+    await enterMoneyFieldValue(
+      tester,
       find.byKey(const ValueKey('holding-unit-cost')),
       '150',
     );
@@ -1594,7 +1681,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: InvestmentsPage()),
           ),
@@ -1611,7 +1698,8 @@ void main() {
       '測試 ETF',
     );
     await tester.enterText(find.byKey(const ValueKey('holding-quantity')), '2');
-    await tester.enterText(
+    await enterMoneyFieldValue(
+      tester,
       find.byKey(const ValueKey('holding-unit-cost')),
       '1000',
     );
@@ -1673,7 +1761,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(child: InvestmentsPage()),
           ),
@@ -1695,9 +1783,9 @@ void main() {
     );
     expect(
       tester
-          .widget<TextField>(find.byKey(const ValueKey('holding-unit-cost')))
+          .widget<MoneyField>(find.byKey(const ValueKey('holding-unit-cost')))
           .controller
-          ?.text,
+          .text,
       '100.0',
     );
     await tester.enterText(find.byKey(const ValueKey('holding-quantity')), '4');
@@ -1758,7 +1846,7 @@ void main() {
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
-          theme: buildAppTheme(),
+          theme: buildAppTheme(Brightness.light),
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -1828,6 +1916,17 @@ Future<AppStore> _makeStore({
   );
   await store.initialize();
   return store;
+}
+
+/// A [ThemeModeController] backed by an in-memory (mocked) SharedPreferences
+/// instance, for widget tests that mount [QuickLedgerApp] directly.
+Future<ThemeModeController> _makeThemeModeController() async {
+  SharedPreferences.setMockInitialValues({});
+  final preferences = await SharedPreferences.getInstance();
+  return ThemeModeController(
+    preferences,
+    initialMode: ThemeModeController.readStored(preferences),
+  );
 }
 
 class _WidgetOrderImport implements OrderImportRepository {

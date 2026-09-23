@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -41,8 +42,15 @@ const _workspaceTabs = <int, List<_Destination>>{
 };
 
 class AppShell extends ConsumerWidget {
-  const AppShell({required this.child, super.key});
-  final Widget child;
+  const AppShell({required this.navigationShell, super.key});
+
+  // The branches configured in `main.dart`'s `StatefulShellRoute
+  // .indexedStack` keep one Navigator alive per top-level destination, so
+  // rendering `navigationShell` here (in place of the plain `child` a
+  // regular `ShellRoute` would hand us) is what makes switching bottom-nav/
+  // sidebar tabs preserve each destination's state and widget tree instead
+  // of tearing it down and rebuilding it on every tap.
+  final StatefulNavigationShell navigationShell;
 
   int _indexFor(String path) {
     final index = switch (path) {
@@ -56,13 +64,20 @@ class AppShell extends ConsumerWidget {
 
   Widget _withSyncState(BuildContext context, AppStore store, Widget content) {
     final message = store.lastSyncError;
+    // Offline/conflict are real connectivity states that clear themselves
+    // once the cause does; everything else routed through lastSyncError is
+    // a one-off failure (most often a form validation a dialog didn't catch
+    // before calling into the store) that only ever gets cleared by the
+    // *next unrelated successful save* — with nothing to trigger that, the
+    // banner otherwise sits here indefinitely. Give those a dismiss button.
+    final isConnectivityStatus = store.isOffline || store.hasConflict;
     return Stack(
       children: [
         Column(
           children: [
             if (message != null)
               Material(
-                color: store.isOffline || store.hasConflict
+                color: isConnectivityStatus
                     ? Theme.of(context).colorScheme.errorContainer
                     : Theme.of(context).colorScheme.secondaryContainer,
                 child: SafeArea(
@@ -73,12 +88,19 @@ class AppShell extends ConsumerWidget {
                       store.isOffline ? Icons.cloud_off : Icons.info_outline,
                     ),
                     title: Text(message),
-                    trailing: store.isOffline || store.hasConflict
+                    trailing: isConnectivityStatus
                         ? TextButton(
                             onPressed: store.reloadCloud,
                             child: const Text('重新載入'),
                           )
-                        : null,
+                        : IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: '關閉',
+                            onPressed: () {
+                              store.lastSyncError = null;
+                              store.notify();
+                            },
+                          ),
                   ),
                 ),
               ),
@@ -107,35 +129,40 @@ class AppShell extends ConsumerWidget {
     final store = ref.watch(appStoreProvider);
 
     final content = SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          desktop
-              ? 32
-              : tablet
-              ? 24
-              : 16,
-          tablet || desktop ? 24 : 16,
-          desktop
-              ? 32
-              : tablet
-              ? 24
-              : 16,
-          desktop || tablet ? 32 : 110,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1440),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_workspaceTabs.containsKey(selected)) ...[
-                _WorkspaceNavigation(
-                  destinations: _workspaceTabs[selected]!,
-                  currentPath: path,
-                ),
-                const SizedBox(height: 20),
+      child: RefreshIndicator(
+        onRefresh: store.reloadCloud,
+        color: context.colors.accent,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            desktop
+                ? 32
+                : tablet
+                ? 24
+                : 16,
+            tablet || desktop ? 24 : 16,
+            desktop
+                ? 32
+                : tablet
+                ? 24
+                : 16,
+            desktop || tablet ? 32 : 110,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1440),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_workspaceTabs.containsKey(selected)) ...[
+                  _WorkspaceNavigation(
+                    destinations: _workspaceTabs[selected]!,
+                    currentPath: path,
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                navigationShell,
               ],
-              child,
-            ],
+            ),
           ),
         ),
       ),
@@ -151,7 +178,10 @@ class AppShell extends ConsumerWidget {
               _DesktopSidebar(
                 selectedIndex: selected,
                 store: store,
-                onSelected: (index) => context.go(_destinations[index].path),
+                onSelected: (index) {
+                  HapticFeedback.selectionClick();
+                  context.go(_destinations[index].path);
+                },
               ),
               Expanded(child: content),
             ],
@@ -170,8 +200,10 @@ class AppShell extends ConsumerWidget {
               NavigationRail(
                 selectedIndex: selected,
                 labelType: NavigationRailLabelType.all,
-                onDestinationSelected: (index) =>
-                    context.go(_destinations[index].path),
+                onDestinationSelected: (index) {
+                  HapticFeedback.selectionClick();
+                  context.go(_destinations[index].path);
+                },
                 leading: const Padding(
                   padding: EdgeInsets.only(bottom: 12),
                   child: BrandIcon(size: 40, borderRadius: 10),
@@ -200,15 +232,18 @@ class AppShell extends ConsumerWidget {
     const mobileDestinations = [0, 1, 2, 3];
     final mobileIndex = mobileDestinations.indexOf(selected);
     return Scaffold(
+      backgroundColor: context.colors.mobileBackground,
       drawer: _MobileDrawer(
         selectedIndex: selected,
         store: store,
         onSelected: (path) {
+          HapticFeedback.selectionClick();
           Navigator.pop(context);
           context.go(path);
         },
       ),
       appBar: AppBar(
+        backgroundColor: context.colors.mobileBackground,
         title: Text(
           _destinations[selected].label,
           style: const TextStyle(fontWeight: FontWeight.w800),
@@ -231,8 +266,10 @@ class AppShell extends ConsumerWidget {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
-        onDestinationSelected: (index) =>
-            context.go(_destinations[mobileDestinations[index]].path),
+        onDestinationSelected: (index) {
+          HapticFeedback.selectionClick();
+          context.go(_destinations[mobileDestinations[index]].path);
+        },
         destinations: [
           for (final index in mobileDestinations)
             NavigationDestination(
@@ -283,7 +320,10 @@ class _WorkspaceNavigation extends StatelessWidget {
                 ?.path ??
             destinations.first.path,
       },
-      onSelectionChanged: (value) => context.go(value.single),
+      onSelectionChanged: (value) {
+        HapticFeedback.selectionClick();
+        context.go(value.single);
+      },
     ),
   );
 }
@@ -519,15 +559,15 @@ class _SidebarItem extends StatelessWidget {
     child: ListTile(
       dense: true,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      tileColor: selected ? AppColors.primary : Colors.transparent,
+      tileColor: selected ? AppColors.accentSoft : Colors.transparent,
       leading: Icon(
         destination.icon,
-        color: selected ? Colors.white : const Color(0xFFDCE5E8),
+        color: selected ? AppColors.accentOnDark : AppColors.graphiteMuted,
       ),
       title: Text(
         destination.label,
         style: TextStyle(
-          color: selected ? Colors.white : const Color(0xFFDCE5E8),
+          color: selected ? Colors.white : AppColors.graphiteMuted,
           fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
         ),
       ),

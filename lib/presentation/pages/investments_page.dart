@@ -5,6 +5,7 @@ import '../../application/app_store.dart';
 import '../../application/providers.dart';
 import '../../data/repositories.dart';
 import '../../domain/models.dart';
+import '../design_tokens.dart';
 import '../widgets/common.dart';
 
 enum _HoldingCreationMode { snapshot, purchase }
@@ -450,7 +451,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                                   : '輸入至少 2 個字元搜尋上市股票或 ETF；查無結果仍可手動建立。'
                             : '證交所自動報價・收盤 ${moneyText(selectedMarketInstrument!.closePriceMinor)}'
                                   '${selectedMarketInstrument!.quoteDate == null ? '' : '・${dateText(selectedMarketInstrument!.quoteDate!)}'}',
-                        style: const TextStyle(color: Colors.black54),
+                        style: TextStyle(color: context.colors.textMuted),
                       ),
                     ] else
                       DropdownButtonFormField<String>(
@@ -509,12 +510,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextField(
+                          child: MoneyField(
                             key: const ValueKey('holding-unit-cost'),
                             controller: unitCost,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
                             decoration: InputDecoration(
                               labelText: mode == _HoldingCreationMode.snapshot
                                   ? '平均成本'
@@ -555,13 +553,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         Row(
                           children: [
                             Expanded(
-                              child: TextField(
+                              child: MoneyField(
                                 key: const ValueKey('holding-fee'),
                                 controller: fee,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
                                 decoration: const InputDecoration(
                                   labelText: '手續費',
                                 ),
@@ -570,13 +564,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: TextField(
+                              child: MoneyField(
                                 key: const ValueKey('holding-tax'),
                                 controller: tax,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
                                 decoration: const InputDecoration(
                                   labelText: '稅費',
                                 ),
@@ -594,9 +584,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       ),
                     ] else if (isUpdating) ...[
                       const SizedBox(height: 10),
-                      const Text(
+                      Text(
                         '這會以所選日期校正持倉，且不影響任何現金帳戶。',
-                        style: TextStyle(color: Colors.black54),
+                        style: TextStyle(color: context.colors.textMuted),
                       ),
                     ],
                   ],
@@ -791,16 +781,13 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                MoneyField(
                   controller: price,
                   readOnly:
                       selectedMarketInstrument != null ||
                       ((existing?.usesAutomaticQuote ?? false) &&
                           symbol.text.trim().toUpperCase() ==
                               existing!.symbol.trim().toUpperCase()),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
                   decoration: const InputDecoration(labelText: '目前價格'),
                 ),
                 const SizedBox(height: 12),
@@ -981,11 +968,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextField(
+                          child: MoneyField(
                             controller: price,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
                             decoration: const InputDecoration(
                               labelText: '價格／每單位配息',
                             ),
@@ -1001,12 +985,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         Row(
                           children: [
                             Expanded(
-                              child: TextField(
+                              child: MoneyField(
                                 controller: fee,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
                                 decoration: const InputDecoration(
                                   labelText: '手續費',
                                 ),
@@ -1014,12 +994,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: TextField(
+                              child: MoneyField(
                                 controller: tax,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
                                 decoration: const InputDecoration(
                                   labelText: '稅費',
                                 ),
@@ -1167,11 +1143,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextField(
+                      child: MoneyField(
                         controller: cost,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
                         decoration: const InputDecoration(labelText: '校正後平均成本'),
                       ),
                     ),
@@ -1183,9 +1156,9 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                   decoration: const InputDecoration(labelText: '調整原因'),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   '盤點調整不產生帳戶扣入款，後續交易將以校正後庫存繼續計算。',
-                  style: TextStyle(color: Colors.black54),
+                  style: TextStyle(color: context.colors.textMuted),
                 ),
               ],
             ),
@@ -1311,10 +1284,10 @@ class _HoldingsList extends ConsumerWidget {
                   ),
                 ],
               )
-            : const Text(
+            : Text(
                 '尚未設定目前價格',
-                key: ValueKey('holding-unpriced'),
-                style: TextStyle(color: Colors.black54),
+                key: const ValueKey('holding-unpriced'),
+                style: TextStyle(color: context.colors.textMuted),
               );
         return Card(
           child: LayoutBuilder(

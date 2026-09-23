@@ -344,5 +344,11 @@ UserSettings _mergeSettings(UserSettings cloud, UserSettings local) {
         ),
       ),
     ],
+    savedOrderMembers: [
+      ...cloud.savedOrderMembers,
+      ...local.savedOrderMembers.where(
+        (name) => !cloud.savedOrderMembers.contains(name),
+      ),
+    ],
   );
 }

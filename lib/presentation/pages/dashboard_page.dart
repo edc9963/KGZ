@@ -27,6 +27,19 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final desktop = MediaQuery.sizeOf(context).width >= 1100;
     _otherExpanded ??= false;
     final records = transactionDisplayRecords(store);
+    // Each of these is read more than once below (net worth is itself built
+    // from the deposit/investment/receivables/card figures, and the "其他
+    // 財務摘要" section repeats several of them again), so they're computed
+    // once here and reused instead of calling the store getter again at
+    // each call site.
+    final netWorth = store.netWorthMinor;
+    final currentMonthIncome = store.currentMonthIncomeDefaultMinor;
+    final currentMonthExpense = store.currentMonthExpenseDefaultMinor;
+    final pendingCard = store.pendingCardDefaultMinor;
+    final depositTotal = store.depositTotalMinor;
+    final investmentValue = store.investmentValueMinor;
+    final receivables = store.receivablesDefaultMinor;
+    final collectionResult = store.currentMonthCollectionResultDefaultMinor;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,14 +77,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         const SizedBox(height: 24),
         if (store.currenciesMissingFx.isNotEmpty) ...[
           Card(
-            color: AppColors.liabilityPale,
+            color: context.colors.liabilityPale,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.currency_exchange,
-                    color: AppColors.liability,
+                    color: context.colors.liability,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -93,65 +106,65 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             SummaryCard(
               label: '淨資產',
               value: moneyText(
-                store.netWorthMinor,
+                netWorth,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               compactValue: compactMoneyText(
-                store.netWorthMinor,
+                netWorth,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               icon: Icons.auto_graph_rounded,
-              tone: AppColors.asset,
+              tone: context.colors.asset,
               onTap: () => context.go('/reports'),
             ),
             SummaryCard(
               label: '本月收入',
               value: moneyText(
-                store.currentMonthIncomeDefaultMinor,
+                currentMonthIncome,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               compactValue: compactMoneyText(
-                store.currentMonthIncomeDefaultMinor,
+                currentMonthIncome,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               icon: Icons.south_west_rounded,
-              tone: AppColors.income,
+              tone: context.colors.income,
               onTap: () => context.go('/expenses'),
             ),
             SummaryCard(
               label: '本月支出',
               value: moneyText(
-                store.currentMonthExpenseDefaultMinor,
+                currentMonthExpense,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               compactValue: compactMoneyText(
-                store.currentMonthExpenseDefaultMinor,
+                currentMonthExpense,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               icon: Icons.north_east_rounded,
-              tone: AppColors.expense,
+              tone: context.colors.expense,
               onTap: () => context.go('/expenses'),
             ),
             SummaryCard(
               label: '信用卡待繳',
               value: moneyText(
-                store.pendingCardDefaultMinor,
+                pendingCard,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               compactValue: compactMoneyText(
-                store.pendingCardDefaultMinor,
+                pendingCard,
                 currency: settings.defaultCurrency,
                 mask: mask,
               ),
               icon: Icons.credit_card_outlined,
-              tone: AppColors.liability,
+              tone: context.colors.liability,
               onTap: () => context.go('/cards'),
             ),
           ],
@@ -175,12 +188,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   SummaryCard(
                     label: '存款合計',
                     value: moneyText(
-                      store.depositTotalMinor,
+                      depositTotal,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
                     compactValue: compactMoneyText(
-                      store.depositTotalMinor,
+                      depositTotal,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
@@ -191,12 +204,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   SummaryCard(
                     label: '投資現值',
                     value: moneyText(
-                      store.investmentValueMinor,
+                      investmentValue,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
                     compactValue: compactMoneyText(
-                      store.investmentValueMinor,
+                      investmentValue,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
@@ -207,12 +220,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   SummaryCard(
                     label: '代墊應收款',
                     value: moneyText(
-                      store.receivablesDefaultMinor,
+                      receivables,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
                     compactValue: compactMoneyText(
-                      store.receivablesDefaultMinor,
+                      receivables,
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
@@ -221,28 +234,34 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     onTap: () => context.go('/orders'),
                   ),
                   SummaryCard(
-                    label: store.currentMonthCollectionResultDefaultMinor >= 0
-                        ? '本月代收收益'
-                        : '本月代收損失',
+                    label: collectionResult >= 0 ? '本月代收收益' : '本月代收損失',
                     value: moneyText(
-                      store.currentMonthCollectionResultDefaultMinor.abs(),
+                      collectionResult.abs(),
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
                     compactValue: compactMoneyText(
-                      store.currentMonthCollectionResultDefaultMinor.abs(),
+                      collectionResult.abs(),
                       currency: settings.defaultCurrency,
                       mask: mask,
                     ),
-                    icon: store.currentMonthCollectionResultDefaultMinor >= 0
+                    icon: collectionResult >= 0
                         ? Icons.trending_up
                         : Icons.trending_down,
-                    tone: store.currentMonthCollectionResultDefaultMinor >= 0
-                        ? AppColors.income
-                        : AppColors.expense,
+                    tone: collectionResult >= 0
+                        ? context.colors.income
+                        : context.colors.expense,
                     onTap: () => context.go('/orders'),
                   ),
                 ],
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => context.go('/reports'),
+                  icon: const Icon(Icons.insert_chart_outlined_rounded),
+                  label: const Text('查看完整報表'),
+                ),
               ),
             ],
           ),
@@ -251,7 +270,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 850;
-            final reminder = _ReminderCard(reminders: store.reminders);
+            final reminder = _ReminderCard(
+              reminders: store.reminders,
+              onAcknowledge: store.canWrite
+                  ? (billId) => store.acknowledgeBillReminder(billId)
+                  : null,
+            );
             final activity = _RecentActivityCard(records: records, mask: mask);
             if (!wide) {
               return Column(
@@ -271,7 +295,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         if (store.data.accounts.isEmpty) ...[
           const SizedBox(height: 20),
           Card(
-            color: AppColors.assetPale,
+            color: context.colors.assetPale,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
@@ -345,8 +369,8 @@ class _RecentActivityCard extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     color: record.isIncome
-                        ? AppColors.income
-                        : AppColors.expense,
+                        ? context.colors.income
+                        : context.colors.expense,
                   ),
                 ),
               ),
@@ -357,8 +381,11 @@ class _RecentActivityCard extends StatelessWidget {
 }
 
 class _ReminderCard extends StatelessWidget {
-  const _ReminderCard({required this.reminders});
+  const _ReminderCard({required this.reminders, this.onAcknowledge});
   final List<ReminderItem> reminders;
+  // Called with a reminder's `billId` when the user confirms they've seen
+  // it; null while the user can't write (read-only session).
+  final ValueChanged<String>? onAcknowledge;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -375,13 +402,13 @@ class _ReminderCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           if (reminders.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle_outline, color: AppColors.income),
-                  SizedBox(width: 10),
-                  Text('今天沒有待處理提醒'),
+                  Icon(Icons.check_circle_outline, color: context.colors.income),
+                  const SizedBox(width: 10),
+                  const Text('今天沒有待處理提醒'),
                 ],
               ),
             )
@@ -390,8 +417,8 @@ class _ReminderCard extends StatelessWidget {
               Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 color: reminder.isWarning
-                    ? AppColors.liabilityPale
-                    : AppColors.assetPale,
+                    ? context.colors.liabilityPale
+                    : context.colors.accentPale,
                 clipBehavior: Clip.antiAlias,
                 child: Semantics(
                   button: true,
@@ -410,8 +437,8 @@ class _ReminderCard extends StatelessWidget {
                                 ? Icons.warning_amber_rounded
                                 : Icons.notifications_none,
                             color: reminder.isWarning
-                                ? AppColors.liability
-                                : AppColors.primary,
+                                ? context.colors.liability
+                                : context.colors.accent,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -426,16 +453,24 @@ class _ReminderCard extends StatelessWidget {
                                 ),
                                 Text(reminder.subtitle),
                                 if (reminder.isWarning)
-                                  const Text(
+                                  Text(
                                     '扣款帳戶餘額可能不足',
                                     style: TextStyle(
-                                      color: AppColors.liability,
+                                      color: context.colors.liability,
                                       fontSize: 12,
                                     ),
                                   ),
                               ],
                             ),
                           ),
+                          if (reminder.billId != null &&
+                              onAcknowledge != null)
+                            IconButton(
+                              tooltip: '已確認，這筆帳單不用再提醒',
+                              icon: const Icon(Icons.check_circle_outline),
+                              onPressed: () =>
+                                  onAcknowledge!(reminder.billId!),
+                            ),
                           const Icon(Icons.chevron_right),
                         ],
                       ),
