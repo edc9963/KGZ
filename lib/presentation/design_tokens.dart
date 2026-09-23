@@ -20,8 +20,10 @@ abstract final class AppColors {
   static const primaryHover = Color(0xFF06606B);
 
   /// Desktop/tablet navigation rail background — always dark graphite,
-  /// independent of the app's overall light/dark theme.
-  static const graphite = Color(0xFF26343A);
+  /// independent of the app's overall light/dark theme. Matches the app
+  /// icon's own background exactly (`web/icons/quick-ledger-j.svg`), so the
+  /// sidebar reads as a direct extension of the brand mark.
+  static const graphite = Color(0xFF2B2F33);
   /// Unselected icon/label color on the graphite sidebar.
   static const graphiteMuted = Color(0xFFDCE5E8);
 
@@ -29,15 +31,16 @@ abstract final class AppColors {
   /// color for [ColorScheme.fromSeed]. UI code should use
   /// `context.colors.accent` instead, which is tuned per theme.
   static const accent = Color(0xFF0D80A0);
-  /// Translucent wash of [accent], used behind the selected item in the
-  /// desktop sidebar's navigation rail indicator — fixed because the
+  /// Translucent wash of the app icon's cyan, used behind the selected item
+  /// in the desktop sidebar's navigation rail indicator — fixed because the
   /// sidebar itself is always dark graphite.
-  static const accentSoft = Color(0x290D80A0);
-  /// Lightened tint of [accent] for use on the dark graphite sidebar — the
-  /// desktop navigation's selected-item icon, where [accent] itself falls
-  /// short of the WCAG 3:1 minimum for UI components. Fixed for the same
+  static const accentSoft = Color(0x2E27C2D4);
+  /// The app icon's own cyan (`#27C2D4`), used directly for the desktop
+  /// navigation's selected-item icon — on the dark graphite sidebar this
+  /// hue clears WCAG AA on its own, so no lightening is needed the way the
+  /// old, more muted `context.colors.accent` required. Fixed for the same
   /// reason as [accentSoft].
-  static const accentOnDark = Color(0xFF7CBACC);
+  static const accentOnDark = Color(0xFF27C2D4);
 
   /// Level-1 "spotlight" button fill (goose-yellow) — reserved for the
   /// single highest-emphasis action per screen (the quick-entry FAB).
@@ -117,10 +120,15 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   final Color accentPale;
   final Color accentPaleText;
 
+  // Light and dark lean into two different registers of the same icon: light
+  // reads warm and wool-cream (the highlight gold pushed further into the
+  // surfaces themselves), dark reads like the icon's own near-black ground
+  // with its cyan stroke lit up on it — a comet against a night sky rather
+  // than a muted daytime version of the same blue.
   static const light = AppSemanticColors(
     background: Color(0xFFF4F6F7),
     surface: Colors.white,
-    mobileBackground: Color(0xFFFBF8F3),
+    mobileBackground: Color(0xFFFBF3E4),
     text: Color(0xFF1F2D33),
     textMuted: Color(0xFF68777D),
     border: Color(0xFFDCE3E6),
@@ -132,6 +140,12 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     expensePale: Color(0xFFF9E9E7),
     liability: Color(0xFF7A8F3D),
     liabilityPale: Color(0xFFEBEEE2),
+    // Deliberately NOT the app icon's brighter cyan (#27C2D4): that hue only
+    // clears ~2.2:1 against a white/near-white surface, far short of the
+    // 4.5:1 WCAG AA text requires. This value is already the icon's hue
+    // pushed as dark as it can go while staying ~85% saturated — it sits
+    // right at 4.55:1, so there's no headroom left to make it more vivid
+    // without failing contrast on every outlined button label in light mode.
     accent: Color(0xFF0D80A0),
     accentPale: Color(0xFFE2F0F4),
     accentPaleText: Color(0xFF096771),
@@ -152,7 +166,11 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     expensePale: Color(0xFF382522),
     liability: Color(0xFFA3B95F),
     liabilityPale: Color(0xFF2A2E1F),
-    accent: Color(0xFF5BC2E0),
+    // The app icon's own cyan, used as-is: against every dark surface in
+    // this theme it clears WCAG AA with room to spare (6.2–8.3:1), so dark
+    // mode is where the interactive color can finally match the icon
+    // exactly instead of a muted derivative of it.
+    accent: Color(0xFF27C2D4),
     accentPale: Color(0xFF1C2E33),
     accentPaleText: Color(0xFF8FD8E8),
   );
@@ -256,12 +274,18 @@ const categoryColorOptions = <String, Color>{
   'coral': Color(0xFFE4765B),
   'green': Color(0xFF719681),
   'amber': Color(0xFFB8893E),
-  'purple': Color(0xFF9277A6),
+  // Richer than before — a genuine violet rather than a grayed-out mauve,
+  // so it reads as its own color choice next to indigo/rose instead of
+  // sitting between them.
+  'purple': Color(0xFF8868A8),
   'rose': Color(0xFFBC7182),
   'indigo': Color(0xFF6075A6),
   'cyan': Color(0xFF4B8E9F),
   'brown': Color(0xFFA36F5A),
   'slate': Color(0xFF748A96),
+  // A true warm orange — the gap the old palette had between coral (more
+  // red) and amber (more brown/gold).
+  'orange': Color(0xFFD6813A),
 };
 
 const categoryIconOptions = <String, IconData>{

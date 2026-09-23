@@ -60,12 +60,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Scaffold(
     body: DecoratedBox(
       decoration: BoxDecoration(
+        // A quiet wash of the app icon's own two colors: pale icon-cyan
+        // fading into warm wool-cream in light mode, a cyan-tinted charcoal
+        // settling into the app's true dark background at night — the same
+        // "comet cyan meets warm gold" story the icon itself tells, instead
+        // of the previous unrelated mint-green.
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: isDark
-              ? const [Color(0xFF102420), Color(0xFF14181A)]
-              : const [Color(0xFFE9F7F2), Color(0xFFF7FAF9)],
+              ? const [Color(0xFF102A2E), Color(0xFF14181A)]
+              : const [Color(0xFFE7F6F7), Color(0xFFFBF3E4)],
         ),
       ),
       child: Center(

@@ -48,7 +48,7 @@ ThemeData buildAppTheme(Brightness brightness) {
       margin: EdgeInsets.zero,
       color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        borderRadius: const BorderRadius.all(Radius.circular(16)),
         side: BorderSide(color: colors.border),
       ),
     ),
@@ -56,11 +56,11 @@ ThemeData buildAppTheme(Brightness brightness) {
       filled: true,
       fillColor: colors.surface,
       border: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
         borderSide: BorderSide(color: colors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
         borderSide: BorderSide(color: colors.border),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
@@ -129,7 +129,7 @@ ThemeData buildAppTheme(Brightness brightness) {
         backgroundColor: Colors.transparent,
         foregroundColor: colors.accent,
         side: BorderSide(color: colors.accent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -137,26 +137,26 @@ ThemeData buildAppTheme(Brightness brightness) {
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
         foregroundColor: colors.accent,
         side: BorderSide(color: colors.accent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
         foregroundColor: colors.accent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: SegmentedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         selectedBackgroundColor: colors.accentPale,
         selectedForegroundColor: colors.accentPaleText,
         side: BorderSide(color: colors.border),
       ),
     ),
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       side: BorderSide(color: colors.border),
     ),
     textTheme: baseTextTheme.apply(

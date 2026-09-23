@@ -191,7 +191,7 @@ class SummaryCard extends StatelessWidget {
                       DecoratedBox(
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: .12),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Padding(
                           padding: EdgeInsets.all(compact ? 6 : 8),
@@ -276,7 +276,7 @@ class CategoryBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: visual.pale,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         category,
