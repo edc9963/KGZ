@@ -101,11 +101,13 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   /// Card, divider and input borders.
   final Color border;
 
-  /// Net-worth / data color. A dedicated violet — Watame's idol-outfit
-  /// accent — rather than [text]-as-neutral, so the dashboard's headline
-  /// number reads as the app's signature stat. Kept a distinct hue from
-  /// [accent]'s cyan on purpose: colored now, but not the same color as
-  /// something clickable, so it still doesn't read as a call-to-action.
+  /// Net-worth / data color, rather than [text]-as-neutral, so the
+  /// dashboard's headline number reads as the app's signature stat — rose
+  /// in light mode (Watame's cape/ribbon), indigo in dark mode (Suisei's
+  /// jacket), per the two reference figures. Kept a distinct hue from
+  /// [accent]'s cyan on purpose in both themes: colored now, but not the
+  /// same color as something clickable, so it still doesn't read as a
+  /// call-to-action.
   final Color asset;
   final Color assetPale;
   final Color income;
@@ -135,19 +137,19 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     text: Color(0xFF1F2D33),
     textMuted: Color(0xFF68777D),
     border: Color(0xFFDCE3E6),
-    // 9.2:1 against white — plenty of headroom past the 4.5:1 AA floor, so
-    // this stays a genuinely rich violet instead of needing to be muddied
-    // down the way accent's cyan does.
-    asset: Color(0xFF7328BD),
-    assetPale: Color(0xFFF1EAF8),
+    // 6.4:1 against white — comfortably past the 4.5:1 AA floor.
+    asset: Color(0xFFB12554),
+    assetPale: Color(0xFFF7E9EE),
     income: Color(0xFF3B9166),
     incomePale: Color(0xFFE4F0EA),
     expense: Color(0xFFD35645),
     expensePale: Color(0xFFF9E9E7),
-    // Suisei's off-duty orange in place of the old undifferentiated olive —
-    // 4.64:1 against white, same tight-but-safe margin as accent.
-    liability: Color(0xFFAE6113),
-    liabilityPale: Color(0xFFF7EFE7),
+    // A toasted caramel-gold (Watame's wool, a shade darker than her fleece)
+    // rather than orange — orange is reserved for dark mode's Suisei
+    // register instead. 5.0:1 against white, and clearly distinct from both
+    // the reserved highlight yellow and expense's red.
+    liability: Color(0xFF98641B),
+    liabilityPale: Color(0xFFF5F0E8),
     // Deliberately NOT the app icon's brighter cyan (#27C2D4): that hue only
     // clears ~2.2:1 against a white/near-white surface, far short of the
     // 4.5:1 WCAG AA text requires. This value is already the icon's hue
@@ -166,15 +168,16 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     text: Color(0xFFEDF1F2),
     textMuted: Color(0xFF93A3A9),
     border: Color(0xFF333D41),
-    // 5.7–4.9:1 against this theme's dark surfaces — lighter/less saturated
-    // than the light-mode violet since it has to read on near-black instead
-    // of near-white.
-    asset: Color(0xFFAD7CDE),
-    assetPale: Color(0xFF2E2F40),
+    // A true indigo (bluer than the light-mode rose, matching Suisei's
+    // jacket rather than Watame's cape) — 6.0:1 against background, 5.2:1
+    // against surface, both past AA.
+    asset: Color(0xFF9989E6),
+    assetPale: Color(0xFF2D3241),
     income: Color(0xFF54BD8B),
     incomePale: Color(0xFF203029),
     expense: Color(0xFFE58579),
     expensePale: Color(0xFF382522),
+    // Suisei's off-duty orange — already the right register, unchanged.
     liability: Color(0xFFE79E55),
     liabilityPale: Color(0xFF332A1E),
     // The app icon's own cyan, used as-is: against every dark surface in
