@@ -253,20 +253,23 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final warning = isDark ? const Color(0xFFE0B34D) : const Color(0xFF9A6A00);
     return Card(
-    color: Color.alphaBlend(warning.withValues(alpha: .14), context.colors.surface),
-    child: ExpansionTile(
-      leading: Icon(Icons.info_outline, color: warning),
-      title: Text('有 ${snapshot.issues.length} 項估值或資料品質提示'),
-      children: [
-        for (final issue in snapshot.issues)
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.circle, size: 8),
-            title: Text(issue.message),
-          ),
-      ],
-    ),
-  );
+      color: Color.alphaBlend(
+        warning.withValues(alpha: .14),
+        context.colors.surface,
+      ),
+      child: ExpansionTile(
+        leading: Icon(Icons.info_outline, color: warning),
+        title: Text('有 ${snapshot.issues.length} 項估值或資料品質提示'),
+        children: [
+          for (final issue in snapshot.issues)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.circle, size: 8),
+              title: Text(issue.message),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _summary(
@@ -346,9 +349,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               details: data.expenseDetails,
               selectedLabel: _expenseSelected,
               onSelect: (label) => setState(
-                () => _expenseSelected = _expenseSelected == label
-                    ? null
-                    : label,
+                () =>
+                    _expenseSelected = _expenseSelected == label ? null : label,
               ),
             ),
             _cashFlowCard(data, currency, mask),
@@ -373,16 +375,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           final wide = constraints.maxWidth >= 900;
           final charts = <Widget>[
             _netWorthCard(netWorthTrend, currency, mask),
-            _barCard(
-              data.monthlyTrend.length <= 6
-                  ? data.monthlyTrend
-                  : data.monthlyTrend.sublist(data.monthlyTrend.length - 6),
-              currency,
-              mask,
-            ),
+            _pieCard('資產配置', data.assetAllocation, currency, mask, asset: true),
           ];
           return wide
               ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: charts[0]),
                     const SizedBox(width: 16),
@@ -393,6 +390,14 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                   children: [charts[0], const SizedBox(height: 16), charts[1]],
                 );
         },
+      ),
+      const SizedBox(height: 18),
+      _barCard(
+        data.monthlyTrend.length <= 6
+            ? data.monthlyTrend
+            : data.monthlyTrend.sublist(data.monthlyTrend.length - 6),
+        currency,
+        mask,
       ),
     ],
   );
@@ -697,6 +702,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       }
       return categoryVisual(label, context.colors).color;
     }
+
     final total = slices.fold(0, (sum, item) => sum + item.amountMinor);
     final touched = asset ? _assetTouched : _expenseTouched;
     // Index of the slice whose transactions are currently expanded (a period
@@ -919,9 +925,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
-          alpha: .5,
-        ),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: .5),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: .4)),
       ),
@@ -956,7 +962,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
-                SizedBox(width: dateWidth, child: Text('日期', style: headerStyle)),
+                SizedBox(
+                  width: dateWidth,
+                  child: Text('日期', style: headerStyle),
+                ),
                 Expanded(child: Text('項目', style: headerStyle)),
                 Text('金額', style: headerStyle),
               ],
@@ -1019,7 +1028,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             child: Row(
               children: [
                 const Expanded(
-                  child: Text('合計', style: TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text(
+                    '合計',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 Text(
                   moneyText(total, currency: currency, mask: mask),
@@ -1370,41 +1382,42 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   ) {
     const success = Color(0xFF0E7C66);
     return Card(
-    color: balanced
-        ? Color.alphaBlend(success.withValues(alpha: .14), context.colors.surface)
-        : Theme.of(context).colorScheme.errorContainer,
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Icon(
-            balanced ? Icons.check_circle_outline : Icons.error_outline,
-            color: balanced
-                ? success
-                : Theme.of(context).colorScheme.error,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+      color: balanced
+          ? Color.alphaBlend(
+              success.withValues(alpha: .14),
+              context.colors.surface,
+            )
+          : Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Icon(
+              balanced ? Icons.check_circle_outline : Icons.error_outline,
+              color: balanced ? success : Theme.of(context).colorScheme.error,
             ),
-          ),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
+            const SizedBox(width: 12),
+            Expanded(
               child: Text(
-                moneyText(value, currency: currency, mask: mask),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
-          ),
-        ],
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  moneyText(value, currency: currency, mask: mask),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
