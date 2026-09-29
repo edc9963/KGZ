@@ -233,6 +233,9 @@ async function handleText(
     return startExpense(db, lineUserId)
   }
   if (normalized === '待收款') return receivableMessages(db, lineUserId)
+  if (['已繳費', '已繳款', '繳費', '已繳'].includes(normalized)) {
+    return unpaidBillMessages(db, lineUserId)
+  }
 
   const conversation = await getConversation(db, lineUserId)
   if (!conversation) return [helpMessage()]
@@ -319,7 +322,58 @@ async function handlePostback(
   if (data.startsWith('bill:ack:')) {
     return acknowledgeBillMessages(db, lineUserId, data.substring('bill:ack:'.length))
   }
+  if (data.startsWith('bill:paid:')) {
+    return markBillPaidMessages(db, lineUserId, data.substring('bill:paid:'.length))
+  }
   return [helpMessage()]
+}
+
+async function unpaidBillMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+): Promise<LineMessage[]> {
+  const result = await rpc(db, 'line_list_unpaid_card_bills', {
+    p_line_user_id: lineUserId,
+  })
+  if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
+  const items = (result.items ?? []) as Json[]
+  if (items.length === 0) return [textMessage('目前沒有未繳的信用卡帳單。')]
+  const lines = items.map((item) =>
+    `・${item.cardName}（${item.billMonth}）未繳 ${formatMoney(Number(item.outstandingMinor))}`
+  )
+  const actions = items.map((item) =>
+    postback(
+      `${item.cardName} ${item.billMonth}`.slice(0, 20),
+      `bill:paid:${item.billId}`,
+      `${item.cardName}（${item.billMonth}）已繳費`,
+    )
+  )
+  return [textMessage(`請選擇已繳費的帳單：\n${lines.join('\n')}`, actions)]
+}
+
+async function markBillPaidMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+  billId: string,
+): Promise<LineMessage[]> {
+  const result = await rpc(db, 'line_mark_card_bill_paid', {
+    p_line_user_id: lineUserId,
+    p_bill_id: billId,
+  })
+  const bill = `${result.cardName}（${result.billMonth}）`
+  if (result.status === 'saved') {
+    return [textMessage(
+      `已記錄繳款 ${formatMoney(Number(result.amountMinor))}，${bill}帳單已結清，不會再提醒。`,
+    )]
+  }
+  if (result.status === 'already_paid') {
+    return [textMessage(`${bill}帳單已經結清，不會再提醒。`)]
+  }
+  if (result.status === 'needs_app') {
+    return [textMessage(`${bill}無法從 LINE 直接記錄繳款，請到 App 的信用卡帳單頁記錄。`)]
+  }
+  if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
+  return [textMessage('找不到這筆帳單，可能已經被刪除或修改。')]
 }
 
 async function acknowledgeBillMessages(

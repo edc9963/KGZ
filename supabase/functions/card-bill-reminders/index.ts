@@ -7,9 +7,10 @@
 //   POST /card-bill-reminders  { "action": "send" }
 //   header  x-cron-secret: <CARD_REMINDER_CRON_SECRET>
 //
-// The pushed message carries a quick-reply postback (`bill:ack:<billId>`)
-// so the user can confirm straight from LINE; supabase/functions/
-// line-webhook/index.ts handles that postback by calling
+// The pushed message carries quick-reply postbacks (`bill:paid:<billId>`,
+// plus `bill:ack:<billId>` for the upcoming-debit heads-up) so the user can
+// respond straight from LINE; supabase/functions/line-webhook/index.ts
+// handles them by calling line_mark_card_bill_paid /
 // line_acknowledge_bill_reminder.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -82,14 +83,15 @@ async function sendReminders(): Promise<{ sent: number; failed: number; total: n
   let failed = 0
   for (const candidate of candidates) {
     try {
-      // Only the upcoming-auto-debit heads-up is dismissable - a failed or
-      // overdue bill needs the user to actually resolve it, so it isn't
-      // offered a "don't remind me again" quick reply (mirrors the
+      // "已繳費" records the payment (line_mark_card_bill_paid), which is
+      // what actually clears a failed/overdue alert. Only the upcoming-
+      // auto-debit heads-up is also dismissable without paying (mirrors the
       // dashboard, and card_bill_reminder_candidates itself never lets
-      // reminder_dismissed suppress those two kinds).
-      const actions = candidate.kind === 'debit_soon'
-        ? [postback('確認，這筆帳單不用再提醒', `bill:ack:${candidate.bill_id}`)]
-        : []
+      // reminder_dismissed suppress the other two kinds).
+      const actions = [postback('已繳費', `bill:paid:${candidate.bill_id}`)]
+      if (candidate.kind === 'debit_soon') {
+        actions.push(postback('確認，這筆帳單不用再提醒', `bill:ack:${candidate.bill_id}`))
+      }
       await pushLine(channelAccessToken, candidate.line_user_id, [
         textMessage(messageFor(candidate), actions),
       ])
