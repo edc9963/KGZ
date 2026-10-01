@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "quick-ledger-local",
+      "runtimeExecutable": "C:\\sdk\\flutter\\bin\\flutter.bat",
+      "runtimeArgs": ["run", "-d", "web-server", "--release", "--web-hostname", "127.0.0.1", "--web-port", "7358", "--dart-define=SUPABASE_URL=", "--dart-define=SUPABASE_PUBLISHABLE_KEY="],
+      "port": 7358
+    }
+  ]
+}
