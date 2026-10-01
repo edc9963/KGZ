@@ -220,6 +220,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       icon: const Icon(Icons.groups_outlined),
                       label: const Text('代訂收款'),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: store.exportReconciliations,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('對帳紀錄'),
+                    ),
                   ],
                 ),
               ),

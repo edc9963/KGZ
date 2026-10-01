@@ -575,6 +575,102 @@ class BalanceAdjustment {
   );
 }
 
+enum ReconciliationTargetType {
+  account('帳戶餘額'),
+  cardBill('信用卡帳單');
+
+  const ReconciliationTargetType(this.label);
+  final String label;
+}
+
+/// One completed 對帳 (reconciliation) check: what the app's books said
+/// ([bookBalanceMinor]) versus what the bank/statement actually showed
+/// ([actualBalanceMinor]) on [date]. A nonzero difference is booked by the
+/// adjustment named in [adjustmentId] — a [BalanceAdjustment] id for an
+/// account, or the bill's `card-bill-reconciliation:` transaction id for a
+/// card bill — so the record is the audit trail for that adjustment.
+class ReconciliationRecord {
+  const ReconciliationRecord({
+    required this.id,
+    required this.userId,
+    required this.targetType,
+    required this.targetId,
+    required this.date,
+    required this.bookBalanceMinor,
+    required this.actualBalanceMinor,
+    required this.createdAt,
+    this.currency = 'TWD',
+    this.adjustmentId,
+    this.note = '',
+    this.origin = DataOrigin.user,
+  });
+
+  final String id;
+  final String userId;
+  final ReconciliationTargetType targetType;
+  final String targetId;
+  final DateTime date;
+  final int bookBalanceMinor;
+  final int actualBalanceMinor;
+  final CurrencyCode currency;
+  final String? adjustmentId;
+  final String note;
+  final DateTime createdAt;
+  final DataOrigin origin;
+
+  int get differenceMinor => actualBalanceMinor - bookBalanceMinor;
+  bool get isBalanced => differenceMinor == 0;
+
+  ReconciliationRecord copyWith({String? targetId}) => ReconciliationRecord(
+    id: id,
+    userId: userId,
+    targetType: targetType,
+    targetId: targetId ?? this.targetId,
+    date: date,
+    bookBalanceMinor: bookBalanceMinor,
+    actualBalanceMinor: actualBalanceMinor,
+    currency: currency,
+    adjustmentId: adjustmentId,
+    note: note,
+    createdAt: createdAt,
+    origin: origin,
+  );
+
+  Json toJson() => {
+    'id': id,
+    'userId': userId,
+    'targetType': targetType.name,
+    'targetId': targetId,
+    'date': date.toIso8601String(),
+    'bookBalanceMinor': bookBalanceMinor,
+    'actualBalanceMinor': actualBalanceMinor,
+    'currency': currency,
+    'adjustmentId': adjustmentId,
+    'note': note,
+    'createdAt': createdAt.toIso8601String(),
+    'origin': origin.name,
+  };
+
+  factory ReconciliationRecord.fromJson(Json json) => ReconciliationRecord(
+    id: json['id'] as String,
+    userId: json['userId'] as String? ?? '',
+    targetType: ReconciliationTargetType.values.byName(
+      json['targetType'] as String? ?? 'account',
+    ),
+    targetId: json['targetId'] as String,
+    date: DateTime.parse(json['date'] as String),
+    bookBalanceMinor: (json['bookBalanceMinor'] as num).toInt(),
+    actualBalanceMinor: (json['actualBalanceMinor'] as num).toInt(),
+    currency: json['currency'] as String? ?? 'TWD',
+    adjustmentId: json['adjustmentId'] as String?,
+    note: json['note'] as String? ?? '',
+    createdAt: DateTime.parse(
+      json['createdAt'] as String? ?? json['date'] as String,
+    ),
+    origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
+  );
+}
+
 class Expense {
   const Expense({
     required this.id,
@@ -1832,6 +1928,7 @@ class AppData {
     this.investmentAdjustments = const [],
     this.investmentPriceHistory = const [],
     this.orders = const [],
+    this.reconciliations = const [],
   });
 
   final int schemaVersion;
@@ -1852,6 +1949,7 @@ class AppData {
   final List<InvestmentAdjustment> investmentAdjustments;
   final List<InvestmentPricePoint> investmentPriceHistory;
   final List<GroupOrder> orders;
+  final List<ReconciliationRecord> reconciliations;
 
   AppData copyWith({
     UserSettings? settings,
@@ -1871,6 +1969,7 @@ class AppData {
     List<InvestmentAdjustment>? investmentAdjustments,
     List<InvestmentPricePoint>? investmentPriceHistory,
     List<GroupOrder>? orders,
+    List<ReconciliationRecord>? reconciliations,
   }) => AppData(
     schemaVersion: schemaVersion,
     settings: settings ?? this.settings,
@@ -1893,6 +1992,7 @@ class AppData {
     investmentPriceHistory:
         investmentPriceHistory ?? this.investmentPriceHistory,
     orders: orders ?? this.orders,
+    reconciliations: reconciliations ?? this.reconciliations,
   );
 
   Json toJson() => {
@@ -1928,6 +2028,7 @@ class AppData {
         .map((item) => item.toJson())
         .toList(),
     'orders': orders.map((item) => item.toJson()).toList(),
+    'reconciliations': reconciliations.map((item) => item.toJson()).toList(),
   };
 
   factory AppData.fromJson(Json json) => AppData(
@@ -1977,6 +2078,11 @@ class AppData {
       InvestmentPricePoint.fromJson,
     ),
     orders: _decode(json, 'orders', GroupOrder.fromJson),
+    reconciliations: _decode(
+      json,
+      'reconciliations',
+      ReconciliationRecord.fromJson,
+    ),
   );
 
   static List<T> _decode<T>(Json json, String key, T Function(Json) factory) =>

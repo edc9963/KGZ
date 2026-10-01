@@ -26,6 +26,7 @@ import 'presentation/pages/expenses_page.dart';
 import 'presentation/pages/investments_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/pages/orders_page.dart';
+import 'presentation/pages/reconciliation_page.dart';
 import 'presentation/pages/reports_page.dart';
 import 'presentation/pages/settings_page.dart';
 import 'presentation/design_tokens.dart';
@@ -310,6 +311,10 @@ class _QuickLedgerAppState extends State<QuickLedgerApp> {
               GoRoute(
                 path: '/investments',
                 builder: (context, state) => const InvestmentsPage(),
+              ),
+              GoRoute(
+                path: '/reconciliation',
+                builder: (context, state) => const ReconciliationPage(),
               ),
             ],
           ),

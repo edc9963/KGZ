@@ -102,6 +102,21 @@ class CsvExportManager {
       ],
   ]);
 
+  Future<void> exportReconciliations() => _csv.export('快記帳_對帳紀錄.csv', [
+    ['對帳日', '類型', '對象', '幣別', '帳面金額', '實際金額', '調整差額', '備註'],
+    for (final item in _store.ledger.reconciliationHistory)
+      [
+        item.date.toIso8601String(),
+        item.targetType.label,
+        _store.ledger.reconciliationTargetName(item),
+        item.currency,
+        item.bookBalanceMinor / 100,
+        item.actualBalanceMinor / 100,
+        item.differenceMinor / 100,
+        item.note,
+      ],
+  ]);
+
   Future<void> exportOrders() => _csv.export('快記帳_代訂收款.csv', [
     [
       '訂購日',

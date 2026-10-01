@@ -20,6 +20,7 @@ import 'package:quick_ledger/presentation/pages/login_page.dart';
 import 'package:quick_ledger/presentation/pages/investments_page.dart';
 import 'package:quick_ledger/presentation/pages/orders_page.dart';
 import 'package:quick_ledger/presentation/import_image_picker_models.dart';
+import 'package:quick_ledger/presentation/pages/reconciliation_page.dart';
 import 'package:quick_ledger/presentation/pages/reports_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
@@ -1291,6 +1292,74 @@ void main() {
 
     expect(store.accountBalance('bank'), 1000000);
     expect(store.data.balanceAdjustments.single.amountMinor, 200000);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reconciliation page books a difference at 390px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.utc(2026, 1, 1);
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          accounts: [
+            Account(
+              id: 'bank',
+              userId: 'user',
+              name: '彰銀',
+              institution: '彰化銀行',
+              type: '銀行帳戶',
+              currency: 'TWD',
+              openingBalanceMinor: 800000,
+              isActive: true,
+              note: '',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: ReconciliationPage()),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('尚未對帳', findRichText: true), findsWidgets);
+    final row = find.ancestor(
+      of: find.text('彰銀'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(
+        of: row,
+        matching: find.widgetWithText(FilledButton, '對帳'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await enterMoneyFieldValue(tester, find.byType(TextField).first, '7950');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('差額 −NT\$50'), findsOneWidget);
+    await tester.tap(find.text('確認並調整'));
+    await tester.pumpAndSettle();
+
+    expect(store.accountBalance('bank'), 795000);
+    final record = store.data.reconciliations.single;
+    expect(record.differenceMinor, -5000);
+    expect(record.adjustmentId, store.data.balanceAdjustments.single.id);
+    expect(find.text('還沒有對帳紀錄'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

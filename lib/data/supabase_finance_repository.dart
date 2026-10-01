@@ -7,6 +7,10 @@ import '../domain/models.dart';
 import 'local_repositories.dart';
 import 'repositories.dart';
 
+/// The `schemaVersion` the current `save_finance_data` RPC expects; see
+/// `supabase/migrations/202610010001_reconciliation_records_v11.sql`.
+const cloudFinanceSchemaVersion = 11;
+
 class SupabaseFinanceRepository implements FinanceRepository {
   SupabaseFinanceRepository({
     required SupabaseClient client,
@@ -85,7 +89,17 @@ class SupabaseFinanceRepository implements FinanceRepository {
     try {
       final raw = await _client.rpc(
         'save_finance_data',
-        params: {'expected_revision': _revision, 'data': normalized.toJson()},
+        params: {
+          'expected_revision': _revision,
+          // Always declare the newest cloud schema: data cached or created
+          // locally can still carry an older schemaVersion, and an older
+          // version would route the save through a legacy RPC that drops
+          // the newer side tables (reminder state, reconciliations).
+          'data': {
+            ...normalized.toJson(),
+            'schemaVersion': cloudFinanceSchemaVersion,
+          },
+        },
       );
       final result = _parseSaveResult(raw);
       _cloudData = normalized;
@@ -211,6 +225,7 @@ bool hasFinanceData(AppData data) =>
     data.investmentAdjustments.isNotEmpty ||
     data.investmentPriceHistory.isNotEmpty ||
     data.orders.isNotEmpty ||
+    data.reconciliations.isNotEmpty ||
     data.settings.toJson().toString() !=
         const UserSettings().toJson().toString();
 
@@ -230,7 +245,8 @@ int financeItemCount(AppData data) =>
     data.investmentTransactions.length +
     data.investmentAdjustments.length +
     data.investmentPriceHistory.length +
-    data.orders.length;
+    data.orders.length +
+    data.reconciliations.length;
 
 AppData rewriteFinanceUserIds(AppData data, String userId) {
   final json = data.toJson();
@@ -250,6 +266,7 @@ AppData rewriteFinanceUserIds(AppData data, String userId) {
     'investmentTransactions',
     'investmentAdjustments',
     'orders',
+    'reconciliations',
   ]) {
     for (final raw in json[key] as List) {
       (raw as Map<String, dynamic>)['userId'] = userId;
@@ -314,6 +331,11 @@ AppData mergeFinanceData(AppData cloud, AppData local) => AppData(
         '${item.productId}/${item.date.toIso8601String().substring(0, 10)}',
   ),
   orders: _cloudFirst(cloud.orders, local.orders, (item) => item.id),
+  reconciliations: _cloudFirst(
+    cloud.reconciliations,
+    local.reconciliations,
+    (item) => item.id,
+  ),
 );
 
 List<T> _cloudFirst<T>(List<T> cloud, List<T> local, String Function(T) id) {

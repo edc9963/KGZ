@@ -87,7 +87,12 @@ class CardsManager {
     );
   }
 
-  Future<void> upsertBill(CardBill bill) async {
+  /// Saves [bill], normalizing its statement amount and (re)booking the
+  /// `card-bill-reconciliation:` difference transaction. When
+  /// [reconciliationDate] is given, this save is a 對帳 check against the
+  /// real statement: a [ReconciliationRecord] comparing the calculated
+  /// charge total to the statement amount is appended in the same commit.
+  Future<void> upsertBill(CardBill bill, {DateTime? reconciliationDate}) async {
     if (_store.ledger.cardById(bill.cardId)?.isCredit != true) {
       _store.lastSyncError = '金融卡消費直接扣款，不會產生信用卡帳單';
       _store.notify();
@@ -242,8 +247,34 @@ class CardsManager {
         ),
       );
     }
+    final reconciliations = reconciliationDate == null
+        ? null
+        : [
+            ..._data.reconciliations,
+            ReconciliationRecord(
+              id: _store.newId(),
+              userId: bill.userId,
+              targetType: ReconciliationTargetType.cardBill,
+              targetId: bill.id,
+              date: reconciliationDate,
+              bookBalanceMinor: statementAmount - difference,
+              actualBalanceMinor: statementAmount,
+              adjustmentId: difference != 0 && liabilityId != null
+                  ? adjustmentId
+                  : null,
+              note: normalized.reconciliationNote,
+              createdAt: DateTime.now(),
+              origin: bill.origin,
+            ),
+          ];
     _store.lastSyncError = null;
-    await _store.commit(_data.copyWith(bills: items, transactions: transactions));
+    await _store.commit(
+      _data.copyWith(
+        bills: items,
+        transactions: transactions,
+        reconciliations: reconciliations,
+      ),
+    );
   }
 
   Future<void> payBill(String id) async {
@@ -413,6 +444,13 @@ class CardsManager {
                     item.relatedEntityType != 'cardBillReconciliation'),
           )
           .toList(),
+      reconciliations: _data.reconciliations
+          .where(
+            (item) =>
+                item.targetType != ReconciliationTargetType.cardBill ||
+                item.targetId != id,
+          )
+          .toList(),
     ),
   );
 
@@ -541,8 +579,17 @@ class CardsManager {
   /// nothing paid against the bill yet, is exactly "still at its
   /// auto-computed default" -- safe to silently replace when a real
   /// submission comes in for the same card+month; see `upsertBill`.
+  ///
+  /// A bill the user explicitly checked in 對帳 and found to match exactly
+  /// also has `reconciliationReason == none`, so a recorded
+  /// [ReconciliationRecord] for it rules it out as a placeholder too.
   bool _isUnreconciledPlaceholder(CardBill bill) =>
       bill.reconciliationReason == CardBillReconciliationReason.none &&
       bill.paidMinor == 0 &&
-      _store.ledger.billPayments(bill.id).isEmpty;
+      _store.ledger.billPayments(bill.id).isEmpty &&
+      _store.ledger.lastReconciliation(
+            ReconciliationTargetType.cardBill,
+            bill.id,
+          ) ==
+          null;
 }

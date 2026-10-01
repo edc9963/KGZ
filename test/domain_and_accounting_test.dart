@@ -1473,6 +1473,238 @@ void main() {
     });
   });
 
+  group('reconciliation (對帳)', () {
+    final bank = Account(
+      id: 'bank-rec',
+      userId: 'user',
+      name: '對帳銀行',
+      institution: '測試銀行',
+      type: '銀行帳戶',
+      currency: 'TWD',
+      openingBalanceMinor: 100000,
+      isActive: true,
+      note: '',
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+      openingBalanceDate: DateTime(2026, 1, 1),
+    );
+
+    test('books the difference as an adjustment and records it', () async {
+      final store = await _store(AppData(accounts: [bank]));
+
+      await store.reconcileAccount(
+        accountId: bank.id,
+        actualBalanceMinor: 98500,
+        date: DateTime(2026, 9, 30),
+        note: '手續費',
+      );
+
+      expect(store.lastSyncError, isNull);
+      expect(store.accountBalance(bank.id), 98500);
+      final record = store.data.reconciliations.single;
+      expect(record.targetType, ReconciliationTargetType.account);
+      expect(record.bookBalanceMinor, 100000);
+      expect(record.actualBalanceMinor, 98500);
+      expect(record.differenceMinor, -1500);
+      final adjustment = store.data.balanceAdjustments.single;
+      expect(record.adjustmentId, adjustment.id);
+      expect(adjustment.amountMinor, -1500);
+      expect(adjustment.reason, '對帳調整：手續費');
+      expect(
+        store.data.transactions.single.type,
+        FinancialTransactionType.balanceAdjustment,
+      );
+    });
+
+    test('a matching balance is recorded without an adjustment', () async {
+      final store = await _store(AppData(accounts: [bank]));
+
+      await store.reconcileAccount(
+        accountId: bank.id,
+        actualBalanceMinor: 100000,
+        date: DateTime(2026, 9, 30),
+      );
+
+      final record = store.data.reconciliations.single;
+      expect(record.isBalanced, isTrue);
+      expect(record.adjustmentId, isNull);
+      expect(store.data.balanceAdjustments, isEmpty);
+      expect(
+        store.lastReconciliation(ReconciliationTargetType.account, bank.id),
+        isNotNull,
+      );
+    });
+
+    test('compares against the book balance on the chosen date', () async {
+      final store = await _store(
+        AppData(
+          accounts: [bank],
+          incomes: [
+            IncomeEntry(
+              id: 'later-income',
+              userId: 'user',
+              date: DateTime(2026, 10, 5),
+              amountMinor: 20000,
+              item: '薪資',
+              category: '薪資',
+              accountId: bank.id,
+              note: '',
+            ),
+          ],
+        ),
+      );
+      expect(store.accountBalanceAt(bank.id, DateTime(2026, 9, 30)), 100000);
+
+      await store.reconcileAccount(
+        accountId: bank.id,
+        actualBalanceMinor: 100000,
+        date: DateTime(2026, 9, 30),
+      );
+
+      expect(store.data.reconciliations.single.isBalanced, isTrue);
+      expect(store.accountBalance(bank.id), 120000);
+    });
+
+    test('undoing a reconciliation removes its adjustment', () async {
+      final store = await _store(AppData(accounts: [bank]));
+      await store.reconcileAccount(
+        accountId: bank.id,
+        actualBalanceMinor: 103000,
+        date: DateTime(2026, 9, 30),
+      );
+      expect(store.accountBalance(bank.id), 103000);
+
+      await store.deleteReconciliation(store.data.reconciliations.single.id);
+
+      expect(store.data.reconciliations, isEmpty);
+      expect(store.data.balanceAdjustments, isEmpty);
+      expect(store.data.transactions, isEmpty);
+      expect(store.accountBalance(bank.id), 100000);
+    });
+
+    test('deleting the adjustment also drops its record', () async {
+      final store = await _store(AppData(accounts: [bank]));
+      await store.reconcileAccount(
+        accountId: bank.id,
+        actualBalanceMinor: 90000,
+        date: DateTime(2026, 9, 30),
+      );
+
+      await store.deleteBalanceAdjustment(
+        store.data.balanceAdjustments.single.id,
+      );
+
+      expect(store.data.reconciliations, isEmpty);
+      expect(store.accountBalance(bank.id), 100000);
+    });
+
+    test('card bill check records calculated vs statement amount', () async {
+      const card = CreditCard(
+        id: 'card-rec',
+        userId: 'user',
+        name: '對帳卡',
+        bank: '測試銀行',
+        lastFour: '5566',
+        closingDay: 31,
+        dueDay: 15,
+        autoDebitDay: 15,
+        debitAccountId: 'bank-rec',
+        isActive: true,
+        note: '',
+        liabilityAccountId: 'liability-rec',
+      );
+      final liability = Account(
+        id: 'liability-rec',
+        userId: 'user',
+        name: '對帳卡未繳',
+        institution: '測試銀行',
+        type: '信用卡負債',
+        currency: 'TWD',
+        openingBalanceMinor: 0,
+        isActive: true,
+        note: '',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+        kind: FinancialAccountKind.liability,
+      );
+      final expense = Expense(
+        id: 'charge-rec',
+        userId: 'user',
+        date: DateTime(2026, 8, 10),
+        amountMinor: 10000,
+        paymentMethod: PaymentMethod.creditCard,
+        item: '購物',
+        category: '購物',
+        cardId: card.id,
+        merchant: '',
+        note: '',
+        isNecessary: false,
+      );
+      final store = await _store(
+        AppData(
+          accounts: [bank, liability],
+          cards: const [card],
+          expenses: [expense],
+        ),
+      );
+      await store.upsertExpense(expense);
+      final bill = CardBill(
+        id: 'bill-rec',
+        userId: 'user',
+        cardId: card.id,
+        month: '2026-08',
+        chargeIds: const ['expense:charge-rec'],
+        manualAdjustmentMinor: 0,
+        paidMinor: 0,
+        dueDate: DateTime(2026, 9, 15),
+        autoDebitDate: DateTime(2026, 9, 15),
+        note: '',
+        statementAmountMinor: 10350,
+        reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+        reconciliationNote: '海外手續費',
+      );
+
+      await store.upsertBill(bill, reconciliationDate: DateTime(2026, 9, 1));
+
+      final record = store.data.reconciliations.single;
+      expect(record.targetType, ReconciliationTargetType.cardBill);
+      expect(record.targetId, bill.id);
+      expect(record.bookBalanceMinor, 10000);
+      expect(record.actualBalanceMinor, 10350);
+      expect(record.adjustmentId, 'card-bill-reconciliation:${bill.id}');
+      expect(record.note, '海外手續費');
+      expect(store.accountBalance(liability.id), 10350);
+      expect(store.reconciliationTargetName(record), '對帳卡 2026-08 帳單');
+
+      await store.deleteBill(bill.id);
+      expect(store.data.reconciliations, isEmpty);
+    });
+
+    test('reconciliation records survive JSON round trip', () {
+      final data = AppData(
+        reconciliations: [
+          ReconciliationRecord(
+            id: 'rec',
+            userId: 'user',
+            targetType: ReconciliationTargetType.account,
+            targetId: 'bank',
+            date: DateTime(2026, 9, 30),
+            bookBalanceMinor: 100000,
+            actualBalanceMinor: 98500,
+            adjustmentId: 'adj',
+            note: '手續費',
+            createdAt: DateTime(2026, 9, 30, 8),
+          ),
+        ],
+      );
+      final restored = AppData.fromJson(data.toJson()).reconciliations.single;
+      expect(restored.differenceMinor, -1500);
+      expect(restored.adjustmentId, 'adj');
+      expect(restored.note, '手續費');
+      expect(restored.createdAt, DateTime(2026, 9, 30, 8));
+    });
+  });
+
   group('credit-card statement reconciliation v9', () {
     const card = CreditCard(
       id: 'card-v9',

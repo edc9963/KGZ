@@ -307,6 +307,14 @@ class DemoDataManager {
         orders: _data.orders
             .where((item) => item.origin != DataOrigin.demo)
             .toList(),
+        reconciliations: _data.reconciliations
+            .where(
+              (item) =>
+                  item.origin != DataOrigin.demo &&
+                  !(item.targetType == ReconciliationTargetType.account &&
+                      demoAccountIds.contains(item.targetId)),
+            )
+            .toList(),
       ),
     );
   }

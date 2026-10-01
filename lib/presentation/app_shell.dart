@@ -38,6 +38,7 @@ const _workspaceTabs = <int, List<_Destination>>{
   2: [
     _Destination('/accounts', '帳戶', Icons.account_balance_outlined),
     _Destination('/investments', '投資', Icons.trending_up_outlined),
+    _Destination('/reconciliation', '對帳', Icons.fact_check_outlined),
   ],
 };
 
@@ -57,6 +58,7 @@ class AppShell extends ConsumerWidget {
       _ when path.startsWith('/reports') => 0,
       _ when path.startsWith('/cards') => 1,
       _ when path.startsWith('/investments') => 2,
+      _ when path.startsWith('/reconciliation') => 2,
       _ => _destinations.indexWhere((item) => path.startsWith(item.path)),
     };
     return index < 0 ? 0 : index;

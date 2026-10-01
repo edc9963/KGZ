@@ -198,6 +198,80 @@ class LedgerQueries {
             .fold(0, (sum, effect) => sum + effect.amountMinor);
   }
 
+  /// The book balance of [accountId] at the end of [asOf]'s day: the same
+  /// sum as [accountBalance], but ignoring anything dated after that day
+  /// (e.g. future-dated recurring expenses), which is what a bank balance
+  /// checked on [asOf] should be compared against.
+  int accountBalanceAt(String accountId, DateTime asOf) {
+    final account = accountById(accountId);
+    if (account == null) return 0;
+    final cutoff = DateTime(asOf.year, asOf.month, asOf.day + 1);
+    bool inRange(DateTime date) => date.isBefore(cutoff);
+    final opening = inRange(account.effectiveOpeningBalanceDate)
+        ? account.openingBalanceMinor
+        : 0;
+    if (account.kind != FinancialAccountKind.asset) {
+      return opening +
+          _data.transactions
+              .where((transaction) => inRange(transaction.date))
+              .expand((transaction) => transaction.impacts)
+              .where((impact) => impact.accountId == accountId)
+              .fold(0, (sum, impact) => sum + impact.amountMinor);
+    }
+    return opening +
+        ledgerEffects
+            .where(
+              (effect) => effect.accountId == accountId && inRange(effect.date),
+            )
+            .fold(0, (sum, effect) => sum + effect.amountMinor);
+  }
+
+  /// Every reconciliation recorded for one account or card bill, newest
+  /// first.
+  List<ReconciliationRecord> reconciliationsFor(
+    ReconciliationTargetType type,
+    String targetId,
+  ) {
+    final result = _data.reconciliations
+        .where((item) => item.targetType == type && item.targetId == targetId)
+        .toList();
+    result.sort(_newestReconciliationFirst);
+    return result;
+  }
+
+  ReconciliationRecord? lastReconciliation(
+    ReconciliationTargetType type,
+    String targetId,
+  ) => reconciliationsFor(type, targetId).firstOrNull;
+
+  /// All reconciliation records, newest first.
+  List<ReconciliationRecord> get reconciliationHistory =>
+      [..._data.reconciliations]..sort(_newestReconciliationFirst);
+
+  /// Human-readable name of what [record] reconciled, e.g. 「台新 Richart」
+  /// or 「玫瑰卡 2026-09 帳單」; falls back to a generic label once the
+  /// account/bill no longer exists.
+  String reconciliationTargetName(ReconciliationRecord record) {
+    switch (record.targetType) {
+      case ReconciliationTargetType.account:
+        return accountById(record.targetId)?.name ?? '已刪除的帳戶';
+      case ReconciliationTargetType.cardBill:
+        final bill = _data.bills
+            .where((item) => item.id == record.targetId)
+            .firstOrNull;
+        if (bill == null) return '已刪除的帳單';
+        return '${cardById(bill.cardId)?.name ?? '信用卡'} ${bill.month} 帳單';
+    }
+  }
+
+  static int _newestReconciliationFirst(
+    ReconciliationRecord a,
+    ReconciliationRecord b,
+  ) {
+    final byDate = b.date.compareTo(a.date);
+    return byDate != 0 ? byDate : b.createdAt.compareTo(a.createdAt);
+  }
+
   List<LedgerEffect> accountLedgerEntries(String accountId) {
     final account = accountById(accountId);
     if (account == null) return const [];

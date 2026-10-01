@@ -433,6 +433,20 @@ class AppStore extends ChangeNotifier {
   List<LedgerEffect> accountLedgerEntries(String accountId) =>
       ledger.accountLedgerEntries(accountId);
   List<LedgerEffect> get ledgerEffects => ledger.ledgerEffects;
+  int accountBalanceAt(String accountId, DateTime asOf) =>
+      ledger.accountBalanceAt(accountId, asOf);
+  List<ReconciliationRecord> reconciliationsFor(
+    ReconciliationTargetType type,
+    String targetId,
+  ) => ledger.reconciliationsFor(type, targetId);
+  ReconciliationRecord? lastReconciliation(
+    ReconciliationTargetType type,
+    String targetId,
+  ) => ledger.lastReconciliation(type, targetId);
+  List<ReconciliationRecord> get reconciliationHistory =>
+      ledger.reconciliationHistory;
+  String reconciliationTargetName(ReconciliationRecord record) =>
+      ledger.reconciliationTargetName(record);
 
   CreditCard? cardById(String? id) => ledger.cardById(id);
   RecurringExpense? get activeTelecomExpense => ledger.activeTelecomExpense;
@@ -550,6 +564,19 @@ class AppStore extends ChangeNotifier {
       accounts.upsertBalanceAdjustment(adjustment);
   Future<void> deleteBalanceAdjustment(String id) =>
       accounts.deleteBalanceAdjustment(id);
+  Future<void> reconcileAccount({
+    required String accountId,
+    required int actualBalanceMinor,
+    required DateTime date,
+    String note = '',
+  }) => accounts.reconcileAccount(
+    accountId: accountId,
+    actualBalanceMinor: actualBalanceMinor,
+    date: date,
+    note: note,
+  );
+  Future<void> deleteReconciliation(String id) =>
+      accounts.deleteReconciliation(id);
 
   // ---------------------------------------------------------------------
   // Expenses / incomes forwards — see [ExpensesManager].
@@ -570,7 +597,8 @@ class AppStore extends ChangeNotifier {
 
   Future<void> upsertCard(CreditCard card) => cards.upsertCard(card);
   Future<void> deleteCard(String id) => cards.deleteCard(id);
-  Future<void> upsertBill(CardBill bill) => cards.upsertBill(bill);
+  Future<void> upsertBill(CardBill bill, {DateTime? reconciliationDate}) =>
+      cards.upsertBill(bill, reconciliationDate: reconciliationDate);
   Future<void> payBill(String id) => cards.payBill(id);
   Future<void> upsertBillPayment({
     required String billId,
@@ -721,6 +749,7 @@ class AppStore extends ChangeNotifier {
   Future<void> exportInvestments() => csv.exportInvestments();
   Future<void> exportBills() => csv.exportBills();
   Future<void> exportOrders() => csv.exportOrders();
+  Future<void> exportReconciliations() => csv.exportReconciliations();
 
   String newId() => _uuid.v4();
 
