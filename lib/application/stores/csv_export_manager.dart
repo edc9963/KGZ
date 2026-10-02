@@ -103,7 +103,20 @@ class CsvExportManager {
   ]);
 
   Future<void> exportReconciliations() => _csv.export('快記帳_對帳紀錄.csv', [
-    ['對帳日', '類型', '對象', '幣別', '帳面金額', '實際金額', '調整差額', '備註'],
+    [
+      '對帳日',
+      '類型',
+      '對象',
+      '幣別',
+      '帳面金額',
+      '實際金額',
+      '調整差額',
+      '帳面數量',
+      '實際數量',
+      '帳面平均成本',
+      '實際平均成本',
+      '備註',
+    ],
     for (final item in _store.ledger.reconciliationHistory)
       [
         item.date.toIso8601String(),
@@ -113,6 +126,16 @@ class CsvExportManager {
         item.bookBalanceMinor / 100,
         item.actualBalanceMinor / 100,
         item.differenceMinor / 100,
+        item.bookQuantityMicros == null ? '' : item.bookQuantityMicros! / 1e6,
+        item.actualQuantityMicros == null
+            ? ''
+            : item.actualQuantityMicros! / 1e6,
+        item.bookAverageCostMinor == null
+            ? ''
+            : item.bookAverageCostMinor! / 100,
+        item.actualAverageCostMinor == null
+            ? ''
+            : item.actualAverageCostMinor! / 100,
         item.note,
       ],
   ]);

@@ -503,13 +503,6 @@ class CardsManager {
         cursor.year,
         cursor.month,
       );
-      if (_data.bills.any(
-        (bill) => bill.cardId == card.id && bill.month == month,
-      )) {
-        // A bill already exists here; assume earlier cycles were already
-        // resolved (manually or by a previous run) and stop.
-        return;
-      }
       final dates = _store.ledger.cardBillingDates(
         card,
         cursor.year,
@@ -540,10 +533,46 @@ class CardsManager {
               ))
             'order:${order.id}',
       ];
-      if (chargeIds.isEmpty) {
-        // Nothing to bill for this closed cycle; older cycles are assumed
-        // already settled.
+      final existing = _data.bills
+          .where((bill) => bill.cardId == card.id && bill.month == month)
+          .toList();
+      if (existing.isNotEmpty) {
+        // A bill already exists here; earlier cycles were already resolved
+        // (manually or by a previous run). Charges recorded after it was
+        // generated (e.g. via LINE) still belong to it, so fold them in --
+        // but only while it's untouched; a bill already checked against the
+        // statement or paid against is left exactly as the user settled it.
+        if (chargeIds.isNotEmpty &&
+            existing.length == 1 &&
+            _isUnreconciledPlaceholder(existing.single)) {
+          final bill = existing.single;
+          await upsertBill(
+            CardBill(
+              id: bill.id,
+              userId: bill.userId,
+              cardId: bill.cardId,
+              month: bill.month,
+              chargeIds: [...bill.chargeIds, ...chargeIds],
+              manualAdjustmentMinor: bill.manualAdjustmentMinor,
+              paidMinor: bill.paidMinor,
+              dueDate: bill.dueDate,
+              autoDebitDate: bill.autoDebitDate,
+              note: bill.note,
+              // Left null so upsertBill recomputes it from the new charges.
+              autoDebitState: bill.autoDebitState,
+              paidAt: bill.paidAt,
+              reminderDismissed: bill.reminderDismissed,
+              origin: bill.origin,
+            ),
+          );
+        }
         return;
+      }
+      if (chargeIds.isEmpty) {
+        // Nothing to bill for this closed cycle, but an older cycle may still
+        // have unbilled charges, so keep walking back.
+        cursor = previous;
+        continue;
       }
       await upsertBill(
         CardBill(

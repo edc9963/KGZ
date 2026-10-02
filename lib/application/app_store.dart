@@ -436,6 +436,8 @@ class AppStore extends ChangeNotifier {
   List<LedgerEffect> get ledgerEffects => ledger.ledgerEffects;
   int accountBalanceAt(String accountId, DateTime asOf) =>
       ledger.accountBalanceAt(accountId, asOf);
+  Holding holdingAt(String productId, DateTime asOf) =>
+      ledger.holdingAt(productId, asOf);
   List<ReconciliationRecord> reconciliationsFor(
     ReconciliationTargetType type,
     String targetId,
@@ -456,8 +458,11 @@ class AppStore extends ChangeNotifier {
   Map<String, CardBill> get cardChargeBills => ledger.cardChargeBills;
   CardBill? cardBillForCharge(String chargeId) =>
       ledger.cardBillForCharge(chargeId);
-  bool canAssignChargeToBill(String chargeId, String cardId, {String? billId}) =>
-      ledger.canAssignChargeToBill(chargeId, cardId, billId: billId);
+  bool canAssignChargeToBill(
+    String chargeId,
+    String cardId, {
+    String? billId,
+  }) => ledger.canAssignChargeToBill(chargeId, cardId, billId: billId);
   int unbilledCardMinor(String cardId) => ledger.unbilledCardMinor(cardId);
   int calculatedBillAmount(CardBill bill) => ledger.calculatedBillAmount(bill);
   int billAmount(CardBill bill) => ledger.billAmount(bill);
@@ -535,7 +540,8 @@ class AppStore extends ChangeNotifier {
   // Accounts forwards — see [AccountsManager].
   // ---------------------------------------------------------------------
 
-  Future<void> upsertAccount(Account account) => accounts.upsertAccount(account);
+  Future<void> upsertAccount(Account account) =>
+      accounts.upsertAccount(account);
   Future<void> mergeAccounts({
     required String sourceAccountId,
     required String targetAccountId,
@@ -578,6 +584,17 @@ class AppStore extends ChangeNotifier {
     date: date,
     note: note,
   );
+  Future<void> reconcileTelecomBill({
+    required String paymentId,
+    required int actualAmountMinor,
+    required DateTime date,
+    String note = '',
+  }) => accounts.reconcileTelecomBill(
+    paymentId: paymentId,
+    actualAmountMinor: actualAmountMinor,
+    date: date,
+    note: note,
+  );
   Future<void> deleteReconciliation(String id) =>
       accounts.deleteReconciliation(id);
 
@@ -585,13 +602,15 @@ class AppStore extends ChangeNotifier {
   // Expenses / incomes forwards — see [ExpensesManager].
   // ---------------------------------------------------------------------
 
-  Future<void> upsertExpense(Expense expense) => expenses.upsertExpense(expense);
+  Future<void> upsertExpense(Expense expense) =>
+      expenses.upsertExpense(expense);
   Future<void> deleteExpense(String id) => expenses.deleteExpense(id);
   Future<void> upsertRecurringExpense(RecurringExpense expense) =>
       expenses.upsertRecurringExpense(expense);
   Future<void> setRecurringExpenseActive(String id, bool active) =>
       expenses.setRecurringExpenseActive(id, active);
-  Future<void> upsertIncome(IncomeEntry income) => expenses.upsertIncome(income);
+  Future<void> upsertIncome(IncomeEntry income) =>
+      expenses.upsertIncome(income);
   Future<void> deleteIncome(String id) => expenses.deleteIncome(id);
 
   // ---------------------------------------------------------------------
@@ -652,6 +671,19 @@ class AppStore extends ChangeNotifier {
       investments.upsertInvestmentAdjustment(adjustment);
   Future<void> deleteInvestmentAdjustment(String id) =>
       investments.deleteInvestmentAdjustment(id);
+  Future<void> reconcileInvestment({
+    required String productId,
+    required int actualQuantityMicros,
+    required DateTime date,
+    int? actualAverageCostMinor,
+    String note = '',
+  }) => investments.reconcileInvestment(
+    productId: productId,
+    actualQuantityMicros: actualQuantityMicros,
+    date: date,
+    actualAverageCostMinor: actualAverageCostMinor,
+    note: note,
+  );
 
   // ---------------------------------------------------------------------
   // Orders forwards — see [OrdersManager].
@@ -722,9 +754,7 @@ class AppStore extends ChangeNotifier {
     if (members.length > _maxSavedOrderMembers) {
       members.removeRange(_maxSavedOrderMembers, members.length);
     }
-    return updateSettings(
-      data.settings.copyWith(savedOrderMembers: members),
-    );
+    return updateSettings(data.settings.copyWith(savedOrderMembers: members));
   }
 
   Future<void> removeOrderMember(String name) => updateSettings(

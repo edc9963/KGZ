@@ -1364,6 +1364,171 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('investment reconciliation books a snapshot at 390px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          products: [
+            InvestmentProduct(
+              id: 'etf',
+              userId: 'user',
+              symbol: '0050',
+              name: '元大台灣50',
+              type: 'ETF',
+              currency: 'TWD',
+              currentPriceMinor: 20000,
+              priceUpdatedAt: DateTime(2026, 9, 1),
+              note: '',
+            ),
+          ],
+          investmentAdjustments: [
+            InvestmentAdjustment(
+              id: 'opening',
+              userId: 'user',
+              productId: 'etf',
+              date: DateTime(2026, 1, 1),
+              quantityMicros: 1000 * 1000000,
+              averageCostMinor: 15000,
+              reason: '期初持倉',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: ReconciliationPage()),
+          ),
+        ),
+      ),
+    );
+
+    final row = find.ancestor(
+      of: find.text('元大台灣50（0050）'),
+      matching: find.byType(ListTile),
+    );
+    await tester.ensureVisible(row);
+    await tester.tap(
+      find.descendant(
+        of: row,
+        matching: find.widgetWithText(FilledButton, '對帳'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, '實際持有數量'),
+      '1100',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('數量差 +100 單位'), findsOneWidget);
+    await tester.tap(find.text('確認並調整'));
+    await tester.pumpAndSettle();
+
+    expect(store.holdings['etf']!.quantityMicros, 1100 * 1000000);
+    expect(
+      store.data.reconciliations.single.quantityDifferenceMicros,
+      100 * 1000000,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reconciliation page checks a telecom bill at 390px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.utc(2026, 1, 1);
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          accounts: [
+            Account(
+              id: 'bank',
+              userId: 'user',
+              name: '彰銀',
+              institution: '彰化銀行',
+              type: '銀行帳戶',
+              currency: 'TWD',
+              openingBalanceMinor: 800000,
+              isActive: true,
+              note: '',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+          telecomBillPayments: [
+            TelecomBillPayment(
+              id: 'telecom-payment',
+              userId: 'user',
+              recurringExpenseId: 'telecom',
+              month: '2026-09',
+              expenseIds: const [],
+              amountMinor: 59900,
+              paidAt: DateTime(2026, 9, 10),
+              debitAccountId: 'bank',
+              balanceInsufficient: false,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: ReconciliationPage()),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('電信帳單 2026-09'), findsOneWidget);
+    final row = find.ancestor(
+      of: find.text('電信帳單 2026-09'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(
+        of: row,
+        matching: find.widgetWithText(FilledButton, '核對'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await enterMoneyFieldValue(tester, find.byType(TextField).first, '612');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('差額 +NT\$13'), findsOneWidget);
+    await tester.tap(find.text('確認並調整'));
+    await tester.pumpAndSettle();
+
+    final record = store.data.reconciliations.single;
+    expect(record.targetType, ReconciliationTargetType.telecomBill);
+    expect(record.differenceMinor, 1300);
+    expect(store.data.balanceAdjustments.single.amountMinor, -1300);
+    // Checked bills drop out of the default 待核對 filter…
+    expect(find.text('電信帳單 2026-09'), findsOneWidget); // history row
+    await tester.tap(find.text('全部'));
+    await tester.pumpAndSettle();
+    // …and come back under 全部.
+    expect(find.text('電信帳單 2026-09'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'current month income and balance totals are exposed by the store',
     () async {

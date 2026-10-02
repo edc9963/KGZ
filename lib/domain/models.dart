@@ -577,7 +577,9 @@ class BalanceAdjustment {
 
 enum ReconciliationTargetType {
   account('帳戶餘額'),
-  cardBill('信用卡帳單');
+  cardBill('信用卡帳單'),
+  telecomBill('電信帳單'),
+  investment('投資部位');
 
   const ReconciliationTargetType(this.label);
   final String label;
@@ -602,6 +604,10 @@ class ReconciliationRecord {
     this.currency = 'TWD',
     this.adjustmentId,
     this.note = '',
+    this.bookQuantityMicros,
+    this.actualQuantityMicros,
+    this.bookAverageCostMinor,
+    this.actualAverageCostMinor,
     this.origin = DataOrigin.user,
   });
 
@@ -610,16 +616,38 @@ class ReconciliationRecord {
   final ReconciliationTargetType targetType;
   final String targetId;
   final DateTime date;
+
+  /// For an investment these are market values (quantity × the product's
+  /// price at the time of the check); the quantities and average costs
+  /// actually being compared are in the four fields below.
   final int bookBalanceMinor;
   final int actualBalanceMinor;
   final CurrencyCode currency;
+
+  /// The [BalanceAdjustment] (account / 電信帳單), card-bill reconciliation
+  /// transaction (card bill) or [InvestmentAdjustment] (investment) that
+  /// booked the difference.
   final String? adjustmentId;
   final String note;
   final DateTime createdAt;
+
+  /// Investment-only: held units and average cost per unit, as the books
+  /// had them and as the broker reported them.
+  final int? bookQuantityMicros;
+  final int? actualQuantityMicros;
+  final int? bookAverageCostMinor;
+  final int? actualAverageCostMinor;
   final DataOrigin origin;
 
   int get differenceMinor => actualBalanceMinor - bookBalanceMinor;
-  bool get isBalanced => differenceMinor == 0;
+  int get quantityDifferenceMicros =>
+      (actualQuantityMicros ?? 0) - (bookQuantityMicros ?? 0);
+  int get averageCostDifferenceMinor =>
+      (actualAverageCostMinor ?? 0) - (bookAverageCostMinor ?? 0);
+  bool get isBalanced =>
+      differenceMinor == 0 &&
+      quantityDifferenceMicros == 0 &&
+      averageCostDifferenceMinor == 0;
 
   ReconciliationRecord copyWith({String? targetId}) => ReconciliationRecord(
     id: id,
@@ -633,6 +661,10 @@ class ReconciliationRecord {
     adjustmentId: adjustmentId,
     note: note,
     createdAt: createdAt,
+    bookQuantityMicros: bookQuantityMicros,
+    actualQuantityMicros: actualQuantityMicros,
+    bookAverageCostMinor: bookAverageCostMinor,
+    actualAverageCostMinor: actualAverageCostMinor,
     origin: origin,
   );
 
@@ -648,8 +680,19 @@ class ReconciliationRecord {
     'adjustmentId': adjustmentId,
     'note': note,
     'createdAt': createdAt.toIso8601String(),
+    'bookQuantityMicros': bookQuantityMicros,
+    'actualQuantityMicros': actualQuantityMicros,
+    'bookAverageCostMinor': bookAverageCostMinor,
+    'actualAverageCostMinor': actualAverageCostMinor,
     'origin': origin.name,
   };
+
+  /// Whether this build understands [json]'s target type. Records of a
+  /// type added by a newer app version are skipped on load instead of
+  /// failing the whole data load.
+  static bool isSupportedJson(Json json) => ReconciliationTargetType.values
+      .asNameMap()
+      .containsKey(json['targetType'] as String? ?? 'account');
 
   factory ReconciliationRecord.fromJson(Json json) => ReconciliationRecord(
     id: json['id'] as String,
@@ -667,6 +710,10 @@ class ReconciliationRecord {
     createdAt: DateTime.parse(
       json['createdAt'] as String? ?? json['date'] as String,
     ),
+    bookQuantityMicros: (json['bookQuantityMicros'] as num?)?.toInt(),
+    actualQuantityMicros: (json['actualQuantityMicros'] as num?)?.toInt(),
+    bookAverageCostMinor: (json['bookAverageCostMinor'] as num?)?.toInt(),
+    actualAverageCostMinor: (json['actualAverageCostMinor'] as num?)?.toInt(),
     origin: DataOrigin.values.byName(json['origin'] as String? ?? 'user'),
   );
 }
@@ -2078,11 +2125,11 @@ class AppData {
       InvestmentPricePoint.fromJson,
     ),
     orders: _decode(json, 'orders', GroupOrder.fromJson),
-    reconciliations: _decode(
-      json,
-      'reconciliations',
-      ReconciliationRecord.fromJson,
-    ),
+    reconciliations: (json['reconciliations'] as List? ?? const [])
+        .cast<Json>()
+        .where(ReconciliationRecord.isSupportedJson)
+        .map(ReconciliationRecord.fromJson)
+        .toList(),
   );
 
   static List<T> _decode<T>(Json json, String key, T Function(Json) factory) =>

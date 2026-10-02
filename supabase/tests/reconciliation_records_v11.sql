@@ -66,8 +66,8 @@ select is(
   'v11 save accepts reconciliation records'
 );
 
-select is(public.load_finance_data()#>>'{data,schemaVersion}', '11',
-  'load reports schema v11');
+select is(public.load_finance_data()#>>'{data,schemaVersion}', '13',
+  'load reports the current schema (v13 wraps v11)');
 select is(public.load_finance_data()#>>'{data,reconciliations,0,targetId}', 'bank',
   'reconciliation target round trips');
 select is(public.load_finance_data()#>>'{data,reconciliations,0,actualBalanceMinor}', '98500',

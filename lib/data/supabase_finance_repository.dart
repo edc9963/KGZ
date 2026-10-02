@@ -8,8 +8,8 @@ import 'local_repositories.dart';
 import 'repositories.dart';
 
 /// The `schemaVersion` the current `save_finance_data` RPC expects; see
-/// `supabase/migrations/202610010001_reconciliation_records_v11.sql`.
-const cloudFinanceSchemaVersion = 11;
+/// `supabase/migrations/202610030001_reconciliation_investments_v13.sql`.
+const cloudFinanceSchemaVersion = 13;
 
 class SupabaseFinanceRepository implements FinanceRepository {
   SupabaseFinanceRepository({

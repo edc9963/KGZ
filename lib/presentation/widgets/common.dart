@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -790,13 +791,29 @@ class MoneyField extends StatelessWidget {
   final bool readOnly;
   final TextAlign textAlign;
 
-  // Accepted for drop-in compatibility with TextField/TextFormField call
-  // sites; the calculator pop-up replaces the on-screen keyboard entirely.
+  // On touch devices the calculator pop-up replaces the on-screen keyboard
+  // entirely and these are ignored; on desktop the field accepts typing
+  // (including the numeric keypad) and these are applied as usual.
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
   final TextInputAction? textInputAction;
 
   bool get _calculatorEnabled => enabled && !readOnly;
+
+  /// Desktop users (including the web app on a Windows/macOS/Linux
+  /// browser) have a physical keyboard, so the field takes typed digits
+  /// directly and the calculator moves to the suffix button. Phones and
+  /// tablets keep tap-to-open-calculator, which avoids the soft keyboard.
+  static bool get _acceptsTyping => switch (defaultTargetPlatform) {
+    TargetPlatform.windows ||
+    TargetPlatform.macOS ||
+    TargetPlatform.linux => true,
+    _ => false,
+  };
+
+  static final _amountCharacters = FilteringTextInputFormatter.allow(
+    RegExp(r'[0-9.,\-]'),
+  );
 
   Future<void> _openCalculator(BuildContext context) async {
     if (!_calculatorEnabled) return;
@@ -831,6 +848,24 @@ class MoneyField extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [existingSuffix, calculatorButton],
           );
+    if (_acceptsTyping) {
+      return TextFormField(
+        controller: controller,
+        readOnly: readOnly,
+        enabled: enabled,
+        autofocus: autofocus,
+        style: style,
+        textAlign: textAlign,
+        keyboardType:
+            keyboardType ??
+            const TextInputType.numberWithOptions(decimal: true, signed: true),
+        inputFormatters: [_amountCharacters, ...?inputFormatters],
+        textInputAction: textInputAction,
+        decoration: baseDecoration.copyWith(suffixIcon: mergedSuffix),
+        validator: validator,
+        onChanged: onChanged,
+      );
+    }
     return TextFormField(
       controller: controller,
       readOnly: true,
@@ -1014,11 +1049,87 @@ class _MoneyCalculatorSheetState extends State<_MoneyCalculatorSheet> {
     Navigator.pop(context, _display == '0' ? '0' : _display);
   }
 
+  static final _numpadDigits = {
+    LogicalKeyboardKey.numpad0: '0',
+    LogicalKeyboardKey.numpad1: '1',
+    LogicalKeyboardKey.numpad2: '2',
+    LogicalKeyboardKey.numpad3: '3',
+    LogicalKeyboardKey.numpad4: '4',
+    LogicalKeyboardKey.numpad5: '5',
+    LogicalKeyboardKey.numpad6: '6',
+    LogicalKeyboardKey.numpad7: '7',
+    LogicalKeyboardKey.numpad8: '8',
+    LogicalKeyboardKey.numpad9: '9',
+    LogicalKeyboardKey.numpadDecimal: '.',
+  };
+
+  /// Physical-keyboard input for the calculator: main-row and numeric
+  /// keypad digits, `+ - * /` (keypad or main row), Enter to confirm,
+  /// `=` to evaluate, Backspace to delete and Delete/`c` to clear.
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    final numpadDigit = _numpadDigits[key];
+    if (numpadDigit != null) {
+      _pressDigit(numpadDigit);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.numpadAdd) {
+      _pressOperator(_CalcOp.add);
+    } else if (key == LogicalKeyboardKey.numpadSubtract) {
+      _pressOperator(_CalcOp.subtract);
+    } else if (key == LogicalKeyboardKey.numpadMultiply) {
+      _pressOperator(_CalcOp.multiply);
+    } else if (key == LogicalKeyboardKey.numpadDivide) {
+      _pressOperator(_CalcOp.divide);
+    } else if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _confirm();
+    } else if (key == LogicalKeyboardKey.backspace) {
+      _pressBackspace();
+    } else if (key == LogicalKeyboardKey.delete) {
+      _pressClear();
+    } else {
+      final character = event.character;
+      if (character == null) return KeyEventResult.ignored;
+      if (RegExp(r'^[0-9]$').hasMatch(character)) {
+        _pressDigit(character);
+      } else if (character == '.' || character == ',') {
+        _pressDigit('.');
+      } else if (character == '+') {
+        _pressOperator(_CalcOp.add);
+      } else if (character == '-') {
+        _pressOperator(_CalcOp.subtract);
+      } else if (character == '*' || character == 'x' || character == 'X') {
+        _pressOperator(_CalcOp.multiply);
+      } else if (character == '/') {
+        _pressOperator(_CalcOp.divide);
+      } else if (character == '=') {
+        _pressEquals();
+      } else if (character == 'c' || character == 'C') {
+        _pressClear();
+      } else {
+        return KeyEventResult.ignored;
+      }
+    }
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
     final expression = _pendingOp == null
         ? ''
         : '${_formatNumber(_accumulator ?? 0)} ${_pendingOp!.symbol}';
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleKey,
+      child: _buildContent(context, expression),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, String expression) {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),

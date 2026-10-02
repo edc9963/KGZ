@@ -139,6 +139,13 @@ class InvestmentsManager {
                     ),
           )
           .toList(),
+      reconciliations: _data.reconciliations
+          .where(
+            (item) =>
+                item.targetType != ReconciliationTargetType.investment ||
+                item.targetId != id,
+          )
+          .toList(),
     ),
   );
 
@@ -180,13 +187,106 @@ class InvestmentsManager {
     await _store.commit(_data.copyWith(investmentAdjustments: items));
   }
 
+  /// Deleting a snapshot that a 對帳 booked also deletes that
+  /// reconciliation record, same as for account balance adjustments.
   Future<void> deleteInvestmentAdjustment(String id) => _store.commit(
     _data.copyWith(
       investmentAdjustments: _data.investmentAdjustments
           .where((item) => item.id != id)
           .toList(),
+      reconciliations: _data.reconciliations
+          .where(
+            (item) =>
+                item.targetType != ReconciliationTargetType.investment ||
+                item.adjustmentId != id,
+          )
+          .toList(),
     ),
   );
+
+  /// 投資對帳: compares the holding the books show for [productId] at the
+  /// end of [date] with the units (and, optionally, average cost) the
+  /// broker reports. When they differ, an [InvestmentAdjustment] snapshot
+  /// dated at the end of that day resets the holding to the broker's
+  /// figures — later transactions still apply on top of it. A
+  /// [ReconciliationRecord] keeps both sides, plus their market values at
+  /// the product's current price.
+  Future<void> reconcileInvestment({
+    required String productId,
+    required int actualQuantityMicros,
+    required DateTime date,
+    int? actualAverageCostMinor,
+    String note = '',
+  }) async {
+    final product = _store.ledger.productById(productId);
+    if (product == null) {
+      _store.lastSyncError = '找不到這個投資商品';
+      _store.notify();
+      return;
+    }
+    if (actualQuantityMicros < 0 ||
+        (actualAverageCostMinor != null && actualAverageCostMinor < 0)) {
+      _store.lastSyncError = '持有數量與平均成本不可為負數';
+      _store.notify();
+      return;
+    }
+    final day = DateTime(date.year, date.month, date.day);
+    final book = _store.ledger.holdingAt(productId, day);
+    final actualAverageCost = actualQuantityMicros == 0
+        ? 0
+        : actualAverageCostMinor ?? book.averageCostMinor;
+    final changed =
+        actualQuantityMicros != book.quantityMicros ||
+        actualAverageCost != book.averageCostMinor;
+    final trimmedNote = note.trim();
+    final adjustmentId = changed ? _store.newId() : null;
+    int valueOf(int quantityMicros) =>
+        (quantityMicros * product.currentPriceMinor / 1000000).round();
+    final record = ReconciliationRecord(
+      id: _store.newId(),
+      userId: _store.userId,
+      targetType: ReconciliationTargetType.investment,
+      targetId: productId,
+      date: day,
+      bookBalanceMinor: valueOf(book.quantityMicros),
+      actualBalanceMinor: valueOf(actualQuantityMicros),
+      currency: product.currency,
+      adjustmentId: adjustmentId,
+      note: trimmedNote,
+      createdAt: DateTime.now(),
+      bookQuantityMicros: book.quantityMicros,
+      actualQuantityMicros: actualQuantityMicros,
+      bookAverageCostMinor: book.averageCostMinor,
+      actualAverageCostMinor: actualAverageCost,
+      origin: product.origin,
+    );
+    _store.lastSyncError = null;
+    await _store.commit(
+      _data.copyWith(
+        reconciliations: [..._data.reconciliations, record],
+        investmentAdjustments: adjustmentId == null
+            ? null
+            : [
+                ..._data.investmentAdjustments,
+                InvestmentAdjustment(
+                  id: adjustmentId,
+                  userId: _store.userId,
+                  productId: productId,
+                  // End of the checked day, so the snapshot replaces the
+                  // result of that day's own trades instead of being
+                  // replayed before them.
+                  date: DateTime(day.year, day.month, day.day, 23, 59, 59),
+                  quantityMicros: actualQuantityMicros,
+                  averageCostMinor: actualAverageCost,
+                  reason: trimmedNote.isEmpty
+                      ? '對帳調整'
+                      : '對帳調整：$trimmedNote',
+                  origin: product.origin,
+                ),
+              ],
+      ),
+    );
+  }
 
   FinancialTransaction _investmentFinancialTransaction(
     InvestmentTransaction transaction,

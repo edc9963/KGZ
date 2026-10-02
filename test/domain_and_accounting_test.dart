@@ -1305,6 +1305,86 @@ void main() {
     });
   });
 
+  group('card bill auto-generation', () {
+    const card = CreditCard(
+      id: 'card-auto',
+      userId: 'user',
+      name: '自動卡',
+      bank: '測試銀行',
+      lastFour: '7788',
+      closingDay: 28,
+      dueDay: 12,
+      autoDebitDay: 12,
+      debitAccountId: 'bank',
+      isActive: true,
+      note: '',
+    );
+    final now = DateTime.now();
+
+    // Day 15 always falls inside the cycle closing on the 28th of the same
+    // month, and two-or-more months back that cycle has always closed.
+    Expense charge(String id, int monthsAgo, int amount, {int day = 15}) =>
+        Expense(
+          id: id,
+          userId: 'user',
+          date: DateTime(now.year, now.month - monthsAgo, day),
+          amountMinor: amount,
+          paymentMethod: PaymentMethod.creditCard,
+          item: id,
+          category: '餐飲',
+          cardId: card.id,
+          merchant: '',
+          note: '',
+          isNecessary: false,
+        );
+
+    test('keeps walking back past a cycle with no charges', () async {
+      final store = await _store(
+        AppData(
+          cards: const [card],
+          expenses: [charge('recent', 2, 1000), charge('older', 4, 2000)],
+        ),
+      );
+
+      final bills = store.data.bills;
+      expect(bills, hasLength(2));
+      expect(
+        bills.map((bill) => bill.chargeIds.single),
+        containsAll(const ['expense:recent', 'expense:older']),
+      );
+    });
+
+    test('folds a late charge into the untouched bill of its cycle', () async {
+      final store = await _store(
+        AppData(cards: const [card], expenses: [charge('first', 2, 1000)]),
+      );
+      final generated = store.data.bills.single;
+
+      await store.upsertExpense(charge('late', 2, 500, day: 16));
+      await store.cards.ensureBillsGenerated();
+
+      final bill = store.data.bills.single;
+      expect(bill.id, generated.id);
+      expect(bill.chargeIds, ['expense:first', 'expense:late']);
+      expect(store.billAmount(bill), 1500);
+    });
+
+    test('leaves a reconciled bill alone when a late charge arrives', () async {
+      final store = await _store(
+        AppData(cards: const [card], expenses: [charge('first', 2, 1000)]),
+      );
+      final generated = store.data.bills.single;
+      await store.upsertBill(generated, reconciliationDate: DateTime.now());
+
+      await store.upsertExpense(charge('late', 2, 500, day: 16));
+      await store.cards.ensureBillsGenerated();
+
+      final bill = store.data.bills.single;
+      expect(bill.chargeIds, ['expense:first']);
+      expect(store.billAmount(bill), 1000);
+    });
+  });
+
   group('credit card charge ownership', () {
     final now = DateTime.utc(2026, 8, 11);
     const card = CreditCard(
@@ -1470,6 +1550,194 @@ void main() {
           ReminderDestination.expenses,
         ]),
       );
+    });
+  });
+
+  group('investment reconciliation (投資對帳)', () {
+    final product = InvestmentProduct(
+      id: 'etf',
+      userId: 'user',
+      symbol: '0050',
+      name: '元大台灣50',
+      type: 'ETF',
+      currency: 'TWD',
+      currentPriceMinor: 20000,
+      priceUpdatedAt: DateTime(2026, 10, 1),
+      note: '',
+    );
+    InvestmentTransaction buy(String id, DateTime date, int units) =>
+        InvestmentTransaction(
+          id: id,
+          userId: 'user',
+          date: date,
+          type: InvestmentTransactionType.buy,
+          productId: product.id,
+          quantityMicros: units * 1000000,
+          priceMinor: 15000,
+          feeMinor: 0,
+          taxMinor: 0,
+          note: '',
+        );
+
+    test('a quantity difference books a holding snapshot', () async {
+      final store = await _store(
+        AppData(
+          products: [product],
+          investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
+        ),
+      );
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 1100 * 1000000,
+        date: DateTime(2026, 10, 1),
+        note: '股票股利',
+      );
+
+      expect(store.lastSyncError, isNull);
+      expect(store.holdings[product.id]!.quantityMicros, 1100 * 1000000);
+      // Average cost is kept when the broker's isn't entered.
+      expect(store.holdings[product.id]!.averageCostMinor, 15000);
+      final record = store.data.reconciliations.single;
+      expect(record.targetType, ReconciliationTargetType.investment);
+      expect(record.bookQuantityMicros, 1000 * 1000000);
+      expect(record.actualQuantityMicros, 1100 * 1000000);
+      expect(record.differenceMinor, 100 * 20000);
+      expect(record.isBalanced, isFalse);
+      final snapshot = store.data.investmentAdjustments.single;
+      expect(record.adjustmentId, snapshot.id);
+      expect(snapshot.reason, '對帳調整：股票股利');
+      expect(store.reconciliationTargetName(record), '元大台灣50（0050）');
+    });
+
+    test('later trades still apply on top of the snapshot', () async {
+      final store = await _store(
+        AppData(
+          products: [product],
+          investmentTransactions: [
+            buy('b1', DateTime(2026, 9, 1), 1000),
+            buy('same-day', DateTime(2026, 9, 30, 10), 10),
+            buy('later', DateTime(2026, 10, 5), 50),
+          ],
+        ),
+      );
+      expect(
+        store.holdingAt(product.id, DateTime(2026, 9, 30)).quantityMicros,
+        1010 * 1000000,
+      );
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 1005 * 1000000,
+        date: DateTime(2026, 9, 30),
+      );
+
+      expect(
+        store.data.reconciliations.single.bookQuantityMicros,
+        1010 * 1000000,
+      );
+      expect(store.holdings[product.id]!.quantityMicros, 1055 * 1000000);
+    });
+
+    test('an average cost correction alone is not balanced', () async {
+      final store = await _store(
+        AppData(
+          products: [product],
+          investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
+        ),
+      );
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 1000 * 1000000,
+        actualAverageCostMinor: 14800,
+        date: DateTime(2026, 10, 1),
+      );
+
+      final record = store.data.reconciliations.single;
+      expect(record.differenceMinor, 0);
+      expect(record.isBalanced, isFalse);
+      expect(store.holdings[product.id]!.averageCostMinor, 14800);
+    });
+
+    test('a matching holding is recorded without a snapshot', () async {
+      final store = await _store(
+        AppData(
+          products: [product],
+          investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
+        ),
+      );
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 1000 * 1000000,
+        date: DateTime(2026, 10, 1),
+      );
+
+      expect(store.data.reconciliations.single.isBalanced, isTrue);
+      expect(store.data.investmentAdjustments, isEmpty);
+    });
+
+    test('undoing removes the snapshot; deleting it drops the record', () async {
+      final store = await _store(
+        AppData(
+          products: [product],
+          investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
+        ),
+      );
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 900 * 1000000,
+        date: DateTime(2026, 10, 1),
+      );
+      await store.deleteReconciliation(store.data.reconciliations.single.id);
+      expect(store.data.investmentAdjustments, isEmpty);
+      expect(store.holdings[product.id]!.quantityMicros, 1000 * 1000000);
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 900 * 1000000,
+        date: DateTime(2026, 10, 1),
+      );
+      await store.deleteInvestmentAdjustment(
+        store.data.investmentAdjustments.single.id,
+      );
+      expect(store.data.reconciliations, isEmpty);
+
+      await store.reconcileInvestment(
+        productId: product.id,
+        actualQuantityMicros: 900 * 1000000,
+        date: DateTime(2026, 10, 1),
+      );
+      await store.deleteProduct(product.id);
+      expect(store.data.reconciliations, isEmpty);
+    });
+
+    test('unknown reconciliation types are skipped on load', () {
+      final json = const AppData().toJson()
+        ..['reconciliations'] = [
+          {
+            'id': 'future',
+            'targetType': 'somethingNewer',
+            'targetId': 'x',
+            'date': '2026-10-01T00:00:00.000',
+            'bookBalanceMinor': 0,
+            'actualBalanceMinor': 0,
+          },
+          {
+            'id': 'known',
+            'targetType': 'investment',
+            'targetId': 'etf',
+            'date': '2026-10-01T00:00:00.000',
+            'bookBalanceMinor': 0,
+            'actualBalanceMinor': 0,
+            'bookQuantityMicros': 5,
+            'actualQuantityMicros': 7,
+          },
+        ];
+      final records = AppData.fromJson(json).reconciliations;
+      expect(records.map((item) => item.id), ['known']);
+      expect(records.single.quantityDifferenceMicros, 2);
     });
   });
 
@@ -1679,6 +1947,72 @@ void main() {
       await store.deleteBill(bill.id);
       expect(store.data.reconciliations, isEmpty);
     });
+
+    TelecomBillPayment telecomPayment() => TelecomBillPayment(
+      id: 'telecom-payment-rec',
+      userId: 'user',
+      recurringExpenseId: 'telecom',
+      month: '2026-09',
+      expenseIds: const [],
+      amountMinor: 59900,
+      paidAt: DateTime(2026, 9, 10),
+      debitAccountId: bank.id,
+      balanceInsufficient: false,
+    );
+
+    test('telecom bill check without difference books nothing', () async {
+      final store = await _store(
+        AppData(accounts: [bank], telecomBillPayments: [telecomPayment()]),
+      );
+      final before = store.accountBalance(bank.id);
+
+      await store.reconcileTelecomBill(
+        paymentId: 'telecom-payment-rec',
+        actualAmountMinor: 59900,
+        date: DateTime(2026, 9, 30),
+      );
+
+      expect(store.lastSyncError, isNull);
+      final record = store.data.reconciliations.single;
+      expect(record.targetType, ReconciliationTargetType.telecomBill);
+      expect(record.isBalanced, isTrue);
+      expect(record.adjustmentId, isNull);
+      expect(store.data.balanceAdjustments, isEmpty);
+      expect(store.accountBalance(bank.id), before);
+      expect(store.reconciliationTargetName(record), '電信帳單 2026-09');
+    });
+
+    test(
+      'telecom bill difference adjusts the debit account and can be undone',
+      () async {
+        final store = await _store(
+          AppData(accounts: [bank], telecomBillPayments: [telecomPayment()]),
+        );
+        final before = store.accountBalance(bank.id);
+
+        await store.reconcileTelecomBill(
+          paymentId: 'telecom-payment-rec',
+          actualAmountMinor: 61200,
+          date: DateTime(2026, 9, 30),
+          note: '漏記小額付款',
+        );
+
+        final record = store.data.reconciliations.single;
+        expect(record.bookBalanceMinor, 59900);
+        expect(record.actualBalanceMinor, 61200);
+        final adjustment = store.data.balanceAdjustments.single;
+        expect(record.adjustmentId, adjustment.id);
+        expect(adjustment.accountId, bank.id);
+        expect(adjustment.amountMinor, -1300);
+        expect(store.accountBalance(bank.id), before - 1300);
+
+        await store.deleteReconciliation(record.id);
+
+        expect(store.data.reconciliations, isEmpty);
+        expect(store.data.balanceAdjustments, isEmpty);
+        expect(store.accountBalance(bank.id), before);
+      },
+    );
 
     test('reconciliation records survive JSON round trip', () {
       final data = AppData(

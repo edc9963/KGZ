@@ -312,7 +312,9 @@ class DemoDataManager {
               (item) =>
                   item.origin != DataOrigin.demo &&
                   !(item.targetType == ReconciliationTargetType.account &&
-                      demoAccountIds.contains(item.targetId)),
+                      demoAccountIds.contains(item.targetId)) &&
+                  !(item.targetType == ReconciliationTargetType.investment &&
+                      demoProductIds.contains(item.targetId)),
             )
             .toList(),
       ),

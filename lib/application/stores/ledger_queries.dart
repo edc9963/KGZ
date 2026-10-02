@@ -123,9 +123,7 @@ class LedgerQueries {
   /// Internal liability and receivable ledger accounts are intentionally
   /// excluded from user-facing account selectors.
   List<Account> get activeAssetAccounts => _data.accounts
-      .where(
-        (item) => item.isActive && item.kind == FinancialAccountKind.asset,
-      )
+      .where((item) => item.isActive && item.kind == FinancialAccountKind.asset)
       .toList();
 
   String get lastCollectionMethod {
@@ -170,7 +168,10 @@ class LedgerQueries {
           ..sort((a, b) => b.collectedAt!.compareTo(a.collectedAt!));
     final match = matches.firstOrNull;
     if (match == null) return null;
-    return (method: match.collectionMethod, accountId: match.collectionAccountId);
+    return (
+      method: match.collectionMethod,
+      accountId: match.collectionAccountId,
+    );
   }
 
   String? get defaultBankTransferAccountId {
@@ -265,8 +266,21 @@ class LedgerQueries {
             .firstOrNull;
         if (bill == null) return '已刪除的帳單';
         return '${cardById(bill.cardId)?.name ?? '信用卡'} ${bill.month} 帳單';
+      case ReconciliationTargetType.telecomBill:
+        final payment = telecomPaymentById(record.targetId);
+        if (payment == null) return '已刪除的電信帳單';
+        return '電信帳單 ${payment.month}';
+      case ReconciliationTargetType.investment:
+        final product = productById(record.targetId);
+        if (product == null) return '已刪除的投資商品';
+        return product.symbol.isEmpty
+            ? product.name
+            : '${product.name}（${product.symbol}）';
     }
   }
+
+  TelecomBillPayment? telecomPaymentById(String id) =>
+      _data.telecomBillPayments.where((item) => item.id == id).firstOrNull;
 
   static int _newestReconciliationFirst(
     ReconciliationRecord a,
@@ -511,9 +525,7 @@ class LedgerQueries {
   String? cardIdForCharge(String chargeId) {
     if (chargeId.startsWith('expense:')) {
       final id = chargeId.substring('expense:'.length);
-      final expense = _data.expenses
-          .where((item) => item.id == id)
-          .firstOrNull;
+      final expense = _data.expenses.where((item) => item.id == id).firstOrNull;
       return expense?.isCreditCard == true ? expense?.cardId : null;
     }
     if (chargeId.startsWith('order:')) {
@@ -905,8 +917,26 @@ class LedgerQueries {
     final data = _data;
     final cached = _holdingsCache;
     if (cached != null && identical(_holdingsFor, data)) return cached;
-    final result = <String, Holding>{};
-    for (final product in _data.products) {
+    final result = <String, Holding>{
+      for (final product in _data.products)
+        product.id: _computeHolding(product.id),
+    };
+    _holdingsFor = data;
+    return _holdingsCache = result;
+  }
+
+  /// The holding of [productId] at the end of [asOf]'s day — what a broker
+  /// statement checked on [asOf] should be compared against.
+  Holding holdingAt(String productId, DateTime asOf) => _computeHolding(
+    productId,
+    cutoff: DateTime(asOf.year, asOf.month, asOf.day + 1),
+  );
+
+  /// Replays [productId]'s transactions and snapshot adjustments in date
+  /// order, ignoring anything dated at or after [cutoff] when given.
+  Holding _computeHolding(String productId, {DateTime? cutoff}) {
+    bool inRange(DateTime date) => cutoff == null || date.isBefore(cutoff);
+    {
       final events =
           <
               ({
@@ -916,10 +946,14 @@ class LedgerQueries {
               })
             >[
               ..._data.investmentTransactions
-                  .where((item) => item.productId == product.id)
+                  .where(
+                    (item) => item.productId == productId && inRange(item.date),
+                  )
                   .map((item) => (date: item.date, tx: item, adjustment: null)),
               ..._data.investmentAdjustments
-                  .where((item) => item.productId == product.id)
+                  .where(
+                    (item) => item.productId == productId && inRange(item.date),
+                  )
                   .map((item) => (date: item.date, tx: null, adjustment: item)),
             ]
             ..sort((a, b) => a.date.compareTo(b.date));
@@ -959,14 +993,12 @@ class LedgerQueries {
             break;
         }
       }
-      result[product.id] = Holding(
-        productId: product.id,
+      return Holding(
+        productId: productId,
         quantityMicros: quantity,
         averageCostMinor: averageCost,
       );
     }
-    _holdingsFor = data;
-    return _holdingsCache = result;
   }
 
   int get investmentValueMinor {
