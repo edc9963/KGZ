@@ -351,6 +351,90 @@ void main() {
       expect(trend.map((point) => point.month.month), [1, 2, 3]);
       expect(trend.map((point) => point.amountMinor), [100000, 150000, 150000]);
     });
+
+    test('investment trend tracks month-end value and cost basis', () {
+      InvestmentTransaction tx(
+        String id,
+        DateTime date,
+        InvestmentTransactionType type,
+        int quantityMicros, {
+        int feeMinor = 0,
+      }) => InvestmentTransaction(
+        id: id,
+        userId: 'u',
+        date: date,
+        type: type,
+        productId: 'fund',
+        quantityMicros: quantityMicros,
+        priceMinor: 10000,
+        feeMinor: feeMinor,
+        taxMinor: 0,
+        note: '',
+      );
+      final data = AppData(
+        products: [
+          InvestmentProduct(
+            id: 'fund',
+            userId: 'u',
+            symbol: 'F',
+            name: '基金',
+            type: '基金',
+            currency: 'TWD',
+            currentPriceMinor: 15000,
+            priceUpdatedAt: DateTime(2026, 3, 10),
+            note: '',
+          ),
+        ],
+        investmentPriceHistory: [
+          InvestmentPricePoint(
+            productId: 'fund',
+            priceMinor: 12000,
+            date: DateTime(2026, 1, 31),
+          ),
+          InvestmentPricePoint(
+            productId: 'fund',
+            priceMinor: 9000,
+            date: DateTime(2026, 2, 28),
+          ),
+        ],
+        investmentTransactions: [
+          tx(
+            'buy',
+            DateTime(2026, 1, 5),
+            InvestmentTransactionType.buy,
+            2000000,
+            feeMinor: 200,
+          ),
+          tx(
+            'sell',
+            DateTime(2026, 2, 10),
+            InvestmentTransactionType.sell,
+            1000000,
+          ),
+        ],
+        investmentAdjustments: [
+          InvestmentAdjustment(
+            id: 'count',
+            userId: 'u',
+            productId: 'fund',
+            date: DateTime(2026, 3, 3),
+            quantityMicros: 3000000,
+            averageCostMinor: 11000,
+            reason: '盤點',
+          ),
+        ],
+      );
+
+      final trend = FinancialReportService(
+        data,
+      ).investmentTrend(DateTime(2026, 3, 15), months: 4);
+
+      expect(trend.map((point) => point.month.month), [12, 1, 2, 3]);
+      // Past months use the month-end price history; the last point uses the
+      // product's current price.
+      expect(trend.map((point) => point.valueMinor), [0, 24000, 9000, 45000]);
+      expect(trend.map((point) => point.costMinor), [0, 20200, 10100, 33000]);
+    });
   });
 }
 

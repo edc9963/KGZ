@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/repositories.dart';
 import '../data/ocr_models.dart';
+import '../domain/financial_reports.dart';
 import '../domain/models.dart';
 import 'stores/accounts_manager.dart';
 import 'stores/cards_manager.dart';
@@ -504,6 +505,8 @@ class AppStore extends ChangeNotifier {
   int get depositTotalMinor => ledger.depositTotalMinor;
   Map<String, Holding> get holdings => ledger.holdings;
   int get investmentValueMinor => ledger.investmentValueMinor;
+  List<InvestmentTrendPoint> investmentTrend({int months = 6}) =>
+      ledger.investmentTrend(months: months);
   int get totalAssetsMinor => ledger.totalAssetsMinor;
   int get netWorthMinor => ledger.netWorthMinor;
   List<ReminderItem> get reminders => ledger.reminders;

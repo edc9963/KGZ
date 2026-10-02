@@ -1,3 +1,4 @@
+import '../../domain/financial_reports.dart';
 import '../../domain/models.dart';
 import 'first_or_null.dart';
 
@@ -42,6 +43,9 @@ class LedgerQueries {
 
   AppData? _holdingsFor;
   Map<String, Holding>? _holdingsCache;
+
+  AppData? _investmentTrendFor;
+  final Map<int, List<InvestmentTrendPoint>> _investmentTrendCache = {};
 
   // ---------------------------------------------------------------------
   // Categories
@@ -977,6 +981,23 @@ class LedgerQueries {
       if (converted != null) total += converted;
     }
     return total;
+  }
+
+  /// Month-end investment value vs. cost basis for the last [months] months,
+  /// ending with the current value (see
+  /// [FinancialReportService.investmentTrend]).
+  List<InvestmentTrendPoint> investmentTrend({int months = 6}) {
+    final data = _data;
+    if (!identical(_investmentTrendFor, data)) {
+      _investmentTrendCache.clear();
+      _investmentTrendFor = data;
+    }
+    return _investmentTrendCache.putIfAbsent(
+      months,
+      () => FinancialReportService(
+        data,
+      ).investmentTrend(DateTime.now(), months: months),
+    );
   }
 
   int get totalAssetsMinor =>

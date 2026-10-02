@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1718,8 +1719,82 @@ void main() {
     expect(store.holdings.values.single.quantity, 10);
     expect(find.text('尚未設定目前價格'), findsOneWidget);
     expect(find.text('尚未定價'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('investment-charts-empty')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
+
+  for (final width in [390.0, 1200.0]) {
+    testWidgets('investment charts render priced holdings at $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = await _makeStore(auth: _WidgetAuth()..signedIn = true);
+      final now = DateTime.now();
+      for (final (id, price, cost) in [
+        ('0050', 18000, 15000),
+        ('2330', 90000, 100000),
+      ]) {
+        await store.createInvestmentHolding(
+          product: InvestmentProduct(
+            id: id,
+            userId: 'user',
+            symbol: id,
+            name: '商品$id',
+            type: 'ETF',
+            currency: 'TWD',
+            currentPriceMinor: price,
+            priceUpdatedAt: now,
+            note: '',
+          ),
+          adjustment: InvestmentAdjustment(
+            id: 'snapshot-$id',
+            userId: 'user',
+            productId: id,
+            date: now,
+            quantityMicros: 10000000,
+            averageCostMinor: cost,
+            reason: '建立既有持倉',
+          ),
+        );
+      }
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appStoreProvider.overrideWith((ref) => store)],
+          child: MaterialApp(
+            theme: buildAppTheme(Brightness.light),
+            home: const Scaffold(
+              body: SingleChildScrollView(
+                padding: EdgeInsets.all(16),
+                child: InvestmentsPage(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('investment-charts')), findsOneWidget);
+      expect(find.byType(PieChart), findsOneWidget);
+      expect(find.byType(BarChart), findsOneWidget);
+      expect(find.byType(LineChart), findsOneWidget);
+      expect(store.investmentTrend().last.valueMinor, 1080000);
+      expect(store.investmentTrend().last.costMinor, 1150000);
+
+      final range = find.text('12 個月');
+      await tester.ensureVisible(range);
+      await tester.tap(range);
+      await tester.pumpAndSettle();
+      expect(store.investmentTrend(months: 12), hasLength(12));
+      expect(find.byType(LineChart), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('investment purchase previews and debits the selected account', (
     tester,

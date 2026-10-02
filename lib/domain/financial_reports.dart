@@ -74,6 +74,20 @@ class MonthlyReportPoint {
   final int expenseMinor;
 }
 
+/// Month-end market value vs. remaining cost basis of all holdings, both in
+/// the default currency.
+class InvestmentTrendPoint {
+  const InvestmentTrendPoint({
+    required this.month,
+    required this.valueMinor,
+    required this.costMinor,
+  });
+
+  final DateTime month;
+  final int valueMinor;
+  final int costMinor;
+}
+
 class NetWorthTrendPoint {
   const NetWorthTrendPoint({required this.month, required this.amountMinor});
 
@@ -156,7 +170,8 @@ class FinancialReportService {
     final id = order.selfExpenseCategoryId ?? 'expense-food';
     final byId = data.categories
         .where(
-          (item) => item.id == id && item.kind == BookkeepingCategoryKind.expense,
+          (item) =>
+              item.id == id && item.kind == BookkeepingCategoryKind.expense,
         )
         .firstOrNull;
     if (byId != null) return byId.name;
@@ -184,6 +199,48 @@ class FinancialReportService {
         data,
       ).build(ReportPeriod(start: month, end: asOf));
       return NetWorthTrendPoint(month: month, amountMinor: snapshot.netWorth);
+    });
+  }
+
+  /// One point per month ending at [end]. Past months use the price history
+  /// (see [_priceAt]); the last point uses each product's current price so it
+  /// matches the live investment value shown elsewhere.
+  List<InvestmentTrendPoint> investmentTrend(DateTime end, {int months = 6}) {
+    assert(months > 0);
+    return List.generate(months, (index) {
+      final offset = months - index - 1;
+      final month = DateTime(end.year, end.month - offset, 1);
+      final monthEnd = DateTime(
+        month.year,
+        month.month + 1,
+        1,
+      ).subtract(const Duration(days: 1));
+      final isLast = offset == 0;
+      final asOf = isLast || monthEnd.isAfter(end) ? end : monthEnd;
+      var value = 0;
+      var cost = 0;
+      for (final product in data.products) {
+        final holding = _holdingAt(product.id, asOf);
+        if (holding.quantityMicros <= 0) continue;
+        final price = isLast
+            ? product.currentPriceMinor
+            : _priceAt(product, asOf).priceMinor;
+        value += _convert(
+          (holding.quantityMicros * price / 1000000).round(),
+          product.currency,
+          asOf,
+        );
+        cost += _convert(
+          (holding.quantityMicros * holding.averageCostMinor / 1000000).round(),
+          product.currency,
+          asOf,
+        );
+      }
+      return InvestmentTrendPoint(
+        month: month,
+        valueMinor: value,
+        costMinor: cost,
+      );
     });
   }
 
@@ -588,10 +645,11 @@ class FinancialReportService {
         (value) => value + amount,
         ifAbsent: () => amount,
       );
-      details?.putIfAbsent(category, () => []).add(
-        ExpenseDetail(date: date, item: item, amountMinor: amount),
-      );
+      details
+          ?.putIfAbsent(category, () => [])
+          .add(ExpenseDetail(date: date, item: item, amountMinor: amount));
     }
+
     for (final item in data.incomes.where(
       (item) => period.contains(item.date),
     )) {
@@ -927,8 +985,7 @@ class FinancialReportService {
     // categories, with the original category shown in the item text.
     details.putIfAbsent('其他', () => []).addAll([
       for (final slice in rest)
-        for (final detail
-            in rawDetails[slice.label] ?? const <ExpenseDetail>[])
+        for (final detail in rawDetails[slice.label] ?? const <ExpenseDetail>[])
           ExpenseDetail(
             date: detail.date,
             item: '${detail.item}（${slice.label}）',

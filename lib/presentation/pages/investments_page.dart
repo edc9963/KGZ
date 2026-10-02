@@ -7,6 +7,7 @@ import '../../data/repositories.dart';
 import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/investment_charts.dart';
 
 enum _HoldingCreationMode { snapshot, purchase }
 
@@ -208,6 +209,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
             ),
           ],
         ),
+        const SizedBox(height: 18),
+        const InvestmentCharts(key: ValueKey('investment-charts')),
         const SizedBox(height: 18),
         Card(
           child: TabBar(
@@ -1227,16 +1230,10 @@ class _HoldingsList extends ConsumerWidget {
       itemBuilder: (context, index) {
         final product = products[index];
         final holding = store.holdings[product.id]!;
-        final isPriced = product.currentPriceMinor > 0;
-        final value = isPriced
-            ? (holding.quantityMicros * product.currentPriceMinor / 1000000)
-                  .round()
-            : 0;
-        final cost =
-            (holding.quantityMicros * holding.averageCostMinor / 1000000)
-                .round();
-        final profit = value - cost;
-        final rate = cost == 0 ? 0 : profit / cost * 100;
+        final (:isPriced, :value, cost: _, :profit, :rate) = holdingMetrics(
+          product,
+          holding,
+        );
         final identity = Row(
           children: [
             CircleAvatar(
@@ -1278,8 +1275,8 @@ class _HoldingsList extends ConsumerWidget {
                     '(${rate.toStringAsFixed(2)}%)',
                     style: TextStyle(
                       color: profit >= 0
-                          ? const Color(0xFFB84B3E)
-                          : const Color(0xFF1680A8),
+                          ? investmentGainColor
+                          : investmentLossColor,
                     ),
                   ),
                 ],
