@@ -51,7 +51,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: const Text('連結證交所自動報價'),
           content: SizedBox(
             width: 520,
@@ -174,28 +174,29 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
           ),
         ),
         const SizedBox(height: 20),
+        HeroMetricCard(
+          label: '投資現值',
+          value: pricedHoldingCount == 0 && unpricedHoldingCount > 0
+              ? '尚未定價'
+              : moneyText(
+                  store.investmentValueMinor,
+                  mask: store.data.settings.maskBalances,
+                ),
+          compactValue: pricedHoldingCount == 0 && unpricedHoldingCount > 0
+              ? '尚未定價'
+              : compactMoneyText(
+                  store.investmentValueMinor,
+                  mask: store.data.settings.maskBalances,
+                ),
+          icon: Icons.trending_up,
+          tone: context.colors.asset,
+          caption: unpricedHoldingCount == 0
+              ? null
+              : '$unpricedHoldingCount 項持倉尚待補目前價格',
+        ),
+        const SizedBox(height: 12),
         ResponsiveGrid(
           children: [
-            SummaryCard(
-              label: '投資現值',
-              value: pricedHoldingCount == 0 && unpricedHoldingCount > 0
-                  ? '尚未定價'
-                  : moneyText(
-                      store.investmentValueMinor,
-                      mask: store.data.settings.maskBalances,
-                    ),
-              compactValue: pricedHoldingCount == 0 && unpricedHoldingCount > 0
-                  ? '尚未定價'
-                  : compactMoneyText(
-                      store.investmentValueMinor,
-                      mask: store.data.settings.maskBalances,
-                    ),
-              icon: Icons.trending_up,
-              tone: const Color(0xFF3578E5),
-              caption: unpricedHoldingCount == 0
-                  ? null
-                  : '$unpricedHoldingCount 項持倉尚待補目前價格',
-            ),
             SummaryCard(
               label: '持有商品',
               value:
@@ -302,7 +303,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               (mode == _HoldingCreationMode.snapshot || accountId != null);
           final activeAccounts = store.activeAssetAccounts;
 
-          return AlertDialog(
+          return KgzDialog(
             title: Text(isUpdating ? '更新庫存' : '建立庫存'),
             content: SizedBox(
               width: 560,
@@ -706,7 +707,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增投資商品' : '編輯投資商品'),
           content: SizedBox(
             width: 480,
@@ -899,7 +900,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               type == InvestmentTransactionType.sell ||
               type == InvestmentTransactionType.redeem ||
               type == InvestmentTransactionType.dividend;
-          return AlertDialog(
+          return KgzDialog(
             title: Text(existing == null ? '新增投資交易' : '編輯投資交易'),
             content: SizedBox(
               width: 540,
@@ -1105,7 +1106,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: const Text('庫存盤點調整'),
           content: SizedBox(
             width: 460,

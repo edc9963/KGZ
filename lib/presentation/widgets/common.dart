@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 
 import '../../application/app_store.dart';
 import '../design_tokens.dart';
+import 'kgz_layout.dart';
+
+export 'kgz_layout.dart';
 
 String moneyText(int minor, {String currency = 'TWD', bool mask = false}) {
   if (mask) return '$currency ••••••';
@@ -44,11 +47,14 @@ int parseMoney(String text) =>
 double parseQuantity(String text) =>
     double.tryParse(text.replaceAll(',', '')) ?? 0;
 
+/// Page title block from the Figma redesign: a small muted
+/// "KGZ / workspace" breadcrumb, a heavy 26px title and a muted subtitle.
 class PageHeader extends StatelessWidget {
   const PageHeader({
     required this.title,
     required this.subtitle,
     this.action,
+    this.breadcrumb,
     super.key,
   });
 
@@ -56,19 +62,36 @@ class PageHeader extends StatelessWidget {
   final String subtitle;
   final Widget? action;
 
+  /// Workspace name shown as "KGZ / [breadcrumb]" above the title.
+  final String? breadcrumb;
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      final scope = WorkspaceScope.maybeOf(context);
+      final crumb = breadcrumb ?? scope?.label;
+      final tabs = scope?.tabs;
       final heading = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (crumb != null) ...[
+            Text(
+              'KGZ  /  $crumb',
+              style: TextStyle(
+                color: context.colors.textMuted,
+                fontSize: 12,
+                letterSpacing: .4,
+              ),
+            ),
+            const SizedBox(height: 2),
+          ],
           Text(
             title,
             style: Theme.of(
               context,
-            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             subtitle,
             style: Theme.of(
@@ -77,8 +100,9 @@ class PageHeader extends StatelessWidget {
           ),
         ],
       );
+      final Widget header;
       if (constraints.maxWidth < AppBreakpoints.mobile && action != null) {
-        return Column(
+        header = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             heading,
@@ -86,16 +110,22 @@ class PageHeader extends StatelessWidget {
             Align(alignment: Alignment.centerLeft, child: action!),
           ],
         );
-      }
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: heading),
-          if (action != null) ...[
-            const SizedBox(width: 16),
-            Flexible(child: action!),
+      } else {
+        header = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: heading),
+            if (action != null) ...[
+              const SizedBox(width: 16),
+              Flexible(child: action!),
+            ],
           ],
-        ],
+        );
+      }
+      if (tabs == null) return header;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [header, const SizedBox(height: 16), tabs],
       );
     },
   );
@@ -122,11 +152,29 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: Theme.of(context).colorScheme.primary),
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: context.colors.accentPale,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Icon(icon, size: 32, color: context.colors.accent),
+          ),
           const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(message, textAlign: TextAlign.center),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.colors.textMuted),
+          ),
           if (action != null) ...[const SizedBox(height: 16), action!],
         ],
       ),
@@ -156,7 +204,7 @@ class SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = tone ?? Theme.of(context).colorScheme.primary;
+    final color = tone ?? context.colors.text;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 200;
@@ -181,36 +229,37 @@ class SummaryCard extends StatelessWidget {
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ColoredBox(color: color, child: const SizedBox(height: 3)),
             Padding(
-              padding: EdgeInsets.all(compact ? 14 : 20),
+              padding: EdgeInsets.all(compact ? 14 : 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: .12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.all(compact ? 6 : 8),
-                          child: Icon(
-                            icon,
-                            color: color,
-                            size: compact ? 18 : 20,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: compact ? 8 : 12),
                       Expanded(
                         child: Text(
                           label,
-                          textAlign: TextAlign.end,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: context.colors.textMuted),
+                          style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(compact ? 5 : 6),
+                          child: Icon(
+                            icon,
+                            color: color,
+                            size: compact ? 15 : 17,
+                          ),
                         ),
                       ),
                       if (onTap != null) ...[
@@ -223,7 +272,7 @@ class SummaryCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  SizedBox(height: compact ? 12 : 18),
+                  SizedBox(height: compact ? 8 : 12),
                   SizedBox(
                     width: double.infinity,
                     child: FittedBox(
@@ -315,7 +364,11 @@ class CategoryAvatar extends StatelessWidget {
 /// pick — see [resolveCategoryColorKey] for how that key is turned back into
 /// a [Color] everywhere else in the app (including the reports pie chart).
 class CategoryColorPicker extends StatelessWidget {
-  const CategoryColorPicker({required this.value, required this.onChanged, super.key});
+  const CategoryColorPicker({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
 
   final String value;
   final ValueChanged<String> onChanged;
@@ -459,7 +512,7 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => KgzDialog(
     title: const Text('自訂顏色'),
     content: SizedBox(
       width: 320,
@@ -713,7 +766,8 @@ class ResponsiveGrid extends StatelessWidget {
               children.length.clamp(1, 4),
             );
       final width =
-          (constraints.maxWidth - effectiveSpacing * (columns - 1)) / columns;
+          ((constraints.maxWidth - effectiveSpacing * (columns - 1)) / columns)
+              .clamp(0.0, double.infinity);
       return Wrap(
         spacing: effectiveSpacing,
         runSpacing: effectiveSpacing,
@@ -728,7 +782,7 @@ class ResponsiveGrid extends StatelessWidget {
 Future<bool> confirmDelete(BuildContext context, String label) async =>
     await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KgzDialog(
         title: Text('刪除$label？'),
         content: const Text('相關金額將立即重新計算，此動作無法復原。'),
         actions: [

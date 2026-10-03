@@ -11,6 +11,7 @@ import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/app_shell.dart';
 import 'package:quick_ledger/presentation/pages/cards_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
   testWidgets('cards page renders inside the scrollable workspace shell', (
@@ -49,7 +50,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
+        child: MaterialApp.router(
+          theme: buildAppTheme(Brightness.light),
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -98,7 +102,8 @@ void main() {
                   routes: [
                     GoRoute(
                       path: path,
-                      builder: (context, state) => Text(path),
+                      builder: (context, state) =>
+                          PageHeader(title: path, subtitle: ''),
                     ),
                   ],
                 ),
@@ -122,12 +127,10 @@ void main() {
       final workspaceLabel = tester.widget<Text>(find.text('報表'));
       expect(workspaceLabel.maxLines, 1);
       expect(workspaceLabel.softWrap, isFalse);
-      final workspaceTabs = tester.widget<SegmentedButton<String>>(
-        find.byType(SegmentedButton<String>),
-      );
+      expect(find.byType(KgzTabBar<String>), findsOneWidget);
       expect(
-        workspaceTabs.style?.minimumSize?.resolve(<WidgetState>{}),
-        const Size(116, 48),
+        tester.getSize(find.byType(KgzTabBar<String>)).height,
+        greaterThanOrEqualTo(48),
       );
       expect(tester.takeException(), isNull);
       if (size.width < 600) {
@@ -186,7 +189,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
+        child: MaterialApp.router(
+          theme: buildAppTheme(Brightness.light),
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pumpAndSettle();

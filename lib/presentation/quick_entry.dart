@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../application/app_store.dart';
 import '../application/providers.dart';
 import '../domain/models.dart';
+import 'design_tokens.dart';
 import 'widgets/common.dart';
 
 enum QuickEntryKind { expense, income }
@@ -135,26 +136,23 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                 ],
               ),
               const SizedBox(height: 10),
-              SegmentedButton<QuickEntryKind>(
-                segments: const [
-                  ButtonSegment(
-                    value: QuickEntryKind.expense,
-                    label: Text('支出'),
-                  ),
-                  ButtonSegment(
-                    value: QuickEntryKind.income,
-                    label: Text('收入'),
-                  ),
+              // Figma quick-entry sheet: rose (light) / orange (dark)
+              // segmented control for the entry kind.
+              KgzTabBar<QuickEntryKind>(
+                tabs: const [
+                  (QuickEntryKind.expense, '支出', null),
+                  (QuickEntryKind.income, '收入', null),
                 ],
-                selected: {_kind},
-                onSelectionChanged: _submitting
-                    ? null
-                    : (value) => setState(() {
-                        HapticFeedback.selectionClick();
-                        _kind = value.single;
-                        _category = null;
-                        _error = null;
-                      }),
+                selected: _kind,
+                onSelected: (value) {
+                  if (_submitting || value == _kind) return;
+                  setState(() {
+                    HapticFeedback.selectionClick();
+                    _kind = value;
+                    _category = null;
+                    _error = null;
+                  });
+                },
               ),
               const SizedBox(height: 18),
               Expanded(
@@ -167,7 +165,7 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                         style: Theme.of(context).textTheme.headlineMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
                         decoration: const InputDecoration(
-                          labelText: '金額',
+                          labelText: '輸入金額',
                           prefixText: r'NT$ ',
                         ),
                         validator: (value) =>
@@ -188,19 +186,57 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                             : null,
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
+                      FormField<String>(
                         initialValue: _category,
-                        isExpanded: true,
-                        decoration: const InputDecoration(labelText: '分類'),
-                        items: [
-                          for (final category in categories)
-                            DropdownMenuItem(
-                              value: category,
-                              child: Text(category),
+                        validator: (_) => _category == null ? '請選擇分類' : null,
+                        builder: (field) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '分類',
+                              style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 12.5,
+                              ),
                             ),
-                        ],
-                        validator: (value) => value == null ? '請選擇分類' : null,
-                        onChanged: (value) => setState(() => _category = value),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final category in categories)
+                                  ChoiceChip(
+                                    label: Text(category),
+                                    selected: category == _category,
+                                    showCheckmark: false,
+                                    labelStyle: TextStyle(
+                                      fontFamily: 'Noto Sans TC',
+                                      fontWeight: FontWeight.w700,
+                                      color: category == _category
+                                          ? context.colors.onPrimary
+                                          : context.colors.text,
+                                    ),
+                                    onSelected: (_) {
+                                      HapticFeedback.selectionClick();
+                                      setState(() => _category = category);
+                                      field.didChange(category);
+                                    },
+                                  ),
+                              ],
+                            ),
+                            if (field.errorText != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  field.errorText!,
+                                  style: TextStyle(
+                                    color: context.colors.expense,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                       if (_kind == QuickEntryKind.expense) ...[
@@ -334,7 +370,10 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check),
-                label: Text(_submitting ? '同步中' : '儲存'),
+                label: Text(_submitting ? '同步中' : '儲存記錄'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
               ),
             ],
           ),

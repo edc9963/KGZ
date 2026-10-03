@@ -148,25 +148,26 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
           ),
         ),
         const SizedBox(height: 20),
+        HeroMetricCard(
+          label: '本月收入',
+          value: moneyText(
+            store.currentMonthIncomeDefaultMinor,
+            currency: store.data.settings.defaultCurrency,
+            mask: mask,
+          ),
+          compactValue: compactMoneyText(
+            store.currentMonthIncomeDefaultMinor,
+            currency: store.data.settings.defaultCurrency,
+            mask: mask,
+          ),
+          icon: Icons.south_west_rounded,
+          tone: context.colors.income,
+        ),
+        const SizedBox(height: 12),
         ResponsiveGrid(
           minWidth: 180,
           spacing: 12,
           children: [
-            SummaryCard(
-              label: '本月收入',
-              value: moneyText(
-                store.currentMonthIncomeDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              compactValue: compactMoneyText(
-                store.currentMonthIncomeDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.south_west_rounded,
-              tone: context.colors.income,
-            ),
             SummaryCard(
               label: '本月支出',
               value: moneyText(
@@ -329,7 +330,10 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   label: Text(item),
                   avatar: item == '全部'
                       ? null
-                      : Icon(categoryVisual(item, context.colors).icon, size: 16),
+                      : Icon(
+                          categoryVisual(item, context.colors).icon,
+                          size: 16,
+                        ),
                   selected: _category == item,
                   onSelected: (_) => setState(() => _category = item),
                 ),
@@ -557,7 +561,10 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       sections: [
                         for (final entry in entries)
                           PieChartSectionData(
-                            color: categoryVisual(entry.key, context.colors).color,
+                            color: categoryVisual(
+                              entry.key,
+                              context.colors,
+                            ).color,
                             value: entry.value.toDouble(),
                             radius: 62,
                             title: '${(entry.value / total * 100).round()}%',
@@ -582,7 +589,10 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: categoryVisual(entry.key, context.colors).color,
+                          color: categoryVisual(
+                            entry.key,
+                            context.colors,
+                          ).color,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -716,7 +726,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增固定支出' : '編輯固定支出'),
           content: SizedBox(
             width: 560,
@@ -1007,7 +1017,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => KgzDialog(
           title: Text(existing == null ? '新增收入' : '編輯收入'),
           content: SizedBox(
             width: 520,
@@ -1222,7 +1232,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增消費' : '編輯消費'),
           content: SizedBox(
             width: 520,

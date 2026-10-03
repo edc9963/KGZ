@@ -177,13 +177,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
   ) {
     // Same fixed palette as the reports page asset pie: slices carry white
     // labels, so the colors stay dark regardless of theme.
-    const palette = [
-      AppColors.primary,
-      Color(0xFF568EAE),
-      Color(0xFF6075A6),
-      Color(0xFF719681),
-      Color(0xFF7B8B91),
-    ];
+    const palette = pieChartPalette;
     const otherColor = Color(0xFF8C8F99);
     final sorted = positions.where((item) => item.valueMinor > 0).toList()
       ..sort((a, b) => b.valueMinor.compareTo(a.valueMinor));

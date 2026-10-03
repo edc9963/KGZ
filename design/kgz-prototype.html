@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KGZ 畫面原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+/* 色票取自 Figma「KGZ / Fintech Redesign v1」原始畫面與元件（Warm Meadow & Melody / Stellar Night & Comet Stage） */
+.t-light{--bg:#FBF6F0;--surface:#FFFFFF;--subtle:#F4EDE0;--text:#26231F;--muted:#8E8A86;--border:#EFE7DA;
+ --asset:#D9A21F;--income:#4FA187;--income-pale:#E6F3EE;--expense:#DC6B76;--expense-pale:#FBEAEC;--liability:#DC6B76;
+ --warn:#C07A12;--warn-pale:#FDF1DC;--accent:#C8941A;--accent-pale:#FDF3D8;--accent-pale-text:#8A6410;
+ --primary:#F4C84D;--on-primary:#26231F;--seg:#F0B4B9;--on-seg:#26231F;--chart-a:#DF8088;--chart-b:#F4C84D;--chart-c:#68B39B;--line-income:#68B39B;--line-expense:#DF8088;
+ --shadow:0 1px 3px rgba(80,60,20,.06),0 4px 14px rgba(80,60,20,.04)}
+.t-dark{--bg:#0D0E15;--surface:#171B27;--subtle:#232A3A;--text:#F2F4F8;--muted:#8D96AA;--border:#222838;
+ --asset:#00CFFF;--income:#00E676;--income-pale:#0E2A1F;--expense:#FF6685;--expense-pale:#33182A;--liability:#FF6685;
+ --warn:#FFB547;--warn-pale:#33281A;--accent:#00CFFF;--accent-pale:#10283A;--accent-pale-text:#7FE3FF;
+ --primary:#00CFFF;--on-primary:#0D0E15;--seg:#FF8A1F;--on-seg:#0D0E15;--chart-a:#FF6685;--chart-b:#A98BFF;--chart-c:#00CFFF;--line-income:#00E676;--line-expense:#FF6685;
+ --shadow:none}
+:root{--highlight:#FFC83D;--graphite:#2B2F33;--page:#ECEEEF;--page-text:#1F2D33;--page-muted:#5E6B70;--page-line:#D5DADC;--page-card:#FFFFFF}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--page:#111416;--page-text:#E8ECED;--page-muted:#93A3A9;--page-line:#2A3236;--page-card:#1A2023}}
+:root[data-theme="dark"]{--page:#111416;--page-text:#E8ECED;--page-muted:#93A3A9;--page-line:#2A3236;--page-card:#1A2023}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font-family:"Noto Sans TC",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.top{position:sticky;top:0;z-index:5;background:var(--page);border-bottom:1px solid var(--page-line);padding:14px 16px}
+.top-inner{max-width:1680px;margin:0 auto;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:20px;margin:0;font-weight:900;letter-spacing:.02em}
+.brand span{font-size:13px;color:var(--page-muted)}
+.ctl{display:flex;gap:4px;background:var(--page-card);border:1px solid var(--page-line);border-radius:999px;padding:3px;flex-wrap:wrap}
+.ctl button{border:0;background:none;border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--page-muted)}
+.ctl button[aria-pressed="true"]{background:var(--page-text);color:var(--page)}
+.groups{max-width:1680px;margin:10px auto 0;display:flex;gap:6px;flex-wrap:wrap}
+.groups button{border:1px solid var(--page-line);background:var(--page-card);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;color:var(--page-muted)}
+.groups button[aria-pressed="true"]{border-color:var(--page-text);color:var(--page-text);font-weight:700}
+.groups b{font-weight:500;opacity:.6;margin-left:4px}
+main{max-width:1680px;margin:0 auto;padding:24px 16px 80px}
+.section-title{font-size:15px;font-weight:700;margin:28px 0 14px;display:flex;gap:10px;align-items:center}
+.section-title:first-child{margin-top:0}
+.section-title small{font-weight:400;color:var(--page-muted)}
+.grid{display:flex;flex-wrap:wrap;gap:28px 24px}
+.shot{display:flex;flex-direction:column;gap:8px}
+.cap{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;min-height:22px}
+.cap .key{font-weight:400;color:var(--page-muted);font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.tag{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--page-line);color:var(--page-muted)}
+.tag.new{background:#FFC83D;color:#2B2F33}
+.pair{display:flex;gap:14px;flex-wrap:wrap}
+.frame{width:calc(390px*var(--s));height:calc(844px*var(--s));position:relative}
+.phone{width:390px;height:844px;transform:scale(var(--s));transform-origin:0 0;border-radius:28px;overflow:hidden;background:var(--bg);color:var(--text);
+ display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.10);border:1px solid var(--border);position:absolute;inset:0 auto auto 0}
+.status{display:flex;justify-content:space-between;padding:14px 28px 0;font-size:13px;font-weight:700;flex:none}
+.status i{display:inline-flex;gap:4px;align-items:center;font-style:normal}
+.status i::after{content:"";width:22px;height:10px;border:1.5px solid currentColor;border-radius:3px;opacity:.8}
+.hdr{padding:12px 24px 10px;flex:none;display:flex;gap:10px;align-items:flex-start}
+.back{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;border:1px solid var(--border);background:var(--surface);flex:none;margin-top:4px}
+.crumb{font-size:11px;color:var(--muted);letter-spacing:.06em}
+.ttl{font-size:26px;font-weight:900;line-height:1.3;margin:2px 0 0}
+.ttl.long{font-size:22px}
+.tabs{display:flex;gap:4px;margin:0 24px 8px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:14px;flex:none}
+.tabs span{flex:1;text-align:center;font-size:13px;padding:7px 4px;border-radius:10px;color:var(--muted)}
+.tabs span.on{background:var(--seg);color:var(--on-seg);font-weight:700}
+.body{flex:1;overflow-y:auto;padding:4px 24px 12px;display:flex;flex-direction:column;gap:8px;scrollbar-width:none}
+.body::-webkit-scrollbar{display:none}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:16px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters span{font-size:12px;padding:6px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--border)}
+.filters span.search{flex:1;color:var(--muted)}
+.hero .lbl{font-size:13px;color:var(--muted)}
+.hero .val{font-size:32px;font-weight:900;margin-top:2px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.hero .val.asset{color:var(--asset)} .hero .val.pos{color:var(--income)} .hero .val.neg{color:var(--expense)}
+.hero .sub{font-size:12px;color:var(--muted);margin-top:6px}
+.row{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 14px;min-height:64px}
+.av{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:14px;font-weight:700;flex:none}
+.rt{flex:1;min-width:0}
+.rt b{display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.amt{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.pos{color:var(--income)} .amt.neg{color:var(--expense)}
+.chev{color:var(--muted);font-size:20px;line-height:1}
+.pill{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--income-pale);color:var(--income)}
+.pill.warn{background:var(--warn-pale);color:var(--warn)}
+.pill.act{background:var(--accent-pale);color:var(--accent-pale-text)}
+.pill.mute{background:var(--subtle);color:var(--muted)}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--border);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw.on{background:var(--primary)} .sw.on::after{left:21px;background:var(--surface)}
+.t-dark .sw.on::after{background:var(--on-primary)}
+.chk{width:22px;height:22px;border-radius:7px;background:var(--primary);display:grid;place-items:center;color:var(--on-primary);flex:none}
+.link{display:flex;justify-content:space-between;align-items:center;padding:13px 14px;border-radius:14px;border:1px dashed var(--border);font-size:13.5px;font-weight:500;color:var(--accent)}
+.field{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:9px 14px 10px;display:flex;align-items:center;gap:10px}
+.field .fx{flex:1;min-width:0}
+.field label{display:block;font-size:11px;color:var(--muted)}
+.field .v{font-size:15px;font-weight:700;margin-top:1px}
+.field .v.big{font-size:22px;font-weight:900;font-variant-numeric:tabular-nums}
+.field .v.pos{color:var(--income)} .field .v.neg{color:var(--expense)}
+.field.focus{border-color:var(--primary)!important;box-shadow:0 0 0 3px var(--accent-pale)!important}
+.field.warn{border-color:var(--warn)!important;background:var(--warn-pale)}
+.field .hint{font-size:11px;color:var(--warn);margin-top:2px;font-weight:500}
+.seg{display:flex;gap:4px;margin-top:6px}
+.seg span{flex:1;text-align:center;font-size:13px;padding:6px 0;border-radius:9px;background:var(--subtle);color:var(--muted)}
+.seg span.on{background:var(--seg);color:var(--on-seg);font-weight:700}
+.note{display:flex;gap:10px;font-size:12.5px;line-height:1.6;color:var(--accent-pale-text);background:var(--accent-pale);border-radius:14px;padding:12px 14px}
+.note.warn{color:var(--warn);background:var(--warn-pale)}
+.foot{flex:none;padding:10px 24px 0;display:flex;flex-direction:column;gap:10px;background:linear-gradient(to bottom,transparent,var(--bg) 14px)}
+.btn{height:52px;border-radius:16px;background:var(--primary);color:var(--on-primary);display:grid;place-items:center;font-size:16px;font-weight:700;border:0}
+/* 卡片：淺色無框＋柔和陰影，深色以面色區分（同 Figma） */
+.t-light .card,.t-light .row,.t-light .field,.t-light .state,.t-light .tabs{border-color:transparent;box-shadow:var(--shadow)}
+.btn.line{background:var(--surface);border:1px solid var(--accent);color:var(--accent)}
+.btn.line-mute{background:var(--surface);border:1px solid var(--border);color:var(--text)}
+.btn.line-danger{background:var(--expense);color:#fff}
+.nav{display:flex;justify-content:space-between;padding:6px 18px 22px;border-top:1px solid var(--border);background:var(--bg);margin:0 -24px}
+.nav div{width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);padding:5px 0;border-radius:12px}
+.nav div.on{color:var(--text);font-weight:700;background:var(--accent-pale)}
+.nav div.on svg{stroke:var(--accent)}
+.mark{font-size:11px;color:var(--muted);text-align:center;padding:4px 0 22px}
+.chart h4,.card h4{margin:0 0 8px;font-size:14px}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.donut{display:flex;gap:16px;align-items:center}
+.cc{border-radius:20px;padding:18px;color:#26231F;background:linear-gradient(135deg,#F4C84D,#DF8088);min-height:150px;display:flex;flex-direction:column;justify-content:space-between}
+.t-dark .cc{color:#fff;background:linear-gradient(135deg,#00CFFF -10%,#7B5CFF 55%,#FF6685 120%)}
+.cc .n{font-family:ui-monospace,Consolas,monospace;letter-spacing:.15em;font-size:15px}
+.drop{border:2px dashed var(--border);border-radius:20px;padding:30px 20px;text-align:center;background:var(--surface)}
+.drop .plus{width:64px;height:64px;border-radius:20px;background:var(--primary);color:var(--on-primary);display:grid;place-items:center;margin:0 auto 12px;font-size:34px;font-weight:300}
+.steps .row .av{background:var(--primary);color:var(--on-primary)}
+.themes{display:flex;gap:10px}
+.themes .tp{flex:1;border-radius:18px;padding:14px;border:2px solid var(--border)}
+.themes .tp.sel{border-color:var(--accent)}
+.tp .bar{height:10px;border-radius:5px;margin-top:10px}
+.login-hero{text-align:center;padding:26px 16px 22px}
+.logo{width:76px;height:76px;border-radius:24px;background:var(--graphite);margin:0 auto 14px;display:grid;place-items:center}
+.login-hero h2{font-size:22px;margin:0 0 6px}
+.login-hero p{margin:0;color:var(--muted);font-size:13px}
+.line-btn{height:52px;border-radius:16px;background:#06C755;color:#fff;display:flex;gap:10px;justify-content:center;align-items:center;font-weight:700;font-size:16px}
+.public-head{background:var(--primary);color:var(--on-primary);margin:-4px -24px 4px;padding:20px 24px 26px;border-radius:0 0 26px 26px}
+.public-head .lbl{opacity:.85;font-size:13px}.public-head .val{font-size:34px;font-weight:900;margin-top:2px}
+.state{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.state .h{display:flex;gap:12px;align-items:center}
+.state .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none}
+.state b{font-size:14px}.state small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.state .acts{display:flex;gap:8px}.state .acts span{flex:1;text-align:center;padding:9px 0;border-radius:11px;font-size:13px;font-weight:700}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--subtle);border-top-color:var(--primary);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{display:flex;gap:10px;align-items:center;background:var(--text);color:var(--bg);border-radius:14px;padding:12px 14px;font-size:13px}
+.empty{text-align:center;padding:18px 16px}
+.empty .ill{width:64px;height:64px;margin:0 auto 10px;border-radius:28px;background:var(--accent-pale);display:grid;place-items:center}
+@media (max-width:520px){.brand span{display:none}}
+</style>
+</head>
+<body>
+<header class="top">
+ <div class="top-inner">
+  <div class="brand"><h1>KGZ 畫面原型</h1><span id="count"></span></div>
+  <div class="ctl" role="group" aria-label="主題">
+   <button data-mode="both" aria-pressed="true">淺色＋深色</button><button data-mode="light" aria-pressed="false">淺色</button><button data-mode="dark" aria-pressed="false">深色</button>
+  </div>
+  <div class="ctl" role="group" aria-label="範圍">
+   <button data-scope="new" aria-pressed="true">待補畫面</button><button data-scope="all" aria-pressed="false">全部畫面</button>
+  </div>
+  <div class="ctl" role="group" aria-label="縮放">
+   <button data-zoom=".6" aria-pressed="false">60%</button><button data-zoom=".8" aria-pressed="true">80%</button><button data-zoom="1" aria-pressed="false">100%</button>
+  </div>
+ </div>
+ <div class="groups" id="groups"></div>
+</header>
+<main id="main"></main>
+<script>
+const SCREENS = [
+ {"key":"login","title":"歡迎回到 KGZ","group":"登入","kind":"login","subtitle":"每一筆，都讓生活更從容。","action":"使用 LINE 登入","rows":[["雲端同步","跨裝置接續你的記帳生活",""],["隱私由你掌握","隨時切換金額遮罩",""],["先探索介面","開啟示範模式","›"]]},
+ {"key":"accounts","title":"帳戶管理","group":"資產","tabs":"帳戶 · 投資 · 對帳","metric":["帳戶總餘額","NT$ 126,840"],"action":"新增帳戶","rows":[["玉山銀行","銀行帳戶 · TWD","86,840"],["國泰世華","銀行帳戶 · TWD","30,000"],["現金錢包","現金 · TWD","5,000"],["LINE Pay","電子支付 · TWD","5,000"]],"links":["帳戶扣／入帳明細","帳戶間轉帳","餘額調整"]},
+ {"key":"account-detail","title":"玉山銀行","group":"資產","metric":["目前帳戶餘額","NT$ 86,840"],"action":"編輯帳戶","rows":[["薪資入帳","10/02 · 收入","+52,000"],["信用卡繳款","10/01 · 玉山信用卡","−8,920"],["帳戶轉帳","10/01 · 轉入現金錢包","−3,000"],["利息收入","10/01 · 收入","+28"]]},
+ {"key":"account-edit","title":"新增／編輯帳戶","group":"資產","kind":"form","action":"儲存帳戶","fields":[["帳戶名稱","玉山銀行"],["銀行／機構","玉山銀行"],["帳戶類型","銀行帳戶"],["幣別","TWD"],["期初餘額","NT$ 86,840"],["備註","主要薪資帳戶"],["啟用帳戶","已啟用"]]},
+ {"key":"transfer","title":"帳戶間轉帳","group":"資產","kind":"form","action":"確認轉帳","fields":[["轉出帳戶","玉山銀行"],["轉入帳戶","現金錢包"],["金額","NT$ 3,000"],["日期","2026/10/02"],["手續費","NT$ 0"],["備註","生活費"]],"note":"轉帳只改變帳戶餘額，不計入收入或支出。"},
+ {"key":"adjustment","title":"調整帳戶餘額","group":"資產","kind":"form","action":"儲存調整","fields":[["帳戶","玉山銀行"],["調整方式","增加／減少"],["調整金額","+ NT$ 28"],["日期","2026/10/02"],["原因","補登銀行利息"]]},
+ {"key":"expenses","title":"帳務","group":"帳務","tabs":"全部 · 支出 · 收入 · 固定支出","metric":["本月結餘","NT$ 28,460"],"action":"記一筆","filter":"10 月 ▾    全部帳戶 ▾    搜尋交易","rows":[["午餐","10/02 · 餐飲 · 信用卡","−185"],["捷運加值","10/02 · 交通 · 現金","−500"],["薪資入帳","10/02 · 薪資 · 玉山銀行","+52,000"],["晚餐","10/01 · 餐飲 · LINE Pay","−320"]]},
+ {"key":"expense-edit","title":"新增／編輯消費","group":"帳務","kind":"form","action":"儲存消費","fields":[["消費項目","午餐"],["金額","NT$ 185"],["消費分類","餐飲"],["付款方式","信用卡"],["信用卡","玉山信用卡 •3088"],["消費日期","2026/10/02"],["店家／備註","日常食堂"],["必要支出","是"]]},
+ {"key":"income-edit","title":"新增／編輯收入","group":"帳務","kind":"form","action":"儲存收入","fields":[["收入項目","10 月薪資"],["金額","NT$ 52,000"],["收入日期","2026/10/02"],["收入分類","薪資"],["收款帳戶","玉山銀行"],["備註","本月薪資入帳"]]},
+ {"key":"recurring","title":"固定支出","group":"帳務","metric":["每月固定支出","NT$ 16,688"],"action":"新增固定支出","rows":[["房租","每月 5 日 · 玉山銀行","15,000"],["電信帳單","每月 10 日 · 自動入帳","999"],["串流訂閱","每月 15 日 · 信用卡","390"],["雲端空間","每月 20 日 · 信用卡","299"]]},
+ {"key":"recurring-edit","title":"設定固定支出","group":"帳務","kind":"form","action":"儲存固定支出","fields":[["支出項目","電信帳單"],["每月金額","NT$ 999"],["分類／付款方式","通訊 · 電信帳單"],["每月執行日","10 日"],["生效月份","2026/10"],["付款帳戶","玉山銀行"],["必要支出／自動入帳","已啟用"]]},
+ {"key":"cards","title":"卡片與帳單","group":"帳務","tabs":"卡片 · 帳單 · 繳款","metric":["本期信用卡待繳","NT$ 18,920"],"action":"新增卡片","kind":"cards","rows":[["玉山信用卡","•••• 3088 · 10/15 扣款","8,920"],["國泰 CUBE 卡","•••• 8066 · 10/20 扣款","10,000"],["玉山金融卡","綁定玉山銀行","查看"]]},
+ {"key":"card-edit","title":"新增／編輯卡片","group":"帳務","kind":"form","action":"儲存卡片","fields":[["卡片類別","信用卡"],["卡片名稱","玉山信用卡"],["發卡銀行／末四碼","玉山銀行 · 3088"],["結帳日／扣款日","每月 5 日／15 日"],["扣款帳戶","玉山銀行"],["備註／啟用卡片","主要消費卡 · 已啟用"]]},
+ {"key":"bill-detail","title":"10 月信用卡帳單","group":"帳務","metric":["玉山信用卡應繳","NT$ 8,920"],"action":"新增繳款","rows":[["刷卡消費合計","本期已入帳","8,920"],["人工調整","已核對銀行帳單","0"],["已繳金額","尚未繳款","0"],["扣款日期","玉山銀行","10/15"],["晚餐與生活採買","點擊查看刷卡明細","›"]]},
+ {"key":"bill-edit","title":"建立／編輯帳單","group":"帳務","kind":"form","action":"儲存帳單","fields":[["信用卡","玉山信用卡 •3088"],["帳單月份","2026/10"],["刷卡明細","已選 12 筆 · NT$ 8,920"],["銀行實際帳單總額","NT$ 8,920"],["差異原因／說明","無差異"],["帳單備註","已核對電子帳單"]]},
+ {"key":"payment","title":"信用卡繳款","group":"帳務","kind":"form","action":"確認繳款","fields":[["信用卡／帳單月份","玉山信用卡 · 2026/10"],["待繳金額","NT$ 8,920"],["繳款金額","NT$ 8,920"],["扣款帳戶","玉山銀行"],["繳款日期","2026/10/02"],["備註","網銀轉帳"]]},
+ {"key":"investments","title":"投資組合","group":"資產","tabs":"持倉 · 交易 · 商品","metric":["投資現值","NT$ 268,500"],"kind":"chart","action":"建立庫存","rows":[["0050 元大台灣50","2,000 單位 · ETF","+8.4%"],["2330 台積電","100 股 · 台股","+12.6%"],["投資成本","含手續費與稅費","248,000"]]},
+ {"key":"holding","title":"0050 元大台灣50","group":"資產","metric":["持有現值","NT$ 120,500"],"kind":"chart","action":"新增交易","rows":[["持有數量","ETF · TWD","2,000"],["平均成本","每單位","55.60"],["未實現損益","含交易成本","+9,300"],["報價更新","證交所 · 最近交易日","60.25"]]},
+ {"key":"holding-create","title":"建立投資庫存","group":"資產","kind":"form","action":"建立庫存","fields":[["建立方式","既有持倉／新買入"],["商品代號／名稱","0050 元大台灣50"],["商品類型／幣別","ETF · TWD"],["持有日期","2026/10/02"],["單位數／平均成本","2,000／55.60"],["扣款帳戶（新買入）","玉山銀行"],["手續費／稅費","NT$ 158／0"]]},
+ {"key":"investment-trade","title":"投資交易","group":"資產","kind":"form","action":"儲存交易","fields":[["投資商品","0050 元大台灣50"],["交易類型","買入／賣出／配息"],["交易日期","2026/10/02"],["數量／每單位價格","100／60.25"],["手續費／稅費","NT$ 20／0"],["扣款／入款帳戶","玉山銀行"],["備註","定期投入"]]},
+ {"key":"product-edit","title":"編輯投資商品","group":"資產","kind":"form","action":"儲存商品","fields":[["商品名稱","元大台灣50"],["商品代號","0050"],["商品類型／幣別","ETF · TWD"],["目前價格","60.25"],["自動報價","連結證交所"],["備註","長期持有"]]},
+ {"key":"orders","title":"代訂與收款","group":"代訂","metric":["待收款總額","NT$ 1,280"],"action":"新增代訂","rows":[["週五午餐團","10/02 · 5 人 · 3 人已付款","680"],["下午茶","10/01 · 4 人 · 2 人已付款","600"],["週末聚餐","09/28 · 6 人 · 全部已收","已結清"]],"links":["從截圖匯入","收款資訊"]},
+ {"key":"order-detail","title":"週五午餐團","group":"代訂","metric":["尚待收款","NT$ 680"],"action":"分享收款連結","rows":[["自己","便當 · 本人消費","200"],["小安","雞腿飯 · 待收款","240"],["小林","牛肉飯 · 待收款","440"],["小陳","咖哩飯 · 已收款","220"],["小華","便當 · 已收款","180"]],"links":["調整分攤","編輯代訂"]},
+ {"key":"order-edit","title":"新增／編輯代訂","group":"代訂","kind":"form","action":"儲存代訂","fields":[["代訂名稱","週五午餐團"],["訂購平台／日期","Uber Eats · 2026/10/02"],["刷卡信用卡","玉山信用卡 •3088"],["餐點／運費／服務費","1,200／60／20"],["折扣","NT$ 80"],["人員與分攤","5 人 · 點擊編輯"],["本人消費分類","餐飲"],["備註","12:00 取餐"]]},
+ {"key":"allocation","title":"人員與分攤","group":"代訂","kind":"form","action":"儲存分攤","fields":[["姓名","小安"],["品項／餐點金額","雞腿飯／NT$ 240"],["折扣設定","按比例分攤"],["運費／服務費","按人數均分"],["收款方式","銀行轉帳"],["轉入帳戶","玉山銀行"]],"note":"分攤合計須與訂單總額一致；可重套系統分配。"},
+ {"key":"import","title":"截圖匯入","group":"代訂","kind":"upload","action":"選擇訂單截圖","rows":[["1 選擇截圖","上傳 Uber Eats 訂單明細",""],["2 辨識內容","辨識項目、金額與折扣",""],["3 確認後儲存","核對低信心欄位與分攤",""]]},
+ {"key":"import-review","title":"確認辨識結果","group":"代訂","kind":"form","action":"確認並建立代訂","fields":[["代訂名稱","午餐團"],["平台／訂購日期","Uber Eats · 2026/10/02"],["付款信用卡","玉山信用卡 •3088"],["餐點金額（待確認）","NT$ 1,200"],["運費／服務費／折扣","60／20／80"],["人員分配","5 人 · 點擊確認"]],"note":"有 1 個欄位需要核對，請查看原始截圖再儲存。"},
+ {"key":"collection","title":"你的午餐收款單","group":"公開收款","metric":["小安 · 本次應付","NT$ 240"],"action":"查看轉帳資訊","rows":[["訂單","週五午餐團",""],["餐點","雞腿飯","240"],["分攤運費／折扣","已納入應付金額",""],["收款銀行","玉山銀行 808",""],["付款狀態","由主揪確認入帳","待收款"]]},
+ {"key":"reconciliation","title":"對帳中心","group":"資產","tabs":"帳戶 · 投資 · 帳單 · 紀錄","metric":["待核對項目","3 項"],"action":"開始核對","rows":[["玉山銀行","帳面餘額 NT$ 86,840","對帳"],["0050 元大台灣50","帳面持有 2,000 單位","對帳"],["玉山信用卡 10 月","系統明細 NT$ 8,920","核對"],["電信帳單 10 月","系統明細 NT$ 999","已核對"]]},
+ {"key":"reconcile-account","title":"核對帳戶餘額","group":"資產","kind":"form","action":"確認並補登調整","fields":[["對帳帳戶","玉山銀行"],["對帳日期","2026/10/02"],["帳面餘額","NT$ 86,840"],["實際餘額","NT$ 86,868"],["差額","+ NT$ 28"],["差異說明","銀行利息未登錄"]]},
+ {"key":"reconcile-holding","title":"核對投資部位","group":"資產","kind":"form","action":"確認持倉快照","fields":[["商品","0050 元大台灣50"],["對帳日期","2026/10/02"],["帳面持有／平均成本","2,000／55.60"],["實際持有數量","2,000"],["實際平均成本（選填）","55.60"],["差異說明","與券商一致"]]},
+ {"key":"reconcile-bill","title":"核對信用卡帳單","group":"資產","kind":"form","action":"確認帳單","fields":[["信用卡／月份","玉山信用卡 · 2026/10"],["系統明細／已繳","8,920／0"],["銀行帳單應繳總額","NT$ 8,940"],["差額","+ NT$ 20"],["差異原因","手續費"],["差異說明","跨國交易手續費"]]},
+ {"key":"reconcile-telecom","title":"核對電信帳單","group":"資產","kind":"form","action":"確認電信帳單","fields":[["帳單月份","2026/10"],["系統明細合計","NT$ 999"],["扣款帳戶","玉山銀行"],["電信帳單應繳總額","NT$ 999"],["差異說明","無差異"]]},
+ {"key":"reconcile-history","title":"對帳紀錄","group":"資產","rows":[["玉山銀行","10/02 · 利息補登","+28"],["0050 元大台灣50","10/02 · 持倉一致","0"],["電信帳單 10 月","10/01 · 金額一致","0"]],"action":"返回對帳中心","note":"撤銷對帳時，會一併移除該筆補登調整。"},
+ {"key":"reports","title":"財務報表","group":"總覽","tabs":"總覽 · 資產負債 · 損益 · 現金流","metric":["本期餘絀","NT$ 28,460"],"kind":"chart","filter":"2026 年 10 月 ▾","rows":[["本期收入","薪資與其他收入","72,000"],["本期支出","必要與日常支出","43,540"],["最高支出類別","餐飲 · 占 38%","16,545"]]},
+ {"key":"balance-sheet","title":"資產負債表","group":"總覽","metric":["淨資產","NT$ 377,700"],"rows":[["存款與現金","資產","126,840"],["投資現值","資產","268,500"],["代訂應收款","資產","1,280"],["信用卡待繳","負債","18,920"]],"note":"管理用報表 · 示範資料"},
+ {"key":"profit-loss","title":"收支損益表","group":"總覽","metric":["本期餘絀","NT$ 28,460"],"rows":[["薪資與其他收入","收入合計","72,000"],["固定支出","支出","16,688"],["日常變動支出","支出","26,852"],["支出合計","固定＋變動","43,540"]]},
+ {"key":"cash-flow","title":"現金流量表","group":"總覽","metric":["現金淨變動","+ NT$ 18,460"],"rows":[["營業活動","收支相關現金流","+28,460"],["投資活動","投資買入與配息","−10,000"],["籌資活動","借貸與還款","0"],["其他調整／匯率影響","本期","0"]]},
+ {"key":"settings","title":"設定","group":"設定","tabs":"偏好 · 分類 · 同步 · 資料","action":"儲存偏好","rows":[["外觀主題","淺色／深色／跟隨系統","›"],["預設幣別","TWD 新台幣","›"],["預設付款方式","信用卡","›"],["預設消費分類","餐飲","›"],["遮罩財務金額","在首頁與清單隱藏金額","關"]]},
+ {"key":"themes","title":"外觀與主題","group":"設定","kind":"themes","action":"套用主題","rows":[["Warm Meadow & Melody","奶油白 · 蜜糖金 · 柔和玫瑰","淺色"],["Stellar Night & Comet Stage","深海軍藍 · 彗星青 · 舞台洋紅","深色"],["跟隨系統","配合裝置的外觀設定","自動"]]},
+ {"key":"categories","title":"分類管理","group":"設定","tabs":"支出 · 收入","action":"新增分類","rows":[["餐飲","12 筆紀錄 · 已啟用","編輯"],["交通","8 筆紀錄 · 已啟用","編輯"],["娛樂","4 筆紀錄 · 已啟用","編輯"],["通訊","1 筆紀錄 · 已啟用","編輯"]],"note":"分類可停用、重新啟用或合併到其他分類。"},
+ {"key":"category-edit","title":"編輯記帳分類","group":"設定","kind":"form","action":"儲存分類","fields":[["分類名稱","餐飲"],["圖示","餐具"],["分類類型","支出"],["狀態","啟用"]],"links":["合併到其他分類","停用分類"]},
+ {"key":"sync","title":"通知與同步","group":"設定","action":"同步資料","rows":[["LINE 帳號","已登入","已連結"],["雲端同步","最近同步：今天 09:41","正常"],["帳單扣款提醒","信用卡與固定支出提醒","開"],["登出","保留雲端記帳資料","›"]]},
+ {"key":"data","title":"資料管理","group":"設定","action":"匯出選取資料","rows":[["帳戶／支出／收入","CSV 匯出","已選"],["投資／信用卡帳單","CSV 匯出","已選"],["代訂收款／對帳紀錄","CSV 匯出","已選"],["產生完整測試資料","建立示範情境","›"],["清除測試資料","僅移除 demo 資料","›"]]},
+ {"key":"fx","title":"匯率管理","group":"設定","kind":"form","action":"新增／更新匯率","fields":[["外幣","USD"],["本位幣","TWD"],["換算匯率（示範）","1 USD = 32.00 TWD"],["更新日期","2026/10/02"]],"note":"缺少匯率的外幣資產不會併入總額。"},
+ {"key":"states","title":"提示與操作狀態","group":"共用狀態","kind":"states","rows":[["還沒有收支紀錄","新增第一筆，開始掌握財務。","新增"],["正在同步","請稍候，正在儲存你的記錄。","…"],["同步失敗","資料尚未送出，請重試。","重試"],["金額格式錯誤","請輸入大於 0 的金額。","修正"],["刪除此筆記錄？","此動作會移除此筆資料。","取消／刪除"]]}
+];
+const IN_FIGMA = new Set(["login","expenses","expense-edit","income-edit","recurring","recurring-edit","cards","card-edit","bill-detail","bill-edit","payment"]);
+const TOP_LEVEL = new Set(['accounts','expenses','cards','investments','orders','reconciliation','reports','settings','login','collection','states','recurring']);
+const NAV = [['總覽','M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],['帳務','M5 3h14v18l-3-2-4 2-4-2-3 2zM8 8h8M8 12h8'],['資產','M3 8h18v13H3zM3 8l9-5 9 5M7 12v5M12 12v5M17 12v5'],['代訂','M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M2 21v-3a6 6 0 0 1 12 0v3M17 5a4 4 0 0 1 0 7M17 15a5 5 0 0 1 5 5'],['設定','M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0']];
+const TAB_CHILDREN = {'balance-sheet':['reports',1],'profit-loss':['reports',2],'cash-flow':['reports',3],'categories':['settings',1],'sync':['settings',2],'data':['settings',3]};
+const GROUP_ORDER = ['登入','帳務','資產','代訂','公開收款','總覽','設定','共用狀態'];
+// 類別色取自 design_tokens.dart 的 _categoryVisuals
+const CAT = [[/午餐|晚餐|餐|便當|飯|下午茶|聚餐/,'#D2664B'],[/捷運|交通/,'#4179C8'],[/娛樂/,'#6A44A7'],[/電信|通訊/,'#6075A6'],[/訂閱|雲端|串流/,'#6075A6'],
+ [/房租/,'#719681'],[/薪資|收入/,'#3B9166'],[/利息/,'#6075A6'],[/0050|2330|投資/,'#6075A6'],[/銀行|國泰|玉山|帳戶/,'#4B8E9F'],[/現金/,'#B8893E'],[/LINE/,'#06A84A'],[/信用卡|CUBE|卡/,'#B83D66']];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const svg = (d, size=20, w=1.7) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+const ICON = {back:'M15 5l-7 7 7 7',check:'M5 12l5 5 9-10',alert:'M12 8v5M12 16.5v.5M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0',info:'M12 11v6M12 7.5v.5M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18',
+ plus:'M12 5v14M5 12h14',cloud:'M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z',trash:'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',receipt:'M5 3h14v18l-3-2-4 2-4-2-3 2zM8 8h8M8 12h8'};
+
+function amountClass(v){ if(/^[+＋]/.test(v)) return 'pos'; if(/^[−-]/.test(v)) return 'neg'; return ''; }
+function catColor(t){ for(const [re,c] of CAT) if(re.test(t)) return c; return '#7B8B91'; }
+function avatar(title){
+ const c = catColor(title); const ch = title.replace(/^[0-9]+\s/,'').trim()[0] || '•';
+ return `<div class="av" style="background:color-mix(in srgb, ${c} 14%, var(--surface));color:${c}">${esc(ch)}</div>`;
+}
+function trailing(v){
+ if(!v) return '';
+ if(v==='›') return '<span class="chev">›</span>';
+ if(v==='開') return '<span class="sw on"></span>';
+ if(v==='關') return '<span class="sw"></span>';
+ if(v==='已選') return `<span class="chk">${svg(ICON.check,14,2.6)}</span>`;
+ if(/^(已核對|已結清|已收款|正常|已連結|已登入)$/.test(v)) return `<span class="pill ok">${esc(v)}</span>`;
+ if(/^(待收款|待確認)$/.test(v)) return `<span class="pill warn">${esc(v)}</span>`;
+ if(/^(對帳|核對|編輯|查看)$/.test(v)) return `<span class="pill act">${esc(v)}</span>`;
+ if(/^(淺色|深色|自動)$/.test(v)) return `<span class="pill mute">${esc(v)}</span>`;
+ return `<span class="amt ${amountClass(v)}">${esc(v)}</span>`;
+}
+function row([t,d,v], opts={}){
+ const lead = opts.lead ?? avatar(t);
+ const st = d && d.match(/^(.*) · (待收款|已收款|本人消費)$/);
+ if(st) return `<div class="row">${lead}<div class="rt"><b>${esc(t)}</b><small>${esc(st[1])}</small></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${trailing(v)}<span class="pill ${st[2]==='待收款'?'warn':st[2]==='已收款'?'ok':'mute'}" style="font-size:10.5px;padding:2px 8px">${st[2]}</span></div></div>`;
+ let tail = trailing(v);
+ const tone = d==='負債' ? 'var(--liability)' : /^支出|固定＋變動/.test(d||'') ? 'var(--expense)' : d==='收入合計' ? 'var(--income)' : '';
+ if(tone && /^[0-9,]+$/.test(v)) tail = `<span class="amt" style="color:${tone}">${esc(v)}</span>`;
+ return `<div class="row">${lead}<div class="rt"><b>${esc(t)}</b>${d?`<small>${esc(d)}</small>`:''}</div>${tail}</div>`;
+}
+const SEG_LABELS = /^(建立方式|交易類型|調整方式|分類類型)$/;
+function field([label,value], spec, i){
+ if(SEG_LABELS.test(label) && value.includes('／')){
+  const opts = value.split('／');
+  return `<div class="field"><div class="fx"><label>${esc(label)}</label><div class="seg">${opts.map((o,j)=>`<span class="${j===0?'on':''}">${esc(o)}</span>`).join('')}</div></div></div>`;
+ }
+ const isSwitch = /^(已啟用|是|啟用)$/.test(value) || /已啟用$/.test(value) && /啟用/.test(label);
+ const warn = /待確認/.test(label);
+ const big = /^(金額|每月金額|繳款金額|調整金額|實際餘額|銀行帳單應繳總額|電信帳單應繳總額)$/.test(label);
+ const diff = /^差額$/.test(label) ? amountClass(value.replace(/\s/g,'')) : '';
+ const focus = big && i === spec.fields.findIndex(f => /金額|餘額|應繳總額/.test(f[0]) && !/帳面|待繳/.test(f[0]));
+ const picker = !isSwitch && (/點擊/.test(value) || /帳戶|分類|方式|信用卡|卡片|日期|月份|幣別|類型|商品|機構|執行日|外幣|本位幣|圖示|平台|設定/.test(label) && !/名稱|備註|說明|原因|姓名|金額|餘額|單位數|持有|成本|折扣$/.test(label));
+ const optional = /（新買入）/.test(label) && spec.fields.some(f=>f[0]==='建立方式');
+ return `<div class="field ${focus?'focus':''} ${warn?'warn':''}" ${optional?'style="opacity:.45"':''}><div class="fx"><label>${esc(label)}</label><div class="v ${big?'big':''} ${diff}">${esc(isSwitch && value!=='是' ? value.replace(/\s?·?\s?已啟用$/,'') || '已啟用' : value)}</div>${warn?'<div class="hint">辨識信心較低，請對照原始截圖</div>':''}${optional?'<div style="font-size:11px;color:var(--muted);margin-top:2px">選擇「新買入」時才需填寫</div>':''}</div>${isSwitch?'<span class="sw on"></span>':picker?'<span class="chev">›</span>':''}</div>`;
+}
+function heroClass(spec){
+ return '';
+}
+function hero(spec){
+ const sub = {
+  'accounts':'4 個帳戶 · 最近更新 今天 09:41','account-detail':'銀行帳戶 · TWD · 最近對帳 10/02','investments':'投資成本 NT$ 248,000 · 報酬 +8.3%',
+  'holding':'最近報價 60.25 · 證交所','orders':'2 筆代訂尚有 4 人待付款','order-detail':'5 人 · 3 人已付款 · Uber Eats',
+  'reconciliation':'上次對帳 10/02 · 1 項已完成','reports':'收入 72,000 · 支出 43,540','balance-sheet':'資產 396,620 · 負債 18,920',
+  'profit-loss':'2026/10/01 – 2026/10/31','cash-flow':'期初 108,380 → 期末 126,840','cards':'2 張信用卡 · 最近扣款 10/15','bill-detail':'結帳日 10/05 · 扣款日 10/15'
+ }[spec.key];
+ return `<div class="card hero"><div class="lbl">${esc(spec.metric[0])}</div><div class="val ${heroClass(spec)}">${esc(spec.metric[1])}</div>${sub?`<div class="sub">${esc(sub)}</div>`:''}</div>`;
+}
+function lineChart(title, a, b, la, lb){
+ const path = pts => pts.map((y,i)=>`${i?'L':'M'}${(i*(306/(pts.length-1))+2).toFixed(1)} ${y}`).join(' ');
+ return `<div class="card chart"><h4>${esc(title)}</h4><svg viewBox="0 0 310 116" width="100%" height="116" role="img" aria-label="${esc(title)}">
+  <path d="M0 108H310M0 58H310M0 8H310" stroke="var(--border)" stroke-dasharray="3 4"/>
+  <path d="${path(a)} L308 110 L2 110Z" fill="var(--line-income)" opacity=".12"/>
+  <path d="${path(a)}" stroke="var(--line-income)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+  <path d="${path(b)}" stroke="var(--line-expense)" stroke-width="2" fill="none" stroke-dasharray="${lb==='投資成本'?'5 4':'0'}" stroke-linejoin="round"/></svg>
+  <div class="legend"><span><i style="background:var(--line-income)"></i>${esc(la)}</span><span><i style="background:var(--line-expense)"></i>${esc(lb)}</span><span style="margin-left:auto">${title.includes('收支')?'1 日 → 31 日':'近 6 個月'}</span></div></div>`;
+}
+function donut(){
+ const parts=[['0050',45,'var(--chart-a)'],['2330',41,'var(--chart-b)'],['現金部位',14,'var(--chart-c)']];
+ let acc=0; const r=38, C=2*Math.PI*r;
+ const arcs=parts.map(([n,p,c])=>{const s=`<circle r="${r}" cx="50" cy="50" fill="none" stroke="${c}" stroke-width="16" stroke-dasharray="${C*p/100-2} ${C}" stroke-dashoffset="${-C*acc/100}" transform="rotate(-90 50 50)"/>`;acc+=p;return s;}).join('');
+ return `<div class="card"><h4>資產配置</h4><div class="donut"><svg width="110" height="110" viewBox="0 0 100 100">${arcs}</svg>
+  <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">${parts.map(([n,p,c])=>`<div><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c};margin-right:8px"></i>${n} <b style="margin-left:6px">${p}%</b></div>`).join('')}</div></div></div>`;
+}
+function bars(){
+ const cats=[['餐飲',38,'#D2664B'],['房租',34,'#719681'],['交通',12,'#4179C8'],['訂閱',9,'#6075A6'],['其他',7,'#7B8B91']];
+ return `<div class="card"><h4>支出結構</h4>${cats.map(([n,p,c])=>`<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;margin:7px 0"><span style="width:34px">${n}</span><span style="flex:1;height:8px;border-radius:4px;background:var(--subtle);overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:${c};border-radius:4px"></span></span><b style="width:34px;text-align:right">${p}%</b></div>`).join('')}</div>`;
+}
+function statesBody(spec){
+ const [empty, sync, fail, fmt, del] = spec.rows;
+ return `
+ <div class="card empty"><div class="ill" style="color:var(--accent);background:var(--accent-pale)">${svg(ICON.receipt,32,1.5)}</div><b style="font-size:16px">${esc(empty[0])}</b><div style="color:var(--muted);font-size:13px;margin:4px 0 14px">${esc(empty[1])}</div>
+  <span class="btn" style="height:42px;font-size:14px;display:inline-grid;padding:0 22px">＋ ${esc(empty[2])}</span></div>
+ <div class="state"><div class="h"><div class="ic" style="background:var(--accent-pale)"><div class="spin"></div></div><div><b>${esc(sync[0])}</b><small>${esc(sync[1])}</small></div></div></div>
+ <div class="state" style="border-color:var(--expense)"><div class="h"><div class="ic" style="background:var(--expense-pale);color:var(--expense)">${svg(ICON.cloud)}</div><div><b>${esc(fail[0])}</b><small>${esc(fail[1])}</small></div><span class="pill act" style="margin-left:auto">${esc(fail[2])}</span></div></div>
+ <div class="state"><div class="field" style="border-color:var(--expense);box-shadow:0 0 0 3px var(--expense-pale)"><div class="fx"><label>金額</label><div class="v big">NT$ 0</div></div></div>
+  <div style="display:flex;gap:6px;align-items:center;color:var(--expense);font-size:12px">${svg(ICON.alert,14)}<span><b style="font-size:12px">${esc(fmt[0])}</b> · ${esc(fmt[1])}</span></div></div>
+ <div class="state" style="box-shadow:0 12px 30px rgba(0,0,0,.12)"><div class="h"><div class="ic" style="background:var(--expense-pale);color:var(--expense)">${svg(ICON.trash)}</div><div><b>${esc(del[0])}</b><small>${esc(del[1])}</small></div></div>
+  <div class="acts"><span style="border:1px solid var(--border)">取消</span><span style="background:var(--expense);color:var(--surface)">刪除</span></div></div>
+`;
+}
+
+function renderPhone(spec, theme){
+ const isForm = spec.kind === 'form';
+ const tabOf = TAB_CHILDREN[spec.key];
+ const showBack = !TOP_LEVEL.has(spec.key) && !tabOf;
+ const tabSpec = tabOf ? SCREENS.find(x=>x.key===tabOf[0]).tabs : spec.tabs, active = tabOf ? tabOf[1] : 0;
+ const tabs = tabSpec ? `<div class="tabs">${tabSpec.split(' · ').map((t,i)=>`<span class="${i===active?'on':''}">${esc(t)}</span>`).join('')}</div>` : '';
+ let body = '';
+ if(spec.kind==='login'){
+  body += `<div class="login-hero"><div class="logo"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#27C2D4" stroke-width="2.4" stroke-linecap="round"><path d="M8 4v10a4 4 0 0 1-4 4M14 4h4M16 4v16"/></svg></div><h2>${esc(spec.subtitle)}</h2><p>清楚看見金流，安心安排生活。</p></div>`;
+ }
+ if(spec.key==='collection'){
+  body += `<div class="public-head"><div class="lbl">${esc(spec.metric[0])}</div><div class="val">${esc(spec.metric[1])}</div><div style="font-size:12px;opacity:.85;margin-top:6px">主揪：KGZ 使用者 · 10/02 建立</div></div>`;
+ }
+ if(spec.filter) body += `<div class="filters">${spec.filter.split(/\s{2,}/).map(f=>`<span class="${/搜尋/.test(f)?'search':''}">${esc(f)}</span>`).join('')}</div>`;
+ if(spec.metric && spec.key!=='collection') body += hero(spec);
+ if(spec.kind==='cards') body += `<div class="cc"><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>玉山信用卡</span><span>VISA</span></div><div class="n">•••• •••• •••• 3088</div><div style="display:flex;justify-content:space-between;font-size:12px;opacity:.9"><span>結帳 每月 5 日</span><span>扣款 10/15</span></div></div>`;
+ if(spec.key==='investments') body += donut();
+ if(spec.key==='holding') body += lineChart('現值與成本', [92,84,88,70,62,50,58,40,30,22], [74,72,70,68,66,64,62,60,58,56], '持有現值','投資成本');
+ if(spec.key==='reports') body += lineChart('收支趨勢',[96,88,72,76,58,64,44,36,30,18],[104,92,96,86,88,74,78,66,70,62],'收入','支出') + bars();
+ if(spec.kind==='upload') body += `<div class="drop"><div class="plus">＋</div><b style="font-size:18px">選擇訂單截圖</b><div style="color:var(--muted);font-size:13px;margin-top:4px">支援 JPG、PNG · 匯入後可逐項修正辨識結果</div></div>`;
+ if(spec.kind==='themes') body += `<div class="themes">${[['t-light','Warm Meadow','淺色',true],['t-dark','Stellar Night','深色',false]].map(([c,n,l,s])=>`<div class="tp ${c} ${(theme==='light')===s?'sel':''}" style="background:var(--bg);color:var(--text)"><div style="font-size:12px;color:var(--muted)">${l}</div><b style="font-size:14px">${n}</b><div style="font-size:18px;font-weight:900;margin-top:8px;color:var(--asset)">NT$ 28,460</div><div class="bar" style="background:var(--primary)"></div><div class="bar" style="background:var(--seg);width:60%;margin-top:6px"></div></div>`).join('')}</div>`;
+ if(spec.kind==='states') body += statesBody(spec);
+ else {
+  for(const [i,f] of (spec.fields||[]).entries()) body += field(f, spec, i);
+  if(spec.kind==='upload') body += `<div class="steps" style="display:flex;flex-direction:column;gap:8px">${spec.rows.map(r=>{const [n,...t]=r[0].split(' ');return row([t.join(' '),r[1],''],{lead:`<div class="av">${n}</div>`});}).join('')}</div>`;
+  else if(spec.kind==='login') body += spec.rows.map(r=>row(r,{lead:`<div class="av" style="background:var(--accent-pale);color:var(--accent-pale-text)">${svg(ICON.check,18,2.2)}</div>`})).join('');
+  else body += (spec.rows||[]).map(r=>row(r)).join('');
+ }
+ if(spec.note) body += `<div class="note ${/核對|撤銷|須與/.test(spec.note)?'warn':''}">${svg(/核對|撤銷|須與/.test(spec.note)?ICON.alert:ICON.info,18)}<span>${esc(spec.note)}</span></div>`;
+ for(const l of spec.links||[]) body += `<div class="link">${esc(l)}<span>›</span></div>`;
+ const navHidden = ['登入','公開收款','共用狀態'].includes(spec.group) || isForm;
+ let foot = '';
+ if(spec.kind==='login') foot += `<div class="line-btn"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M12 3C6.5 3 2 6.6 2 11c0 3.9 3.5 7.2 8.3 7.9.3.1.8.2.9.5.1.3.1.7 0 1l-.1.9c0 .3-.2 1 .9.5s6-3.5 8.2-6.1C21.4 14 22 12.6 22 11c0-4.4-4.5-8-10-8z"/></svg>${esc(spec.action)}</div>`;
+ else if(spec.action && spec.key==='collection') foot += `<div class="btn">${esc(spec.action)}</div>`;
+ else if(spec.action){
+  foot += `<div class="btn">${esc(spec.action)}</div>`;
+ }
+ if(isForm) foot += '<div class="mark"></div>';
+ if(!navHidden) foot += `<div class="nav">${NAV.map(([n,d])=>`<div class="${n===spec.group?'on':''}">${svg(d)}${n}</div>`).join('')}</div>`;
+ else if(spec.kind==='states') foot += `<div class="toast" style="margin-bottom:22px">${svg(ICON.check,18,2.2)}已儲存 1 筆消費 · 午餐 NT$ 185<span style="margin-left:auto;color:var(--accent-pale);font-weight:700;text-decoration:underline">復原</span></div>`;
+ else if(!isForm) foot += `<div class="mark">KGZ · 示範資料</div>`;
+ return `<div class="phone t-${theme}">
+  <div class="status"><span>9:41</span><i>5G</i></div>
+  <div class="hdr">${showBack?`<div class="back">${svg(ICON.back,18,2)}</div>`:''}<div><div class="crumb">KGZ / ${esc(spec.group)}</div><h2 class="ttl ${spec.title.length>9?'long':''}">${esc(spec.title)}</h2></div></div>
+  ${tabs}<div class="body">${body}</div><div class="foot">${foot}</div></div>`;
+}
+
+const state = { mode:'both', scope:'new', zoom:.8, group:'全部' };
+function visible(){ return SCREENS.filter(s => (state.scope==='all' || !IN_FIGMA.has(s.key)) && (state.group==='全部' || s.group===state.group)); }
+function renderGroups(){
+ const pool = SCREENS.filter(s => state.scope==='all' || !IN_FIGMA.has(s.key));
+ const groups = ['全部', ...GROUP_ORDER.filter(g => pool.some(s=>s.group===g))];
+ if(!groups.includes(state.group)) state.group='全部';
+ document.getElementById('groups').innerHTML = groups.map(g=>`<button data-group="${g}" aria-pressed="${g===state.group}">${g}<b>${g==='全部'?pool.length:pool.filter(s=>s.group===g).length}</b></button>`).join('');
+}
+function render(){
+ renderGroups();
+ const list = visible();
+ document.documentElement.style.setProperty('--s', state.zoom);
+ const themes = state.mode==='both' ? ['light','dark'] : [state.mode];
+ let html = '';
+ for(const g of GROUP_ORDER){
+  const items = list.filter(s=>s.group===g); if(!items.length) continue;
+  html += `<h3 class="section-title">${g}<small>${items.length} 個畫面</small></h3><div class="grid">`;
+  for(const s of items){
+   html += `<div class="shot"><div class="cap">${esc(s.title)}<span class="key">${s.key}</span><span class="tag ${IN_FIGMA.has(s.key)?'':'new'}">${IN_FIGMA.has(s.key)?'Figma 已建':'待補'}</span></div><div class="pair">${themes.map(t=>`<div class="frame">${renderPhone(s,t)}</div>`).join('')}</div></div>`;
+  }
+  html += '</div>';
+ }
+ document.getElementById('main').innerHTML = html;
+ const pending = SCREENS.filter(s=>!IN_FIGMA.has(s.key)).length;
+ document.getElementById('count').textContent = `共 ${SCREENS.length} 個畫面 · Figma 已建 ${SCREENS.length-pending} · 待補 ${pending}`;
+}
+document.addEventListener('click', e => {
+ const b = e.target.closest('button'); if(!b) return;
+ for(const k of ['mode','scope','zoom','group']) if(b.dataset[k]!==undefined){
+  state[k] = k==='zoom' ? +b.dataset[k] : b.dataset[k];
+  if(k!=='group') b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+  render();
+ }
+});
+// #solo=key1,key2 只輸出指定畫面（淺色＋深色、原尺寸），方便截圖核對
+const solo = location.hash.match(/^#solo=(.+)$/);
+if(solo){
+ const keys = decodeURIComponent(solo[1]).split(',');
+ document.querySelector('.top').remove();
+ document.documentElement.style.setProperty('--s', 1);
+ document.getElementById('main').innerHTML = `<div class="pair" style="flex-wrap:nowrap">${keys.flatMap(k=>{const s=SCREENS.find(x=>x.key===k);return ['light','dark'].map(t=>`<div class="frame">${renderPhone(s,t)}</div>`);}).join('')}</div>`;
+ document.querySelector('main').style.cssText='padding:12px;max-width:none';
+} else render();
+</script>
+</body>
+</html>

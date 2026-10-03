@@ -8,7 +8,12 @@ import 'design_tokens.dart';
 /// [AppSemanticColors]) automatically applies to both. The resolved
 /// [AppSemanticColors] is registered as a [ThemeExtension] so screens can
 /// read it back via `context.colors` (see `AppColorsContext` in
-/// design_tokens.dart) instead of the old static `AppColors.xxx` constants.
+/// design_tokens.dart).
+/// The Figma type family. Spelled out on every component text style below:
+/// a component style that names no family falls back to the platform
+/// default instead of [ThemeData.fontFamily].
+const _font = 'Noto Sans TC';
+
 ThemeData buildAppTheme(Brightness brightness) {
   final colors = brightness == Brightness.dark
       ? AppSemanticColors.dark
@@ -16,73 +21,128 @@ ThemeData buildAppTheme(Brightness brightness) {
   final scheme = ColorScheme.fromSeed(
     seedColor: AppColors.accent,
     brightness: brightness,
+    primary: colors.primary,
+    onPrimary: colors.onPrimary,
+    // Tonal buttons and chips sit on the quiet accent wash; the loud
+    // selection hue is reserved for segmented controls and tabs.
+    secondaryContainer: colors.accentPale,
+    onSecondaryContainer: colors.accentPaleText,
     surface: colors.surface,
+    onSurface: colors.text,
+    onSurfaceVariant: colors.textMuted,
+    outline: colors.border,
+    outlineVariant: colors.border,
     error: colors.expense,
   );
   final baseTextTheme =
       (brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light())
           .textTheme
           .copyWith(
-            headlineLarge: const TextStyle(fontSize: 32, height: 1.2),
-            headlineMedium: const TextStyle(fontSize: 26, height: 1.25),
-            headlineSmall: const TextStyle(fontSize: 22, height: 1.3),
+            headlineLarge: const TextStyle(
+              fontSize: 32,
+              height: 1.2,
+              fontWeight: FontWeight.w900,
+            ),
+            headlineMedium: const TextStyle(
+              fontSize: 26,
+              height: 1.3,
+              fontWeight: FontWeight.w900,
+            ),
+            headlineSmall: const TextStyle(
+              fontSize: 22,
+              height: 1.3,
+              fontWeight: FontWeight.w800,
+            ),
             titleLarge: const TextStyle(fontSize: 20, height: 1.35),
             titleMedium: const TextStyle(fontSize: 16, height: 1.4),
             bodyLarge: const TextStyle(fontSize: 16, height: 1.55),
             bodyMedium: const TextStyle(fontSize: 15, height: 1.5),
             bodySmall: const TextStyle(fontSize: 13, height: 1.45),
           );
+  const fieldRadius = BorderRadius.all(Radius.circular(14));
+  const buttonShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+  );
+  WidgetStateProperty<Color?> selectedFill(Color on, Color off) =>
+      WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? on : off,
+      );
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
     scaffoldBackgroundColor: colors.background,
+    canvasColor: colors.background,
     extensions: [colors],
-    fontFamilyFallback: const [
-      'Noto Sans TC',
-      'Microsoft JhengHei',
-      'sans-serif',
-    ],
+    fontFamily: _font,
+    fontFamilyFallback: const ['Microsoft JhengHei', 'sans-serif'],
+    // Figma cards: borderless with a soft warm shadow in light mode; in dark
+    // mode the shadow is transparent and the surface color alone separates
+    // the card from the night-navy ground.
     cardTheme: CardThemeData(
-      elevation: 0,
+      elevation: brightness == Brightness.dark ? 0 : 2,
+      shadowColor: colors.cardShadow,
+      surfaceTintColor: Colors.transparent,
       margin: EdgeInsets.zero,
       color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
-        side: BorderSide(color: colors.border),
+        borderRadius: const BorderRadius.all(Radius.circular(20)),
+        side: brightness == Brightness.dark
+            ? BorderSide(color: colors.border)
+            : BorderSide.none,
+      ),
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: colors.textMuted,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(18)),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surface,
+      labelStyle: TextStyle(fontFamily: _font, color: colors.textMuted),
+      floatingLabelStyle: TextStyle(
+        fontFamily: _font,
+        color: colors.text,
+        fontWeight: FontWeight.w700,
+      ),
       border: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        borderRadius: fieldRadius,
         borderSide: BorderSide(color: colors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        borderRadius: fieldRadius,
         borderSide: BorderSide(color: colors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: fieldRadius,
+        borderSide: BorderSide(color: colors.primary, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
     ),
-    // The desktop navigation rail's sidebar is deliberately always dark
-    // graphite in both themes (see AppColors.graphite), so its colors come
-    // from the fixed AppColors constants, not from [colors].
-    navigationRailTheme: const NavigationRailThemeData(
-      backgroundColor: AppColors.graphite,
-      indicatorColor: AppColors.accentSoft,
-      selectedIconTheme: IconThemeData(color: Colors.white),
-      unselectedIconTheme: IconThemeData(color: AppColors.graphiteMuted),
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: colors.background,
+      indicatorColor: colors.accentPale,
+      selectedIconTheme: IconThemeData(color: colors.accent),
+      unselectedIconTheme: IconThemeData(color: colors.textMuted),
       selectedLabelTextStyle: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w700,
+        fontFamily: _font,
+        color: colors.text,
+        fontWeight: FontWeight.w800,
       ),
-      unselectedLabelTextStyle: TextStyle(color: AppColors.graphiteMuted),
+      unselectedLabelTextStyle: TextStyle(
+        fontFamily: _font,
+        color: colors.textMuted,
+      ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: colors.mobileBackground,
-      indicatorColor: Colors.transparent,
+      backgroundColor: colors.background,
+      indicatorColor: colors.accentPale,
       surfaceTintColor: Colors.transparent,
+      indicatorShape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
       iconTheme: WidgetStateProperty.resolveWith(
         (states) => IconThemeData(
           color: states.contains(WidgetState.selected)
@@ -92,77 +152,162 @@ ThemeData buildAppTheme(Brightness brightness) {
       ),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => TextStyle(
+          fontFamily: _font,
           fontSize: 12,
           fontWeight: states.contains(WidgetState.selected)
               ? FontWeight.w800
               : FontWeight.w500,
           color: states.contains(WidgetState.selected)
-              ? colors.accent
+              ? colors.text
               : colors.textMuted,
         ),
       ),
     ),
-    // Level-1 "spotlight" treatment: solid highlight (goose-yellow) fill
-    // with dark graphite icon/text — the one action per screen that gets
-    // a filled, colored button. See the button-hierarchy notes in the
-    // design canvas. Fixed across themes, like AppColors.highlight itself.
-    floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      backgroundColor: AppColors.highlight,
-      foregroundColor: AppColors.highlightOn,
-      extendedTextStyle: TextStyle(fontWeight: FontWeight.w800),
+    drawerTheme: DrawerThemeData(backgroundColor: colors.background),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: colors.primary,
+      foregroundColor: colors.onPrimary,
+      extendedTextStyle: const TextStyle(
+        fontFamily: _font,
+        fontWeight: FontWeight.w800,
+      ),
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: colors.surface,
+      backgroundColor: colors.background,
       foregroundColor: colors.text,
       elevation: 0,
+      scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
-      shape: Border(bottom: BorderSide(color: colors.border)),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: colors.background,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(24)),
+      ),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: colors.background,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: colors.surface,
+      surfaceTintColor: Colors.transparent,
     ),
     dividerTheme: DividerThemeData(color: colors.border),
-    // Deliberately hollow, not solid-filled: every button in the app (main
-    // call-to-action included) reads as an outlined pill so a FilledButton
-    // and an OutlinedButton look identical — one consistent button style
-    // instead of two competing weights.
+    // Figma "Primary Action": a solid honey-yellow (light) / comet-cyan
+    // (dark) pill with dark ink — the filled, highest-emphasis button.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
-        backgroundColor: Colors.transparent,
-        foregroundColor: colors.accent,
-        side: BorderSide(color: colors.accent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
+        disabledBackgroundColor: colors.subtle,
+        disabledForegroundColor: colors.textMuted,
+        textStyle: const TextStyle(
+          fontFamily: _font,
+          fontWeight: FontWeight.w800,
+        ),
+        shape: buttonShape,
       ),
     ),
+    // Secondary actions: a quiet outline in ink color, so the filled
+    // primary action stays the one colored button on screen.
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
-        foregroundColor: colors.accent,
-        side: BorderSide(color: colors.accent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        foregroundColor: colors.text,
+        backgroundColor: colors.surface,
+        side: BorderSide(color: colors.border),
+        textStyle: const TextStyle(
+          fontFamily: _font,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: buttonShape,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: const Size(48, AppSpacing.controlMinHeight),
         foregroundColor: colors.accent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontFamily: _font,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: buttonShape,
       ),
     ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(foregroundColor: colors.text),
+    ),
     segmentedButtonTheme: SegmentedButtonThemeData(
-      style: SegmentedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        selectedBackgroundColor: colors.accentPale,
-        selectedForegroundColor: colors.accentPaleText,
-        side: BorderSide(color: colors.border),
+      style: ButtonStyle(
+        shape: const WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
+        ),
+        backgroundColor: selectedFill(colors.selection, colors.surface),
+        foregroundColor: selectedFill(colors.onSelection, colors.textMuted),
+        side: WidgetStatePropertyAll(BorderSide(color: colors.border)),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontFamily: _font, fontWeight: FontWeight.w700),
+        ),
       ),
     ),
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: colors.surface,
+      selectedColor: colors.primary,
+      checkmarkColor: colors.onPrimary,
+      secondarySelectedColor: colors.primary,
+      labelStyle: TextStyle(fontFamily: _font, color: colors.text),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
       side: BorderSide(color: colors.border),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: selectedFill(colors.onPrimary, colors.surface),
+      trackColor: selectedFill(colors.primary, colors.subtle),
+      trackOutlineColor: WidgetStatePropertyAll(colors.border),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: selectedFill(colors.primary, Colors.transparent),
+      checkColor: WidgetStatePropertyAll(colors.onPrimary),
+      side: BorderSide(color: colors.textMuted, width: 1.5),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(6)),
+      ),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: selectedFill(colors.primary, colors.textMuted),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: colors.primary,
+      linearTrackColor: colors.subtle,
+    ),
+    tabBarTheme: TabBarThemeData(
+      labelColor: colors.text,
+      unselectedLabelColor: colors.textMuted,
+      indicatorColor: colors.primary,
+      dividerColor: colors.border,
     ),
     textTheme: baseTextTheme.apply(
       bodyColor: colors.text,
       displayColor: colors.text,
+      fontFamily: _font,
     ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: colors.text,
+      contentTextStyle: TextStyle(fontFamily: _font, color: colors.background),
+      actionTextColor: colors.primary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+      ),
+    ),
   );
 }

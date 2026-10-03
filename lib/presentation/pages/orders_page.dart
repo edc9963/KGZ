@@ -115,26 +115,27 @@ class OrdersPage extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 22),
+        HeroMetricCard(
+          label: '代墊應收款',
+          value: moneyText(
+            store.receivablesMinor,
+            mask: store.data.settings.maskBalances,
+          ),
+          compactValue: compactMoneyText(
+            store.receivablesMinor,
+            mask: store.data.settings.maskBalances,
+          ),
+          icon: Icons.handshake_outlined,
+        ),
+        const SizedBox(height: 12),
         ResponsiveGrid(
           children: [
-            SummaryCard(
-              label: '代墊應收款',
-              value: moneyText(
-                store.receivablesMinor,
-                mask: store.data.settings.maskBalances,
-              ),
-              compactValue: compactMoneyText(
-                store.receivablesMinor,
-                mask: store.data.settings.maskBalances,
-              ),
-              icon: Icons.handshake_outlined,
-            ),
             SummaryCard(
               label: '待確認',
               value:
                   '${orders.expand((item) => item.participants).where((item) => item.status == CollectionStatus.pending).length} 人',
               icon: Icons.hourglass_top_rounded,
-              tone: const Color(0xFFE27848),
+              tone: context.colors.warn,
             ),
             SummaryCard(
               label: '代訂筆數',
@@ -200,7 +201,7 @@ class OrdersPage extends ConsumerWidget {
                             ),
                             Text(
                               '未收 ${moneyText(order.outstandingMinor)}',
-                              style: const TextStyle(color: Color(0xFFD35D2A)),
+                              style: TextStyle(color: context.colors.warn),
                             ),
                           ],
                         ),
@@ -237,7 +238,7 @@ class OrdersPage extends ConsumerWidget {
   ) async {
     final method = await showDialog<_OrderEntryMethod>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => KgzDialog(
         title: const Text('新增代訂'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -285,7 +286,7 @@ class OrdersPage extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: const Text('收款資訊'),
           content: SizedBox(
             width: 500,
@@ -354,7 +355,7 @@ class OrdersPage extends ConsumerWidget {
     if (!store.data.cards.any((card) => card.isCredit)) {
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => KgzDialog(
           title: const Text('請先建立信用卡'),
           content: const Text('Uber Eats 截圖匯入需要指定付款信用卡。'),
           actions: [
@@ -381,7 +382,7 @@ class OrdersPage extends ConsumerWidget {
       if (context.mounted) {
         await showDialog<void>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => KgzDialog(
             title: const Text('無法開啟圖片選擇器'),
             content: Text('請用 Safari 直接開啟本網站，重新整理後再試。\n\n$error'),
             actions: [
@@ -683,7 +684,7 @@ class OrdersPage extends ConsumerWidget {
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           insetPadding: MediaQuery.sizeOf(context).width < 600
               ? EdgeInsets.zero
               : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
@@ -735,22 +736,22 @@ class OrdersPage extends ConsumerWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFE9E4),
+                        color: context.colors.expensePale,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.error_outline,
-                            color: Color(0xFFB84B3E),
+                            color: context.colors.expense,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               error!,
-                              style: const TextStyle(
-                                color: Color(0xFF8F3026),
+                              style: TextStyle(
+                                color: context.colors.expense,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -806,7 +807,7 @@ class OrdersPage extends ConsumerWidget {
                                 '${matches ? '（金額一致）' : ''}',
                                 style: TextStyle(
                                   color: matches
-                                      ? const Color(0xFF0E7C66)
+                                      ? context.colors.income
                                       : context.colors.textMuted,
                                   fontWeight: matches
                                       ? FontWeight.w700
@@ -898,9 +899,10 @@ class OrdersPage extends ConsumerWidget {
                             selected,
                         ];
                         return DropdownButtonFormField<String>(
-                          initialValue: items.any(
-                            (item) => item.id == selfExpenseCategoryId,
-                          )
+                          initialValue:
+                              items.any(
+                                (item) => item.id == selfExpenseCategoryId,
+                              )
                               ? selfExpenseCategoryId
                               : null,
                           decoration: const InputDecoration(
@@ -916,10 +918,11 @@ class OrdersPage extends ConsumerWidget {
                                   children: [
                                     CircleAvatar(
                                       radius: 7,
-                                      backgroundColor: bookkeepingCategoryVisual(
-                                        category,
-                                        context.colors,
-                                      ).color,
+                                      backgroundColor:
+                                          bookkeepingCategoryVisual(
+                                            category,
+                                            context.colors,
+                                          ).color,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(category.name),
@@ -950,8 +953,7 @@ class OrdersPage extends ConsumerWidget {
                       // -- harmless, since Wrap still reflows on its real
                       // incoming constraints regardless of this estimate.
                       builder: (context) {
-                        final compact =
-                            MediaQuery.sizeOf(context).width < 480;
+                        final compact = MediaQuery.sizeOf(context).width < 480;
                         final columns = compact ? 2 : 4;
                         const spacing = 8.0;
                         final fieldWidth =
@@ -1044,8 +1046,9 @@ class OrdersPage extends ConsumerWidget {
                   if (editorStep == 1)
                     Text(
                       '參與人員與品項',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   if (editorStep == 1)
                     for (var index = 0; index < drafts.length; index++)
@@ -1112,7 +1115,8 @@ class OrdersPage extends ConsumerWidget {
                                               preference.accountId,
                                         )
                                         ? preference.accountId
-                                        : store.bankTransferAccounts
+                                        : store
+                                              .bankTransferAccounts
                                               .firstOrNull
                                               ?.id);
                             });
@@ -1787,7 +1791,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       final proceed =
           await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => KgzDialog(
               title: const Text('仍有資料需要確認'),
               content: Text(
                 '${issues.map((issue) => '• $issue').join('\n')}\n\n'
@@ -1870,8 +1874,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                     ? systemCashAccountId
                     : (preference != null &&
                               store.bankTransferAccounts.any(
-                                (account) =>
-                                    account.id == preference.accountId,
+                                (account) => account.id == preference.accountId,
                               )
                           ? preference.accountId
                           : store.defaultBankTransferAccountId)),
@@ -1962,10 +1965,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       InputDecoration(
         labelText: lowConfidence ? '$label・待確認' : label,
         filled: lowConfidence,
-        fillColor: lowConfidence ? const Color(0xFFFFF8E8) : null,
+        fillColor: lowConfidence ? context.colors.warnPale : null,
         enabledBorder: lowConfidence
-            ? const OutlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFFE0A11A)),
+            ? OutlineInputBorder(
+                borderSide: BorderSide(color: context.colors.warn),
               )
             : null,
       );
@@ -2008,7 +2011,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 12),
-              color: const Color(0xFFFFE9E4),
+              color: context.colors.expensePale,
               child: Text(_error!),
             ),
           if (_imported == null) ...[
@@ -2017,7 +2020,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F7F5),
+                color: context.colors.subtle,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Row(
@@ -2058,7 +2061,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               if ((_ocrProgress?.engine ?? '').isNotEmpty)
                 Text(
                   _ocrProgress!.engine,
-                  style: TextStyle(color: context.colors.textMuted, fontSize: 12),
+                  style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
               if (_stalledSeconds >= 4)
                 Padding(
@@ -2066,7 +2072,10 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                   child: Text(
                     '仍在辨識中，較密集或較寬的文字列需要更久，請耐心等候'
                     '（已等待 $_stalledSeconds 秒）',
-                    style: TextStyle(color: context.colors.textMuted, fontSize: 12),
+                    style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
             ],
@@ -2252,8 +2261,8 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFF8E8),
+                decoration: BoxDecoration(
+                  color: context.colors.warnPale,
                   borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
                 child: Text('請確認：${_conciseImportWarning()}'),
@@ -2371,7 +2380,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
               ),
             for (var i = 0; i < _people.length; i++)
               Card(
-                color: const Color(0xFFF5F8F7),
+                color: context.colors.subtle,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
@@ -2603,7 +2612,7 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
         ),
       );
     }
-    return AlertDialog(
+    return KgzDialog(
       title: const Text('從 Uber Eats 截圖匯入'),
       content: SizedBox(width: 760, child: content),
       actions: actions,
@@ -2753,15 +2762,15 @@ class OrderDetailPage extends ConsumerWidget {
                   ? Icons.trending_up
                   : Icons.trending_down,
               tone: order.expectedCollectionResultMinor >= 0
-                  ? const Color(0xFF0E7C66)
-                  : const Color(0xFFB84B3E),
+                  ? context.colors.income
+                  : context.colors.expense,
             ),
             SummaryCard(
               label: '尚未收回',
               value: moneyText(order.outstandingMinor),
               compactValue: compactMoneyText(order.outstandingMinor),
               icon: Icons.handshake_outlined,
-              tone: const Color(0xFFE27848),
+              tone: context.colors.warn,
             ),
             SummaryCard(
               label: order.recognizedCollectionResultMinor >= 0
@@ -2773,8 +2782,8 @@ class OrderDetailPage extends ConsumerWidget {
               ),
               icon: Icons.done_all,
               tone: order.recognizedCollectionResultMinor >= 0
-                  ? const Color(0xFF0E7C66)
-                  : const Color(0xFFB84B3E),
+                  ? context.colors.income
+                  : context.colors.expense,
               caption: '僅計算已確認收款',
             ),
           ],
@@ -2856,7 +2865,7 @@ class _ParticipantRow extends ConsumerWidget {
               ),
               Text(
                 person.status.label,
-                style: TextStyle(color: _statusColor(person.status)),
+                style: TextStyle(color: _statusColor(context, person.status)),
               ),
             ],
           ),
@@ -2885,12 +2894,13 @@ class _ParticipantRow extends ConsumerWidget {
     );
   }
 
-  Color _statusColor(CollectionStatus status) => switch (status) {
-    CollectionStatus.paid => const Color(0xFF0E7C66),
-    CollectionStatus.pending => const Color(0xFFE27848),
-    CollectionStatus.unpaid => const Color(0xFFB84B3E),
-    CollectionStatus.cancelled => Colors.grey,
-  };
+  Color _statusColor(BuildContext context, CollectionStatus status) =>
+      switch (status) {
+        CollectionStatus.paid => context.colors.income,
+        CollectionStatus.pending => context.colors.warn,
+        CollectionStatus.unpaid => context.colors.expense,
+        CollectionStatus.cancelled => Colors.grey,
+      };
 }
 
 String _knownParticipantName(String recognized, List<GroupOrder> orders) {
@@ -2974,7 +2984,7 @@ class _AllocationSettingsCard extends StatelessWidget {
       key: const ValueKey('allocation-settings-card'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F8F7),
+        color: context.colors.subtle,
         border: Border.all(color: scheme.outlineVariant),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -3220,7 +3230,7 @@ class _CollectionSummary extends StatelessWidget {
     margin: const EdgeInsets.only(top: 10),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: const Color(0xFFF1F7F5),
+      color: context.colors.subtle,
       borderRadius: BorderRadius.circular(12),
     ),
     child: Row(
@@ -3237,8 +3247,8 @@ class _CollectionSummary extends StatelessWidget {
             label: resultMinor >= 0 ? '預計多收' : '預計少收',
             value: moneyText(resultMinor.abs()),
             tone: resultMinor >= 0
-                ? const Color(0xFF0E7C66)
-                : const Color(0xFFB84B3E),
+                ? context.colors.income
+                : context.colors.expense,
           ),
         ),
       ],
@@ -3311,7 +3321,7 @@ class _UniformFeeAdjuster extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F7F5),
+        color: context.colors.subtle,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -3459,8 +3469,8 @@ class _FeeRedistributionNotice extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: balanced || differenceMinor < 0
-            ? const Color(0xFFF1F7F5)
-            : const Color(0xFFFFF8E8),
+            ? context.colors.subtle
+            : context.colors.warnPale,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Wrap(
@@ -3471,8 +3481,8 @@ class _FeeRedistributionNotice extends StatelessWidget {
           Icon(
             balanced ? Icons.check_circle_outline : Icons.sync_problem,
             color: balanced || differenceMinor < 0
-                ? const Color(0xFF0E7C66)
-                : const Color(0xFFB56A00),
+                ? context.colors.income
+                : context.colors.warn,
           ),
           Text(
             balanced
@@ -3629,7 +3639,7 @@ class _ParticipantEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      color: const Color(0xFFF5F8F7),
+      color: context.colors.subtle,
       borderRadius: BorderRadius.circular(14),
     ),
     child: Padding(

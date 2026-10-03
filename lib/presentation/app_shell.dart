@@ -10,6 +10,7 @@ import '../data/supabase_finance_repository.dart';
 import 'design_tokens.dart';
 import 'quick_entry.dart';
 import 'widgets/brand_icon.dart';
+import 'widgets/kgz_layout.dart';
 
 class _Destination {
   const _Destination(this.path, this.label, this.icon);
@@ -155,14 +156,18 @@ class AppShell extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_workspaceTabs.containsKey(selected)) ...[
-                  _WorkspaceNavigation(
-                    destinations: _workspaceTabs[selected]!,
-                    currentPath: path,
-                  ),
-                  const SizedBox(height: 20),
-                ],
-                navigationShell,
+                // The workspace tabs render inside the page, under its
+                // PageHeader (see WorkspaceScope), matching the Figma layout.
+                WorkspaceScope(
+                  label: _destinations[selected].label,
+                  tabs: _workspaceTabs.containsKey(selected)
+                      ? _WorkspaceNavigation(
+                          destinations: _workspaceTabs[selected]!,
+                          currentPath: path,
+                        )
+                      : null,
+                  child: navigationShell,
+                ),
               ],
             ),
           ),
@@ -246,9 +251,13 @@ class AppShell extends ConsumerWidget {
       ),
       appBar: AppBar(
         backgroundColor: context.colors.mobileBackground,
-        title: Text(
-          _destinations[selected].label,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+        titleSpacing: 0,
+        title: const Row(
+          children: [
+            BrandIcon(size: 28, borderRadius: 8),
+            SizedBox(width: 10),
+            Text('快記帳', style: TextStyle(fontWeight: FontWeight.w900)),
+          ],
         ),
         actions: [
           Tooltip(
@@ -294,38 +303,26 @@ class _WorkspaceNavigation extends StatelessWidget {
   final String currentPath;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: SegmentedButton<String>(
-      showSelectedIcon: false,
-      style: const ButtonStyle(
-        minimumSize: WidgetStatePropertyAll(Size(116, 48)),
-        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
-      ),
-      segments: [
-        for (final destination in destinations)
-          ButtonSegment(
-            value: destination.path,
-            icon: Icon(destination.icon),
-            label: Text(
-              destination.label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
-            ),
-          ),
-      ],
-      selected: {
-        destinations
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 160.0 * destinations.length),
+      child: KgzTabBar<String>(
+        tabs: [
+          for (final destination in destinations)
+            (destination.path, destination.label, destination.icon),
+        ],
+        selected:
+            destinations
                 .where((item) => currentPath.startsWith(item.path))
                 .firstOrNull
                 ?.path ??
             destinations.first.path,
-      },
-      onSelectionChanged: (value) {
-        HapticFeedback.selectionClick();
-        context.go(value.single);
-      },
+        onSelected: (path) {
+          HapticFeedback.selectionClick();
+          context.go(path);
+        },
+      ),
     ),
   );
 }
@@ -413,24 +410,26 @@ class _DesktopSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Material(
-      color: AppColors.graphite,
+      color: colors.background,
+      shape: Border(right: BorderSide(color: colors.border)),
       child: SizedBox(
         width: 236,
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(24, 24, 20, 20),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 20, 20),
                 child: Row(
                   children: [
-                    BrandIcon(size: 40, borderRadius: 10),
-                    SizedBox(width: 12),
+                    const BrandIcon(size: 40, borderRadius: 10),
+                    const SizedBox(width: 12),
                     Text(
                       '快記帳',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: colors.text,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                       ),
@@ -442,12 +441,12 @@ class _DesktopSidebar extends StatelessWidget {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(12, 6, 12, 10),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
                       child: Text(
                         '工作區',
                         style: TextStyle(
-                          color: Color(0xFF93A4AB),
+                          color: colors.textMuted,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           letterSpacing: .6,
@@ -463,28 +462,17 @@ class _DesktopSidebar extends StatelessWidget {
                   ],
                 ),
               ),
-              const Divider(
-                color: Color(0xFF43535A),
-                indent: 20,
-                endIndent: 20,
-              ),
+              const Divider(indent: 20, endIndent: 20),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: Row(
                   children: [
-                    Icon(
-                      _syncIcon(store),
-                      size: 16,
-                      color: const Color(0xFFDCE5E8),
-                    ),
+                    Icon(_syncIcon(store), size: 16, color: colors.textMuted),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _syncLabel(store),
-                        style: const TextStyle(
-                          color: Color(0xFFDCE5E8),
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: colors.textMuted, fontSize: 12),
                       ),
                     ),
                   ],
@@ -500,11 +488,11 @@ class _DesktopSidebar extends StatelessWidget {
                     store.data.settings.maskBalances
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined,
-                    color: const Color(0xFFDCE5E8),
+                    color: colors.textMuted,
                   ),
                   title: Text(
                     store.data.settings.maskBalances ? '顯示金額' : '隱藏金額',
-                    style: const TextStyle(color: Color(0xFFDCE5E8)),
+                    style: TextStyle(color: colors.text),
                   ),
                   onTap: store.canWrite
                       ? () => store.updateSettings(
@@ -560,16 +548,16 @@ class _SidebarItem extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 4),
     child: ListTile(
       dense: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      tileColor: selected ? AppColors.accentSoft : Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      tileColor: selected ? context.colors.accentPale : Colors.transparent,
       leading: Icon(
         destination.icon,
-        color: selected ? AppColors.accentOnDark : AppColors.graphiteMuted,
+        color: selected ? context.colors.accent : context.colors.textMuted,
       ),
       title: Text(
         destination.label,
         style: TextStyle(
-          color: selected ? Colors.white : AppColors.graphiteMuted,
+          color: selected ? context.colors.text : context.colors.textMuted,
           fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
         ),
       ),

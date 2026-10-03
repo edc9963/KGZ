@@ -43,8 +43,7 @@ class ReconciliationPage extends ConsumerWidget {
         isStaleTarget(ReconciliationTargetType.investment, product.id);
 
     final staleCount =
-        accounts.where(isStale).length +
-        products.where(isStaleProduct).length;
+        accounts.where(isStale).length + products.where(isStaleProduct).length;
     final uncheckedBills =
         bills
             .where(
@@ -80,16 +79,17 @@ class ReconciliationPage extends ConsumerWidget {
       children: [
         const PageHeader(title: '對帳', subtitle: '核對銀行與信用卡的實際金額，差額自動調整並留下紀錄'),
         const SizedBox(height: 24),
+        HeroMetricCard(
+          label: '待對帳項目',
+          value: '$staleCount 個',
+          caption: '帳戶與投資超過 $_staleAfterDays 天未確認',
+          icon: Icons.account_balance_outlined,
+          tone: staleCount > 0 ? context.colors.liability : null,
+        ),
+        const SizedBox(height: 12),
         ResponsiveGrid(
           minWidth: 210,
           children: [
-            SummaryCard(
-              label: '待對帳項目',
-              value: '$staleCount 個',
-              caption: '帳戶與投資超過 $_staleAfterDays 天未確認',
-              icon: Icons.account_balance_outlined,
-              tone: staleCount > 0 ? context.colors.liability : null,
-            ),
             SummaryCard(
               label: '待核對帳單',
               value: '$uncheckedBills 張',
@@ -290,7 +290,7 @@ class ReconciliationPage extends ConsumerWidget {
               enteredCost != book.averageCostMinor;
           int valueOf(int micros) =>
               (micros * product.currentPriceMinor / 1000000).round();
-          return AlertDialog(
+          return KgzDialog(
             title: Text('對帳：${product.name}'),
             content: SizedBox(
               width: 420,
@@ -449,7 +449,7 @@ class ReconciliationPage extends ConsumerWidget {
           final difference = entered == null
               ? null
               : entered - payment.amountMinor;
-          return AlertDialog(
+          return KgzDialog(
             title: Text('核對：電信帳單 ${payment.month}'),
             content: SizedBox(
               width: 420,
@@ -463,10 +463,7 @@ class ReconciliationPage extends ConsumerWidget {
                       value: moneyText(payment.amountMinor, currency: currency),
                     ),
                     const SizedBox(height: 6),
-                    _AmountLine(
-                      label: '扣款帳戶',
-                      value: account?.name ?? '指定帳戶',
-                    ),
+                    _AmountLine(label: '扣款帳戶', value: account?.name ?? '指定帳戶'),
                     const SizedBox(height: 12),
                     MoneyField(
                       controller: actual,
@@ -559,7 +556,7 @@ class ReconciliationPage extends ConsumerWidget {
               ? null
               : parseMoney(actual.text.trim());
           final difference = entered == null ? null : entered - book;
-          return AlertDialog(
+          return KgzDialog(
             title: Text('對帳：${account.name}'),
             content: SizedBox(
               width: 420,
@@ -688,7 +685,7 @@ class ReconciliationPage extends ConsumerWidget {
           final text = actual.text.trim();
           final entered = text.isEmpty ? null : parseMoney(text);
           final difference = entered == null ? null : entered - calculated;
-          return AlertDialog(
+          return KgzDialog(
             title: Text('核對：$cardName ${bill.month} 帳單'),
             content: SizedBox(
               width: 420,
@@ -898,11 +895,7 @@ class _InvestmentDifferenceBanner extends StatelessWidget {
                   title,
                   style: TextStyle(color: color, fontWeight: FontWeight.w800),
                 ),
-                Text(
-                  balanced
-                      ? '將記錄為已確認'
-                      : '確認後會在對帳日補一筆持倉快照，之後的交易照常計算',
-                ),
+                Text(balanced ? '將記錄為已確認' : '確認後會在對帳日補一筆持倉快照，之後的交易照常計算'),
               ],
             ),
           ),

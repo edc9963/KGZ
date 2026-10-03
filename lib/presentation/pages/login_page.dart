@@ -60,17 +60,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Scaffold(
     body: DecoratedBox(
       decoration: BoxDecoration(
-        // A quiet wash of the app icon's own two colors: pale icon-cyan
-        // fading into warm wool-cream in light mode, a cyan-tinted charcoal
-        // settling into the app's true dark background at night — the same
-        // "comet cyan meets warm gold" story the icon itself tells, instead
-        // of the previous unrelated mint-green.
+        // The Figma themes' own grounds: a honey-tinted wash fading into
+        // the cream page color in light mode ("Warm Meadow"), a faint
+        // comet-cyan glow settling into the night-navy page at night
+        // ("Stellar Night").
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: isDark
-              ? const [Color(0xFF102A2E), Color(0xFF14181A)]
-              : const [Color(0xFFE7F6F7), Color(0xFFFBF3E4)],
+              ? const [Color(0xFF10283A), Color(0xFF0D0E15)]
+              : const [Color(0xFFFDF0CF), Color(0xFFFBF6F0)],
         ),
       ),
       child: Center(
@@ -165,7 +164,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           const SizedBox(height: 32),
                           FilledButton(
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF06C755),
+                              backgroundColor: AppColors.lineGreen,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 17),
                             ),

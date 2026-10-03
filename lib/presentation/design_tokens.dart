@@ -2,75 +2,36 @@ import 'package:flutter/material.dart';
 
 import '../domain/models.dart';
 
-/// Colors that stay fixed regardless of the app's light/dark theme —
-/// brand-identity hues, and everything tied to the desktop navigation rail's
-/// sidebar, which is deliberately always dark graphite in both themes (see
-/// the button-hierarchy notes in the design canvas). Anything that instead
-/// needs to flip between a light and dark value lives in [AppSemanticColors]
-/// and is reached through `context.colors` (see the [AppColorsContext]
-/// extension below), not through this class.
+/// Colors that stay fixed regardless of the app's light/dark theme. Since
+/// the Figma redesign ("KGZ / Fintech Redesign v1") every surface — the
+/// desktop sidebar included — follows the theme, so only seed and
+/// third-party brand hues live here. Anything that flips between light and
+/// dark lives in [AppSemanticColors] and is reached through
+/// `context.colors` (see the [AppColorsContext] extension below).
 abstract final class AppColors {
-  /// Net-worth / data color — deliberately decoupled from the interactive
-  /// accent so the app has exactly one interactive hue instead of "data that
-  /// happens to look like a button." Kept here only as the seed fed to
-  /// [ColorScheme.fromSeed]; the themed ink color used on screen is
-  /// `context.colors.asset`.
-  static const primary = Color(0xFF1F2D33);
-  /// Hover/pressed state for a link rendered in the accent hue.
-  static const primaryHover = Color(0xFF06606B);
+  /// Seed for [ColorScheme.fromSeed]; on-screen colors come from
+  /// `context.colors` instead.
+  static const accent = Color(0xFFF4C84D);
 
-  /// Desktop/tablet navigation rail background — always dark graphite,
-  /// independent of the app's overall light/dark theme. Matches the app
-  /// icon's own background exactly (`web/icons/quick-ledger-j.svg`), so the
-  /// sidebar reads as a direct extension of the brand mark.
-  static const graphite = Color(0xFF2B2F33);
-  /// Unselected icon/label color on the graphite sidebar.
-  static const graphiteMuted = Color(0xFFDCE5E8);
-
-  /// Brand accent (teal-blue, echoes the app icon), used only as the seed
-  /// color for [ColorScheme.fromSeed]. UI code should use
-  /// `context.colors.accent` instead, which is tuned per theme.
-  static const accent = Color(0xFF0D80A0);
-  /// Translucent wash of the app icon's cyan, used behind the selected item
-  /// in the desktop sidebar's navigation rail indicator — fixed because the
-  /// sidebar itself is always dark graphite.
-  static const accentSoft = Color(0x2E27C2D4);
-  /// The app icon's own cyan (`#27C2D4`), used directly for the desktop
-  /// navigation's selected-item icon — on the dark graphite sidebar this
-  /// hue clears WCAG AA on its own, so no lightening is needed the way the
-  /// old, more muted `context.colors.accent` required. Fixed for the same
-  /// reason as [accentSoft].
-  static const accentOnDark = Color(0xFF27C2D4);
-
-  /// Level-1 "spotlight" button fill (goose-yellow) — reserved for the
-  /// single highest-emphasis action per screen (the quick-entry FAB).
-  /// Deliberately used nowhere else, so it keeps reading as "the one main
-  /// action" rather than one color among several, and deliberately the same
-  /// in both themes so it always pops off the surrounding surface.
-  static const highlight = Color(0xFFFFC83D);
-  /// Icon/label color on a solid [highlight] fill.
-  static const highlightOn = graphite;
-  /// Shadow color under a [highlight] surface (e.g. the FAB).
-  static const highlightShadow = Color(0x59FFC83D);
-  /// Darkened [highlight] hue for text on a light highlight wash (not a
-  /// solid fill, where [highlightOn] applies instead).
-  static const highlightText = Color(0xFF9C7016);
+  /// LINE Login's own brand green — fixed by LINE's brand guidelines.
+  static const lineGreen = Color(0xFF06C755);
 }
 
 /// Everything that flips between the app's light and dark theme: page and
-/// card surfaces, text, borders, and the semantic finance colors
-/// (asset/income/expense/liability) plus their pale washes.
+/// card surfaces, text, borders, the interactive hues and the semantic
+/// finance colors (asset/income/expense/liability) plus their pale washes.
 ///
-/// Registered on [ThemeData.extensions] by `buildAppTheme` (see
-/// `presentation/theme.dart`) and read back with `context.colors` — the
-/// [AppColorsContext] extension below — instead of the old static
-/// `AppColors.xxx` constants, so every screen automatically follows the
-/// user's light/dark/system choice.
+/// Values come from the Figma redesign: "Warm Meadow & Melody" (light —
+/// cream ground, honey-yellow actions, rose selection) and "Stellar Night &
+/// Comet Stage" (dark — night-navy ground, comet-cyan actions, bright-orange
+/// selection). Registered on [ThemeData.extensions] by `buildAppTheme` (see
+/// `presentation/theme.dart`) and read back with `context.colors`.
 @immutable
 class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   const AppSemanticColors({
     required this.background,
     required this.surface,
+    required this.subtle,
     required this.mobileBackground,
     required this.text,
     required this.textMuted,
@@ -83,31 +44,45 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     required this.expensePale,
     required this.liability,
     required this.liabilityPale,
+    required this.warn,
+    required this.warnPale,
     required this.accent,
     required this.accentPale,
     required this.accentPaleText,
+    required this.primary,
+    required this.onPrimary,
+    required this.selection,
+    required this.onSelection,
+    required this.chartA,
+    required this.chartB,
+    required this.chartC,
+    required this.cardShadow,
   });
 
-  /// Desktop/tablet page background.
+  /// Page background.
   final Color background;
+
   /// Card and sheet surfaces.
   final Color surface;
-  /// Mobile app shell background (app bar, scaffold, bottom navigation).
+
+  /// Quiet fill for tracks, inactive segments and keypad-like controls.
+  final Color subtle;
+
+  /// Mobile app shell background — the same ground as [background] since
+  /// the redesign, kept as its own name for existing call sites.
   final Color mobileBackground;
+
   /// Primary text/ink color.
   final Color text;
+
   /// Secondary/caption text color.
   final Color textMuted;
+
   /// Card, divider and input borders.
   final Color border;
 
-  /// Net-worth / data color, rather than [text]-as-neutral, so the
-  /// dashboard's headline number reads as the app's signature stat — rose
-  /// in light mode (Watame's cape/ribbon), indigo in dark mode (Suisei's
-  /// jacket), per the two reference figures. Kept a distinct hue from
-  /// [accent]'s cyan on purpose in both themes: colored now, but not the
-  /// same color as something clickable, so it still doesn't read as a
-  /// call-to-action.
+  /// Balance figures on stat cards (honey gold in light, comet cyan in dark,
+  /// as on the Figma dashboard's 可用餘額 card).
   final Color asset;
   final Color assetPale;
   final Color income;
@@ -117,82 +92,106 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   final Color liability;
   final Color liabilityPale;
 
-  /// The app's one interactive hue — outlined/text/filled buttons,
-  /// interactive icons, and links on ordinary (themed) surfaces.
+  /// Needs-attention state: low OCR confidence, pending collection, notes
+  /// warning about a side effect.
+  final Color warn;
+  final Color warnPale;
+
+  /// Links, icons and other interactive ink on ordinary surfaces.
   final Color accent;
-  /// Very light wash of [accent] for pill/badge backgrounds (a selected
-  /// top-level tab, an info panel), paired with [accentPaleText].
+
+  /// Pale wash behind a selected nav item or an info note, paired with
+  /// [accentPaleText].
   final Color accentPale;
   final Color accentPaleText;
 
-  // Light and dark lean into two different registers of the same icon: light
-  // reads warm and wool-cream (the highlight gold pushed further into the
-  // surfaces themselves), dark reads like the icon's own near-black ground
-  // with its cyan stroke lit up on it — a comet against a night sky rather
-  // than a muted daytime version of the same blue.
+  /// The one solid action color: primary buttons, switches, checkboxes and
+  /// the quick-entry FAB (Figma "Primary Action" component).
+  final Color primary;
+  final Color onPrimary;
+
+  /// Selected tab / segment fill (Figma segmented control).
+  final Color selection;
+  final Color onSelection;
+
+  /// Categorical chart series, in order.
+  final Color chartA;
+  final Color chartB;
+  final Color chartC;
+
+  /// Shadow under cards in light mode; transparent in dark mode, where cards
+  /// separate from the ground by their surface color alone.
+  final Color cardShadow;
+
   static const light = AppSemanticColors(
-    background: Color(0xFFF4F6F7),
+    background: Color(0xFFFBF6F0),
     surface: Colors.white,
-    mobileBackground: Color(0xFFFBF3E4),
-    text: Color(0xFF1F2D33),
-    textMuted: Color(0xFF68777D),
-    border: Color(0xFFDCE3E6),
-    // 6.4:1 against white — comfortably past the 4.5:1 AA floor.
-    asset: Color(0xFFB12554),
-    assetPale: Color(0xFFF7E9EE),
-    income: Color(0xFF3B9166),
-    incomePale: Color(0xFFE4F0EA),
-    expense: Color(0xFFD35645),
-    expensePale: Color(0xFFF9E9E7),
-    // A toasted caramel-gold (Watame's wool, a shade darker than her fleece)
-    // rather than orange — orange is reserved for dark mode's Suisei
-    // register instead. 5.0:1 against white, and clearly distinct from both
-    // the reserved highlight yellow and expense's red.
-    liability: Color(0xFF98641B),
-    liabilityPale: Color(0xFFF5F0E8),
-    // Deliberately NOT the app icon's brighter cyan (#27C2D4): that hue only
-    // clears ~2.2:1 against a white/near-white surface, far short of the
-    // 4.5:1 WCAG AA text requires. This value is already the icon's hue
-    // pushed as dark as it can go while staying ~85% saturated — it sits
-    // right at 4.55:1, so there's no headroom left to make it more vivid
-    // without failing contrast on every outlined button label in light mode.
-    accent: Color(0xFF0D80A0),
-    accentPale: Color(0xFFE2F0F4),
-    accentPaleText: Color(0xFF096771),
+    subtle: Color(0xFFF4EDE0),
+    mobileBackground: Color(0xFFFBF6F0),
+    text: Color(0xFF26231F),
+    textMuted: Color(0xFF7D7974),
+    border: Color(0xFFEFE7DA),
+    // Darker than the Figma swatches where the hue is used as text, so
+    // figures on white still clear WCAG AA (4.5:1).
+    asset: Color(0xFFA87B12),
+    assetPale: Color(0xFFFCF3DC),
+    income: Color(0xFF3B8A71),
+    incomePale: Color(0xFFE6F3EE),
+    expense: Color(0xFFC4505D),
+    expensePale: Color(0xFFFBEAEC),
+    liability: Color(0xFFC4505D),
+    liabilityPale: Color(0xFFFBEAEC),
+    warn: Color(0xFFA5670C),
+    warnPale: Color(0xFFFDF1DC),
+    accent: Color(0xFF9C720F),
+    accentPale: Color(0xFFFDF3D8),
+    accentPaleText: Color(0xFF6E510B),
+    primary: Color(0xFFF4C84D),
+    onPrimary: Color(0xFF26231F),
+    selection: Color(0xFFF0B4B9),
+    onSelection: Color(0xFF26231F),
+    chartA: Color(0xFFDF8088),
+    chartB: Color(0xFFF4C84D),
+    chartC: Color(0xFF68B39B),
+    cardShadow: Color(0x14503C14),
   );
 
   static const dark = AppSemanticColors(
-    background: Color(0xFF14181A),
-    surface: Color(0xFF1E262A),
-    mobileBackground: Color(0xFF1B1815),
-    text: Color(0xFFEDF1F2),
-    textMuted: Color(0xFF93A3A9),
-    border: Color(0xFF333D41),
-    // A true indigo (bluer than the light-mode rose, matching Suisei's
-    // jacket rather than Watame's cape) — 6.0:1 against background, 5.2:1
-    // against surface, both past AA.
-    asset: Color(0xFF9989E6),
-    assetPale: Color(0xFF2D3241),
-    income: Color(0xFF54BD8B),
-    incomePale: Color(0xFF203029),
-    expense: Color(0xFFE58579),
-    expensePale: Color(0xFF382522),
-    // Suisei's off-duty orange — already the right register, unchanged.
-    liability: Color(0xFFE79E55),
-    liabilityPale: Color(0xFF332A1E),
-    // The app icon's own cyan, used as-is: against every dark surface in
-    // this theme it clears WCAG AA with room to spare (6.2–8.3:1), so dark
-    // mode is where the interactive color can finally match the icon
-    // exactly instead of a muted derivative of it.
-    accent: Color(0xFF27C2D4),
-    accentPale: Color(0xFF1C2E33),
-    accentPaleText: Color(0xFF8FD8E8),
+    background: Color(0xFF0D0E15),
+    surface: Color(0xFF171B27),
+    subtle: Color(0xFF232A3A),
+    mobileBackground: Color(0xFF0D0E15),
+    text: Color(0xFFF2F4F8),
+    textMuted: Color(0xFF8D96AA),
+    border: Color(0xFF222838),
+    asset: Color(0xFF00CFFF),
+    assetPale: Color(0xFF0F2633),
+    income: Color(0xFF00E676),
+    incomePale: Color(0xFF0E2A1F),
+    expense: Color(0xFFFF6685),
+    expensePale: Color(0xFF33182A),
+    liability: Color(0xFFFF6685),
+    liabilityPale: Color(0xFF33182A),
+    warn: Color(0xFFFFB547),
+    warnPale: Color(0xFF33281A),
+    accent: Color(0xFF00CFFF),
+    accentPale: Color(0xFF10283A),
+    accentPaleText: Color(0xFF7FE3FF),
+    primary: Color(0xFF00CFFF),
+    onPrimary: Color(0xFF0D0E15),
+    selection: Color(0xFFFF8A1F),
+    onSelection: Color(0xFF0D0E15),
+    chartA: Color(0xFFFF6685),
+    chartB: Color(0xFFA98BFF),
+    chartC: Color(0xFF00CFFF),
+    cardShadow: Color(0x00000000),
   );
 
   @override
   AppSemanticColors copyWith({
     Color? background,
     Color? surface,
+    Color? subtle,
     Color? mobileBackground,
     Color? text,
     Color? textMuted,
@@ -205,12 +204,23 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     Color? expensePale,
     Color? liability,
     Color? liabilityPale,
+    Color? warn,
+    Color? warnPale,
     Color? accent,
     Color? accentPale,
     Color? accentPaleText,
+    Color? primary,
+    Color? onPrimary,
+    Color? selection,
+    Color? onSelection,
+    Color? chartA,
+    Color? chartB,
+    Color? chartC,
+    Color? cardShadow,
   }) => AppSemanticColors(
     background: background ?? this.background,
     surface: surface ?? this.surface,
+    subtle: subtle ?? this.subtle,
     mobileBackground: mobileBackground ?? this.mobileBackground,
     text: text ?? this.text,
     textMuted: textMuted ?? this.textMuted,
@@ -223,42 +233,76 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     expensePale: expensePale ?? this.expensePale,
     liability: liability ?? this.liability,
     liabilityPale: liabilityPale ?? this.liabilityPale,
+    warn: warn ?? this.warn,
+    warnPale: warnPale ?? this.warnPale,
     accent: accent ?? this.accent,
     accentPale: accentPale ?? this.accentPale,
     accentPaleText: accentPaleText ?? this.accentPaleText,
+    primary: primary ?? this.primary,
+    onPrimary: onPrimary ?? this.onPrimary,
+    selection: selection ?? this.selection,
+    onSelection: onSelection ?? this.onSelection,
+    chartA: chartA ?? this.chartA,
+    chartB: chartB ?? this.chartB,
+    chartC: chartC ?? this.chartC,
+    cardShadow: cardShadow ?? this.cardShadow,
   );
 
   @override
   AppSemanticColors lerp(ThemeExtension<AppSemanticColors>? other, double t) {
     if (other is! AppSemanticColors) return this;
+    Color mix(Color a, Color b) => Color.lerp(a, b, t)!;
     return AppSemanticColors(
-      background: Color.lerp(background, other.background, t)!,
-      surface: Color.lerp(surface, other.surface, t)!,
-      mobileBackground: Color.lerp(mobileBackground, other.mobileBackground, t)!,
-      text: Color.lerp(text, other.text, t)!,
-      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
-      border: Color.lerp(border, other.border, t)!,
-      asset: Color.lerp(asset, other.asset, t)!,
-      assetPale: Color.lerp(assetPale, other.assetPale, t)!,
-      income: Color.lerp(income, other.income, t)!,
-      incomePale: Color.lerp(incomePale, other.incomePale, t)!,
-      expense: Color.lerp(expense, other.expense, t)!,
-      expensePale: Color.lerp(expensePale, other.expensePale, t)!,
-      liability: Color.lerp(liability, other.liability, t)!,
-      liabilityPale: Color.lerp(liabilityPale, other.liabilityPale, t)!,
-      accent: Color.lerp(accent, other.accent, t)!,
-      accentPale: Color.lerp(accentPale, other.accentPale, t)!,
-      accentPaleText: Color.lerp(accentPaleText, other.accentPaleText, t)!,
+      background: mix(background, other.background),
+      surface: mix(surface, other.surface),
+      subtle: mix(subtle, other.subtle),
+      mobileBackground: mix(mobileBackground, other.mobileBackground),
+      text: mix(text, other.text),
+      textMuted: mix(textMuted, other.textMuted),
+      border: mix(border, other.border),
+      asset: mix(asset, other.asset),
+      assetPale: mix(assetPale, other.assetPale),
+      income: mix(income, other.income),
+      incomePale: mix(incomePale, other.incomePale),
+      expense: mix(expense, other.expense),
+      expensePale: mix(expensePale, other.expensePale),
+      liability: mix(liability, other.liability),
+      liabilityPale: mix(liabilityPale, other.liabilityPale),
+      warn: mix(warn, other.warn),
+      warnPale: mix(warnPale, other.warnPale),
+      accent: mix(accent, other.accent),
+      accentPale: mix(accentPale, other.accentPale),
+      accentPaleText: mix(accentPaleText, other.accentPaleText),
+      primary: mix(primary, other.primary),
+      onPrimary: mix(onPrimary, other.onPrimary),
+      selection: mix(selection, other.selection),
+      onSelection: mix(onSelection, other.onSelection),
+      chartA: mix(chartA, other.chartA),
+      chartB: mix(chartB, other.chartB),
+      chartC: mix(chartC, other.chartC),
+      cardShadow: mix(cardShadow, other.cardShadow),
     );
   }
 }
+
+/// Fixed series palette for pie charts whose slices carry a white label on
+/// the fill: the Figma chart hues (rose, honey, mint, violet, cyan) pushed
+/// dark enough for white text, and kept the same in both themes.
+const pieChartPalette = <Color>[
+  Color(0xFFC85F6B),
+  Color(0xFFB0800E),
+  Color(0xFF3E8C74),
+  Color(0xFF7A62C4),
+  Color(0xFF1A8BAD),
+];
 
 /// Reads the current [AppSemanticColors] off the nearest [Theme] — the
 /// replacement for the old direct `AppColors.xxx` references. `buildAppTheme`
 /// always registers one, so the `!` is safe for any widget under
 /// `MaterialApp`.
 extension AppColorsContext on BuildContext {
-  AppSemanticColors get colors => Theme.of(this).extension<AppSemanticColors>()!;
+  AppSemanticColors get colors =>
+      Theme.of(this).extension<AppSemanticColors>()!;
 }
 
 abstract final class AppBreakpoints {
@@ -346,7 +390,9 @@ String colorToHex(Color color) =>
 /// [CategoryColorPicker] in `presentation/widgets/common.dart`). Falls back
 /// to [AppSemanticColors.textMuted] for an unrecognized/legacy key.
 Color resolveCategoryColorKey(String colorKey, AppSemanticColors colors) =>
-    categoryColorOptions[colorKey] ?? parseHexColor(colorKey) ?? colors.textMuted;
+    categoryColorOptions[colorKey] ??
+    parseHexColor(colorKey) ??
+    colors.textMuted;
 
 /// [colors] resolves the pale wash against the current theme's surface
 /// (light or dark) instead of always blending against white, so custom
@@ -410,7 +456,7 @@ const _categoryVisuals = <String, (Color, IconData)>{
   '股息收入': (Color(0xFF6075A6), Icons.query_stats_outlined),
   '代訂墊付': (Color(0xFFA36F5A), Icons.groups_outlined),
   '代訂本人消費': (Color(0xFFD2664B), Icons.restaurant_outlined),
-  '薪資': (Color(0xFF3B9166), Icons.work_outline),
+  '薪資': (Color(0xFF3B8A71), Icons.work_outline),
   '獎金': (Color(0xFF3C88A8), Icons.emoji_events_outlined),
   '利息': (Color(0xFF6075A6), Icons.savings_outlined),
   '自由業': (Color(0xFF568EAE), Icons.laptop_outlined),

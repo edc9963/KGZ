@@ -255,7 +255,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     final confirmed =
                         await showDialog<bool>(
                           context: context,
-                          builder: (dialogContext) => AlertDialog(
+                          builder: (dialogContext) => KgzDialog(
                             title: const Text('清除測試資料？'),
                             content: const Text('自行建立的資料與設定不會被刪除。'),
                             actions: [
@@ -289,12 +289,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: Color.alphaBlend(
-                  const Color(0xFF0E7C66).withValues(alpha: .16),
+                  context.colors.income.withValues(alpha: .16),
                   context.colors.surface,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.chat_bubble_outline,
-                  color: Color(0xFF0E7C66),
+                  color: context.colors.income,
                 ),
               ),
               title: Text(store.userDisplayName ?? 'LINE 帳號已登入'),
@@ -334,7 +334,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: const Text('一般偏好'),
           content: SizedBox(
             width: 440,
@@ -421,7 +421,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: const Text('新增／更新匯率'),
           content: SizedBox(
             width: 420,
@@ -575,7 +575,10 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
                 : (_, _) {},
             itemBuilder: (context, index) {
               final category = categories[index];
-              final visual = bookkeepingCategoryVisual(category, context.colors);
+              final visual = bookkeepingCategoryVisual(
+                category,
+                context.colors,
+              );
               final mergedInto = store.categoryById(
                 category.mergedIntoCategoryId,
               );
@@ -695,7 +698,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => KgzDialog(
           title: Text(existing == null ? '新增分類' : '編輯分類'),
           content: SizedBox(
             width: 440,
@@ -799,7 +802,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => KgzDialog(
           title: Text('合併「${source.name}」'),
           content: DropdownButtonFormField<String>(
             initialValue: targetId,
@@ -878,28 +881,130 @@ class _ThemeModeSelector extends StatelessWidget {
   final ValueChanged<ThemeMode> onChanged;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: SegmentedButton<ThemeMode>(
-      segments: const [
-        ButtonSegment(
-          value: ThemeMode.system,
-          label: Text('跟隨系統'),
-          icon: Icon(Icons.brightness_auto_outlined),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      // Figma theme previews: each card is painted in its own theme's
+      // colors, whatever the app is currently showing.
+      Row(
+        children: [
+          Expanded(
+            child: _ThemePreviewCard(
+              palette: AppSemanticColors.light,
+              caption: '淺色',
+              name: 'Warm Meadow',
+              selected: mode == ThemeMode.light,
+              onTap: () => onChanged(ThemeMode.light),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _ThemePreviewCard(
+              palette: AppSemanticColors.dark,
+              caption: '深色',
+              name: 'Stellar Night',
+              selected: mode == ThemeMode.dark,
+              onTap: () => onChanged(ThemeMode.dark),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilterChip(
+          avatar: const Icon(Icons.brightness_auto_outlined, size: 18),
+          label: const Text('跟隨系統'),
+          selected: mode == ThemeMode.system,
+          showCheckmark: false,
+          onSelected: (_) => onChanged(ThemeMode.system),
         ),
-        ButtonSegment(
-          value: ThemeMode.light,
-          label: Text('淺色'),
-          icon: Icon(Icons.light_mode_outlined),
+      ),
+    ],
+  );
+}
+
+class _ThemePreviewCard extends StatelessWidget {
+  const _ThemePreviewCard({
+    required this.palette,
+    required this.caption,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppSemanticColors palette;
+  final String caption;
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    selected: selected,
+    label: '$caption主題 $name',
+    excludeSemantics: true,
+    child: Material(
+      color: palette.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: selected ? context.colors.accent : context.colors.border,
+          width: selected ? 2 : 1,
         ),
-        ButtonSegment(
-          value: ThemeMode.dark,
-          label: Text('深色'),
-          icon: Icon(Icons.dark_mode_outlined),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                caption,
+                style: TextStyle(color: palette.textMuted, fontSize: 12),
+              ),
+              Text(
+                name,
+                style: TextStyle(
+                  color: palette.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                r'NT$ 28,460',
+                style: TextStyle(
+                  color: palette.asset,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                height: 10,
+                decoration: BoxDecoration(
+                  color: palette.primary,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
+              const SizedBox(height: 6),
+              FractionallySizedBox(
+                widthFactor: .6,
+                child: Container(
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: palette.selection,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
-      selected: {mode},
-      onSelectionChanged: (value) => onChanged(value.single),
+      ),
     ),
   );
 }

@@ -5,6 +5,15 @@ import 'package:quick_ledger/presentation/theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
+  test('themes use the Figma action and selection colors', () {
+    // Figma Primary Action: honey yellow (light) / comet cyan (dark).
+    expect(AppSemanticColors.light.primary, const Color(0xFFF4C84D));
+    expect(AppSemanticColors.dark.primary, const Color(0xFF00CFFF));
+    // Selected tabs and segments: soft rose (light) / bright orange (dark).
+    expect(AppSemanticColors.light.selection, const Color(0xFFF0B4B9));
+    expect(AppSemanticColors.dark.selection, const Color(0xFFFF8A1F));
+  });
+
   test('compact money keeps small values and abbreviates large values', () {
     expect(compactMoneyText(999900), r'NT$9,999');
     expect(compactMoneyText(1000000), r'NT$1萬');

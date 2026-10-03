@@ -251,7 +251,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   // hardcoded pale hex, so it stays readable in both themes.
   Widget _issues(FinancialReportSnapshot snapshot) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final warning = isDark ? const Color(0xFFE0B34D) : const Color(0xFF9A6A00);
+    final warning = isDark ? const Color(0xFFE0B34D) : context.colors.warn;
     return Card(
       color: Color.alphaBlend(
         warning.withValues(alpha: .14),
@@ -279,19 +279,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     bool mask,
   ) => Column(
     children: [
+      HeroMetricCard(
+        label: '淨資產',
+        value: moneyText(data.netWorth, currency: currency, mask: mask),
+        compactValue: compactMoneyText(
+          data.netWorth,
+          currency: currency,
+          mask: mask,
+        ),
+        icon: Icons.account_balance_wallet_outlined,
+        tone: context.colors.asset,
+      ),
+      const SizedBox(height: 12),
       ResponsiveGrid(
         children: [
-          SummaryCard(
-            label: '淨資產',
-            value: moneyText(data.netWorth, currency: currency, mask: mask),
-            compactValue: compactMoneyText(
-              data.netWorth,
-              currency: currency,
-              mask: mask,
-            ),
-            icon: Icons.account_balance_wallet_outlined,
-            tone: context.colors.asset,
-          ),
           SummaryCard(
             label: '本期收入',
             value: moneyText(data.totalIncome, currency: currency, mask: mask),
@@ -573,13 +574,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         lines.fold(0, (sum, line) => sum + line.amountMinor);
     final rows = <(String, int, Color)>[
       ('營業活動', total(data.operatingCashFlow), context.colors.income),
-      ('投資活動', total(data.investingCashFlow), const Color(0xFF4A58B5)),
+      ('投資活動', total(data.investingCashFlow), context.colors.chartB),
       ('融資活動', total(data.financingCashFlow), context.colors.liability),
-      (
-        '其他活動',
-        total(data.otherCashFlow) + data.fxEffect,
-        const Color(0xFFB28434),
-      ),
+      ('其他活動', total(data.otherCashFlow) + data.fxEffect, context.colors.warn),
     ];
     final maxAmount = rows.fold<int>(
       1,
@@ -679,13 +676,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     // titleStyle below), so this palette is deliberately fixed — always
     // dark/mid-saturation — rather than following the app's light/dark
     // theme, unlike most other color usage on this page.
-    const assetColors = [
-      AppColors.primary,
-      Color(0xFF568EAE),
-      Color(0xFF6075A6),
-      Color(0xFF719681),
-      Color(0xFF7B8B91),
-    ];
+    const assetColors = pieChartPalette;
     // For expense slices, prefer the actual category's user-chosen color
     // (kept in sync with the palette picker in 設定 → 分類) so the pie chart
     // always matches what the user picked there; fall back to the
@@ -1380,7 +1371,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     bool mask,
     bool balanced,
   ) {
-    const success = Color(0xFF0E7C66);
+    final success = context.colors.income;
     return Card(
       color: balanced
           ? Color.alphaBlend(

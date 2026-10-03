@@ -49,23 +49,24 @@ class AccountsPage extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 24),
+        HeroMetricCard(
+          label: '總資產',
+          value: moneyText(
+            store.totalAssetsMinor,
+            currency: store.data.settings.defaultCurrency,
+            mask: mask,
+          ),
+          compactValue: compactMoneyText(
+            store.totalAssetsMinor,
+            currency: store.data.settings.defaultCurrency,
+            mask: mask,
+          ),
+          icon: Icons.account_balance_wallet_outlined,
+        ),
+        const SizedBox(height: 12),
         ResponsiveGrid(
           minWidth: 210,
           children: [
-            SummaryCard(
-              label: '總資產',
-              value: moneyText(
-                store.totalAssetsMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              compactValue: compactMoneyText(
-                store.totalAssetsMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.account_balance_wallet_outlined,
-            ),
             SummaryCard(
               label: '信用卡負債',
               value: moneyText(
@@ -194,7 +195,7 @@ class AccountsPage extends ConsumerWidget {
               store.accountById(originalAccount.id) ?? originalAccount;
           final entries = store.accountLedgerEntries(account.id);
           final size = MediaQuery.sizeOf(context);
-          return AlertDialog(
+          return KgzDialog(
             title: Row(
               children: [
                 Expanded(child: Text('${account.name} 扣／入帳明細')),
@@ -261,13 +262,13 @@ class AccountsPage extends ConsumerWidget {
                             ),
                             leading: CircleAvatar(
                               backgroundColor: positive
-                                  ? const Color(0xFFDFF4EA)
-                                  : const Color(0xFFFFE9E4),
+                                  ? context.colors.incomePale
+                                  : context.colors.expensePale,
                               child: Icon(
                                 positive ? Icons.south_west : Icons.north_east,
                                 color: positive
-                                    ? const Color(0xFF0E7C66)
-                                    : const Color(0xFFB84B3E),
+                                    ? context.colors.income
+                                    : context.colors.expense,
                               ),
                             ),
                             isThreeLine: true,
@@ -291,8 +292,8 @@ class AccountsPage extends ConsumerWidget {
                                   style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     color: positive
-                                        ? const Color(0xFF0E7C66)
-                                        : const Color(0xFFB84B3E),
+                                        ? context.colors.income
+                                        : context.colors.expense,
                                   ),
                                 ),
                               ],
@@ -457,7 +458,7 @@ class AccountsPage extends ConsumerWidget {
   Future<bool> _confirmCancelCollection(BuildContext context) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => KgzDialog(
           title: const Text('取消入帳？'),
           content: const Text('這位參與者將恢復為未收款，代訂本身不會被刪除。'),
           actions: [
@@ -507,7 +508,7 @@ class AccountsPage extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增帳戶' : '編輯帳戶'),
           content: SizedBox(
             width: 480,
@@ -648,7 +649,7 @@ class AccountsPage extends ConsumerWidget {
     var mode = 'difference';
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => KgzDialog(
         title: Text(existing == null ? '調整 ${account.name}' : '編輯餘額調整'),
         content: StatefulBuilder(
           builder: (context, setState) => SizedBox(
@@ -776,7 +777,7 @@ class AccountsPage extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text('合併 ${source.name}'),
           content: SizedBox(
             width: 460,
@@ -884,7 +885,7 @@ class AccountsPage extends ConsumerWidget {
           final to = toId == null ? null : store.accountById(toId!);
           final parsedAmount = parseMoney(amount.text);
           final fromBalance = store.accountBalance(from.id);
-          return AlertDialog(
+          return KgzDialog(
             title: Text(existing == null ? '帳戶間轉帳' : '編輯轉帳'),
             content: SizedBox(
               width: 520,

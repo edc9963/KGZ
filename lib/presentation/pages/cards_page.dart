@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../application/app_store.dart';
 import '../../application/providers.dart';
 import '../../domain/models.dart';
+import '../design_tokens.dart';
 import '../widgets/common.dart';
 
 class CardsPage extends ConsumerStatefulWidget {
@@ -91,12 +92,12 @@ class _CardsPageState extends ConsumerState<CardsPage>
             else
               SizedBox(height: 620, child: tabView),
             Card(
-              color: const Color(0xFFFFF8E8),
+              color: context.colors.warnPale,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Color(0xFF9A6A00)),
+                    Icon(Icons.info_outline, color: context.colors.warn),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -134,7 +135,7 @@ class _CardsPageState extends ConsumerState<CardsPage>
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(
             existing == null ? '新增卡片' : '編輯${existing.cardType.label}',
           ),
@@ -387,7 +388,7 @@ class _CardsPageState extends ConsumerState<CardsPage>
                   .where((item) => selected.contains(item.id))
                   .fold(0, (sum, item) => sum + item.amount) +
               parseMoney(adjustment.text);
-          return AlertDialog(
+          return KgzDialog(
             title: Text(existing == null ? '新增信用卡帳單' : '編輯信用卡帳單'),
             content: SizedBox(
               width: 560,
@@ -684,7 +685,7 @@ class _CardsPageState extends ConsumerState<CardsPage>
           final remaining = actual == null
               ? 0
               : (actual - paid).clamp(0, actual).toInt();
-          return AlertDialog(
+          return KgzDialog(
             title: Text(existing == null ? '新增信用卡帳單' : '編輯信用卡帳單'),
             content: SizedBox(
               width: 680,
@@ -1387,15 +1388,15 @@ class _BillsListState extends ConsumerState<_BillsList> {
                                 children: [
                                   CircleAvatar(
                                     backgroundColor: paid
-                                        ? const Color(0xFFDFF4EA)
-                                        : const Color(0xFFFFE9DD),
+                                        ? context.colors.incomePale
+                                        : context.colors.warnPale,
                                     child: Icon(
                                       paid
                                           ? Icons.check
                                           : Icons.notifications_none,
                                       color: paid
-                                          ? const Color(0xFF0E7C66)
-                                          : const Color(0xFFD35D2A),
+                                          ? context.colors.income
+                                          : context.colors.warn,
                                     ),
                                   ),
                                   const SizedBox(width: 14),
@@ -1453,7 +1454,7 @@ class _BillsListState extends ConsumerState<_BillsList> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增繳款' : '編輯繳款'),
           content: SizedBox(
             width: 420,
@@ -1542,7 +1543,7 @@ class _BillsListState extends ConsumerState<_BillsList> {
       context: context,
       builder: (dialogContext) {
         final payments = store.billPayments(bill.id);
-        return AlertDialog(
+        return KgzDialog(
           title: Text(
             '${store.cardById(bill.cardId)?.name ?? '信用卡'} ${bill.month}',
           ),

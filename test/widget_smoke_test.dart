@@ -2174,8 +2174,9 @@ void main() {
     final netWorthTop = tester.getTopLeft(find.text('淨資產'));
     final incomeTop = tester.getTopLeft(find.text('本期收入'));
     final expenseTop = tester.getTopLeft(find.text('本期支出'));
-    expect(incomeTop.dy, netWorthTop.dy);
-    expect(expenseTop.dy, greaterThan(netWorthTop.dy));
+    // 淨資產 is the full-width hero card; the other figures share a row below it.
+    expect(incomeTop.dy, greaterThan(netWorthTop.dy));
+    expect(expenseTop.dy, incomeTop.dy);
     final reportTabs = find.byWidgetPredicate(
       (widget) => widget is SegmentedButton,
     );

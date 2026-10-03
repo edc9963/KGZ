@@ -1,0 +1,58 @@
+{
+  "runId": "kgz-fintech-redesign-2026-10-02",
+  "fileKey": "R9DmFgo0pEp5wKIh3iYrdA",
+  "fileUrl": "https://www.figma.com/design/R9DmFgo0pEp5wKIh3iYrdA",
+  "scope": "dual-theme tokens, reusable components, and four mobile fintech screens",
+  "step": "validated",
+  "entities": {
+    "page": "0:1",
+    "root": "6:79",
+    "sections": {
+      "header": "6:80",
+      "screens": "6:81",
+      "components": "6:82"
+    },
+    "collections": {
+      "primitives": "VariableCollectionId:6:2",
+      "lightColors": "VariableCollectionId:6:3",
+      "darkColors": "VariableCollectionId:6:4",
+      "spacing": "VariableCollectionId:6:5",
+      "radius": "VariableCollectionId:6:6"
+    },
+    "componentSets": {
+      "categoryChip": "7:12",
+      "keypadKey": "7:23",
+      "primaryAction": "7:30",
+      "budgetProgress": "7:45"
+    },
+    "screens": {
+      "dashboardLight": "8:7",
+      "quickEntryLight": "8:85",
+      "dashboardDark": "8:145",
+      "quickEntryDark": "8:223"
+    }
+  },
+  "validation": {
+    "descendantCount": 326,
+    "componentSets": 4,
+    "componentVariants": 16,
+    "instances": 34,
+    "variables": 63,
+    "textStyles": 7,
+    "effectStyles": 2,
+    "fontFamilies": ["Noto Sans TC"],
+    "imageNodes": 0,
+    "placeholders": 0,
+    "detachedInstances": 0
+  },
+  "completedSteps": [
+    "code-and-figma-discovery",
+    "library-search",
+    "foundations",
+    "components",
+    "screen-composition",
+    "structural-validation",
+    "visual-validation"
+  ],
+  "pendingValidations": []
+}
