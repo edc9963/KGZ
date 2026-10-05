@@ -800,6 +800,47 @@ void main() {
     expect(find.text('沒有符合條件的消費'), findsNothing);
   });
 
+  testWidgets('same-day records share one date header', (tester) async {
+    final now = DateTime.now();
+    Expense expense(String id, String item, int hour) => Expense(
+      id: id,
+      userId: 'user',
+      date: DateTime(now.year, now.month, now.day, hour),
+      amountMinor: 10000,
+      paymentMethod: PaymentMethod.cash,
+      item: item,
+      category: '餐飲',
+      accountId: 'account',
+      merchant: '',
+      note: '',
+      isNecessary: true,
+    );
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(
+          expenses: [expense('lunch', '午餐', 0), expense('dinner', '晚餐', 0)],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: ExpensesPage()),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('午餐'), findsOneWidget);
+    expect(find.text('晚餐'), findsOneWidget);
+    expect(find.text('今天'), findsOneWidget);
+  });
+
   testWidgets('import preview can remove self and last person then add again', (
     tester,
   ) async {

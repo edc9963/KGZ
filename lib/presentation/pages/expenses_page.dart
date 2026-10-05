@@ -477,17 +477,18 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
     AppStore store,
     List<TransactionDisplayRecord> records,
   ) {
-    DateTime? previousDate;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          for (final record in records) ...[
-            if (previousDate == null ||
-                !DateUtils.isSameDay(previousDate, record.date))
+          // Compare with the previous record while building the list: a
+          // Builder runs later, so tracking the date inside it came too late
+          // and every row got its own header.
+          for (final (index, record) in records.indexed) ...[
+            if (index == 0 ||
+                !DateUtils.isSameDay(records[index - 1].date, record.date))
               Builder(
                 builder: (context) {
-                  previousDate = record.date;
                   return Container(
                     width: double.infinity,
                     padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
