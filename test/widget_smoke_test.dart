@@ -51,8 +51,9 @@ Future<void> enterMoneyFieldValue(
   // Scope every button lookup to the calculator's own subtree so a digit
   // that also happens to appear as plain text elsewhere on the underlying
   // page (behind the sheet/dialog) can't be mistaken for a keypad button.
-  Finder calculatorRoot() =>
-      find.ancestor(of: find.text('小算盤'), matching: find.byType(SafeArea)).first;
+  Finder calculatorRoot() => find
+      .ancestor(of: find.text('小算盤'), matching: find.byType(SafeArea))
+      .first;
   Future<void> pressButton(String label) async {
     await tester.tap(
       find.descendant(of: calculatorRoot(), matching: find.text(label)).first,
@@ -498,12 +499,15 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp(theme: buildAppTheme(Brightness.light), home: const LoginPage()),
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const LoginPage(),
+        ),
       ),
     );
     expect(find.text('歡迎使用快記帳'), findsOneWidget);
     expect(find.text('使用 LINE 登入'), findsOneWidget);
-    expect(find.textContaining('Supabase Custom OIDC'), findsOneWidget);
+    expect(find.textContaining('Supabase Custom OIDC'), findsNothing);
     expect(auth.signInCalls, 0);
   });
 
@@ -527,7 +531,7 @@ void main() {
 
     expect(auth.signInCalls, 1);
     expect(auth.lastReturnPath, '/dashboard');
-    expect(find.textContaining('正在從 LINE 官方帳號安全登入'), findsOneWidget);
+    expect(find.textContaining('正在透過 LINE 登入'), findsOneWidget);
   });
 
   testWidgets('failed automatic LINE login waits for a manual retry', (
@@ -1338,7 +1342,7 @@ void main() {
       ),
     );
 
-    expect(find.text('尚未對帳', findRichText: true), findsWidgets);
+    expect(find.textContaining('尚未對帳', findRichText: true), findsWidgets);
     final row = find.ancestor(
       of: find.text('彰銀'),
       matching: find.byType(ListTile),
@@ -1426,10 +1430,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextField, '實際持有數量'),
-      '1100',
-    );
+    await tester.enterText(find.widgetWithText(TextField, '實際持有數量'), '1100');
     await tester.pumpAndSettle();
     expect(find.textContaining('數量差 +100 單位'), findsOneWidget);
     await tester.tap(find.text('確認並調整'));
@@ -1660,7 +1661,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp.router(theme: buildAppTheme(Brightness.light), routerConfig: router),
+        child: MaterialApp.router(
+          theme: buildAppTheme(Brightness.light),
+          routerConfig: router,
+        ),
       ),
     );
 
@@ -1944,6 +1948,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      if (width < 600) {
+        // Phones list holdings first and keep the charts collapsed.
+        expect(find.byKey(const ValueKey('investment-charts')), findsNothing);
+        final toggle = find.byKey(const ValueKey('investment-charts-toggle'));
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+      }
       expect(find.byKey(const ValueKey('investment-charts')), findsOneWidget);
       expect(find.byType(PieChart), findsOneWidget);
       expect(find.byType(BarChart), findsOneWidget);

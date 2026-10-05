@@ -43,7 +43,7 @@ const _workspaceTabs = <int, List<_Destination>>{
   ],
 };
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({required this.navigationShell, super.key});
 
   // The branches configured in `main.dart`'s `StatefulShellRoute
@@ -53,6 +53,19 @@ class AppShell extends ConsumerWidget {
   // sidebar tabs preserve each destination's state and widget tree instead
   // of tearing it down and rebuilding it on every tap.
   final StatefulNavigationShell navigationShell;
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  final _mobileActions = ValueNotifier<Map<String, Widget?>>({});
+
+  @override
+  void dispose() {
+    _mobileActions.dispose();
+    super.dispose();
+  }
 
   int _indexFor(String path) {
     final index = switch (path) {
@@ -123,7 +136,7 @@ class AppShell extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final path = GoRouterState.of(context).uri.path;
     final selected = _indexFor(path);
     final width = MediaQuery.sizeOf(context).width;
@@ -142,14 +155,14 @@ class AppShell extends ConsumerWidget {
                 ? 32
                 : tablet
                 ? 24
-                : 16,
+                : 24,
             tablet || desktop ? 24 : 16,
             desktop
                 ? 32
                 : tablet
                 ? 24
-                : 16,
-            desktop || tablet ? 32 : 110,
+                : 24,
+            desktop || tablet ? 32 : 24,
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1440),
@@ -159,6 +172,8 @@ class AppShell extends ConsumerWidget {
                 // The workspace tabs render inside the page, under its
                 // PageHeader (see WorkspaceScope), matching the Figma layout.
                 WorkspaceScope(
+                  mobileActions: desktop || tablet ? null : _mobileActions,
+                  path: path,
                   label: _destinations[selected].label,
                   tabs: _workspaceTabs.containsKey(selected)
                       ? _WorkspaceNavigation(
@@ -166,7 +181,7 @@ class AppShell extends ConsumerWidget {
                           currentPath: path,
                         )
                       : null,
-                  child: navigationShell,
+                  child: widget.navigationShell,
                 ),
               ],
             ),
@@ -236,22 +251,19 @@ class AppShell extends ConsumerWidget {
       );
     }
 
-    const mobileDestinations = [0, 1, 2, 3];
+    const mobileDestinations = [0, 1, 2, 3, 4];
     final mobileIndex = mobileDestinations.indexOf(selected);
+    // No drawer on phones: the bottom bar already reaches every workspace and
+    // each page shows its own sub-tabs, so a hamburger menu only duplicated
+    // them. The one thing it added — the balance mask — lives in the bar.
+    final mask = store.data.settings.maskBalances;
     return Scaffold(
       backgroundColor: context.colors.mobileBackground,
-      drawer: _MobileDrawer(
-        selectedIndex: selected,
-        store: store,
-        onSelected: (path) {
-          HapticFeedback.selectionClick();
-          Navigator.pop(context);
-          context.go(path);
-        },
-      ),
       appBar: AppBar(
+        toolbarHeight: 44,
+        automaticallyImplyLeading: false,
         backgroundColor: context.colors.mobileBackground,
-        titleSpacing: 0,
+        titleSpacing: 16,
         title: const Row(
           children: [
             BrandIcon(size: 28, borderRadius: 8),
@@ -260,6 +272,18 @@ class AppShell extends ConsumerWidget {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: mask ? '顯示金額' : '隱藏金額',
+            icon: Icon(
+              mask ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              size: 20,
+            ),
+            onPressed: store.canWrite
+                ? () => store.updateSettings(
+                    store.data.settings.copyWith(maskBalances: !mask),
+                  )
+                : null,
+          ),
           Tooltip(
             message: _syncLabel(store),
             child: Padding(
@@ -270,24 +294,61 @@ class AppShell extends ConsumerWidget {
         ],
       ),
       body: _withSyncState(context, store, content),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: store.canWrite ? () => showQuickEntry(context) : null,
-        icon: const Icon(Icons.add),
-        label: const Text('快速記帳'),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
-        onDestinationSelected: (index) {
-          HapticFeedback.selectionClick();
-          context.go(_destinations[mobileDestinations[index]].path);
+      bottomNavigationBar: ValueListenableBuilder<Map<String, Widget?>>(
+        valueListenable: _mobileActions,
+        builder: (context, actions, _) {
+          final action =
+              actions[path] ??
+              (path == '/dashboard'
+                  ? FilledButton.icon(
+                      onPressed: store.canWrite
+                          ? () => showQuickEntry(context)
+                          : null,
+                      icon: const Icon(Icons.add),
+                      label: const Text('快速記帳'),
+                    )
+                  : null);
+          final children = action is Wrap
+              ? action.children
+              : action is Row
+              ? action.children
+              : <Widget>[if (action != null) action];
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (action != null &&
+                  MediaQuery.viewInsetsOf(context).bottom == 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < children.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        if (children[i] is ButtonStyleButton)
+                          Expanded(child: children[i])
+                        else
+                          children[i],
+                      ],
+                    ],
+                  ),
+                ),
+              NavigationBar(
+                selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
+                onDestinationSelected: (index) {
+                  HapticFeedback.selectionClick();
+                  context.go(_destinations[mobileDestinations[index]].path);
+                },
+                destinations: [
+                  for (final index in mobileDestinations)
+                    NavigationDestination(
+                      icon: Icon(_destinations[index].icon),
+                      label: _destinations[index].label,
+                    ),
+                ],
+              ),
+            ],
+          );
         },
-        destinations: [
-          for (final index in mobileDestinations)
-            NavigationDestination(
-              icon: Icon(_destinations[index].icon),
-              label: _destinations[index].label,
-            ),
-        ],
       ),
     );
   }
@@ -310,7 +371,11 @@ class _WorkspaceNavigation extends StatelessWidget {
       child: KgzTabBar<String>(
         tabs: [
           for (final destination in destinations)
-            (destination.path, destination.label, destination.icon),
+            (
+              destination.path,
+              destination.label,
+              MediaQuery.sizeOf(context).width < 600 ? null : destination.icon,
+            ),
         ],
         selected:
             destinations
@@ -322,76 +387,6 @@ class _WorkspaceNavigation extends StatelessWidget {
           HapticFeedback.selectionClick();
           context.go(path);
         },
-      ),
-    ),
-  );
-}
-
-class _MobileDrawer extends StatelessWidget {
-  const _MobileDrawer({
-    required this.selectedIndex,
-    required this.store,
-    required this.onSelected,
-  });
-
-  final int selectedIndex;
-  final AppStore store;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) => Drawer(
-    child: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, 20),
-            child: Row(
-              children: [
-                BrandIcon(size: 42, borderRadius: 11),
-                SizedBox(width: 12),
-                Text(
-                  '快記帳',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
-          ),
-          for (var index = 0; index < _destinations.length; index++) ...[
-            ListTile(
-              selected: selectedIndex == index,
-              leading: Icon(_destinations[index].icon),
-              title: Text(_destinations[index].label),
-              onTap: () => onSelected(_destinations[index].path),
-            ),
-            if (_workspaceTabs[index] case final tabs?)
-              for (final tab in tabs)
-                Padding(
-                  padding: const EdgeInsets.only(left: 24),
-                  child: ListTile(
-                    dense: true,
-                    leading: Icon(tab.icon, size: 20),
-                    title: Text(tab.label),
-                    onTap: () => onSelected(tab.path),
-                  ),
-                ),
-          ],
-          const Divider(),
-          SwitchListTile(
-            secondary: Icon(
-              store.data.settings.maskBalances
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-            ),
-            title: Text(store.data.settings.maskBalances ? '顯示金額' : '隱藏金額'),
-            value: store.data.settings.maskBalances,
-            onChanged: store.canWrite
-                ? (value) => store.updateSettings(
-                    store.data.settings.copyWith(maskBalances: value),
-                  )
-                : null,
-          ),
-        ],
       ),
     ),
   );

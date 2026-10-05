@@ -197,7 +197,9 @@ class OrdersManager {
       categoryId:
           _store.ledger.categoryById(order.selfExpenseCategoryId)?.id ??
           _store.ledger.categoryById('expense-food')?.id ??
-          _store.ledger.categoryByName('餐飲', BookkeepingCategoryKind.expense)?.id ??
+          _store.ledger
+              .categoryByName('餐飲', BookkeepingCategoryKind.expense)
+              ?.id ??
           _data.settings.defaultExpenseCategoryId,
       note: order.note,
       relatedEntityType: 'groupOrder',

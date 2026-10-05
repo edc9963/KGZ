@@ -22,14 +22,14 @@ class ReconciliationPage extends ConsumerWidget {
     final store = ref.watch(appStoreProvider);
     final mask = store.data.settings.maskBalances;
     final now = DateTime.now();
-    final accounts = store.data.accounts
+    final allAccounts = store.data.accounts
         .where(
           (item) => item.kind == FinancialAccountKind.asset && item.isActive,
         )
         .toList();
     final bills = _creditBills(store);
     final telecomPayments = _telecomPayments(store);
-    final products = _heldProducts(store);
+    final heldProducts = _heldProducts(store);
     final history = store.reconciliationHistory;
 
     bool isStaleTarget(ReconciliationTargetType type, String id) {
@@ -42,6 +42,16 @@ class ReconciliationPage extends ConsumerWidget {
     bool isStaleProduct(InvestmentProduct product) =>
         isStaleTarget(ReconciliationTargetType.investment, product.id);
 
+    // Items that need a check come first, so the rows to work on sit right
+    // under the summary instead of somewhere down the list.
+    final accounts = [
+      ...allAccounts.where(isStale),
+      ...allAccounts.where((item) => !isStale(item)),
+    ];
+    final products = [
+      ...heldProducts.where(isStaleProduct),
+      ...heldProducts.where((item) => !isStaleProduct(item)),
+    ];
     final staleCount =
         accounts.where(isStale).length + products.where(isStaleProduct).length;
     final uncheckedBills =
@@ -77,50 +87,53 @@ class ReconciliationPage extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const PageHeader(title: '對帳', subtitle: '核對銀行與信用卡的實際金額，差額自動調整並留下紀錄'),
-        const SizedBox(height: 24),
+        const PageHeader(title: '對帳'),
+        const SizedBox(height: 16),
         HeroMetricCard(
           label: '待對帳項目',
-          value: '$staleCount 個',
-          caption: '帳戶與投資超過 $_staleAfterDays 天未確認',
+          value: '${staleCount + uncheckedBills} 個',
+          caption: staleCount + uncheckedBills == 0
+              ? '帳戶、投資與帳單都已確認'
+              : '帳戶與投資 $staleCount 個超過 $_staleAfterDays 天未確認・帳單 $uncheckedBills 張未核對',
           icon: Icons.account_balance_outlined,
-          tone: staleCount > 0 ? context.colors.liability : null,
+          tone: staleCount + uncheckedBills > 0
+              ? context.colors.liability
+              : null,
         ),
-        const SizedBox(height: 12),
-        ResponsiveGrid(
-          minWidth: 210,
-          children: [
-            SummaryCard(
-              label: '待核對帳單',
-              value: '$uncheckedBills 張',
-              caption: '信用卡與電信帳單尚未核對',
-              icon: Icons.credit_card_outlined,
-              tone: uncheckedBills > 0 ? context.colors.liability : null,
-            ),
-            SummaryCard(
-              label: '本月調整差額',
-              value: _signedMoney(
-                monthAdjustments,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
+        const SizedBox(height: 8),
+        SecondaryMetrics(
+          child: ResponsiveGrid(
+            minWidth: 210,
+            children: [
+              SummaryCard(
+                label: '待核對帳單',
+                value: '$uncheckedBills 張',
+                caption: '信用卡與電信帳單尚未核對',
+                icon: Icons.credit_card_outlined,
+                tone: uncheckedBills > 0 ? context.colors.liability : null,
               ),
-              caption: '實際 − 帳面',
-              icon: Icons.difference_outlined,
-            ),
-            SummaryCard(
-              label: '最近對帳',
-              value: history.isEmpty ? '尚未對帳' : dateText(history.first.date),
-              caption: '共 ${history.length} 筆紀錄',
-              icon: Icons.fact_check_outlined,
-              tone: context.colors.asset,
-            ),
-          ],
+              SummaryCard(
+                label: '本月調整差額',
+                value: _signedMoney(
+                  monthAdjustments,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                caption: '實際 − 帳面',
+                icon: Icons.difference_outlined,
+              ),
+              SummaryCard(
+                label: '最近對帳',
+                value: history.isEmpty ? '尚未對帳' : dateText(history.first.date),
+                caption: '共 ${history.length} 筆紀錄',
+                icon: Icons.fact_check_outlined,
+                tone: context.colors.asset,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 28),
-        const _SectionTitle(
-          title: '帳戶餘額',
-          subtitle: '輸入網銀或錢包顯示的餘額，系統會計算差額並自動補登調整',
-        ),
+        const SizedBox(height: 20),
+        const _SectionTitle(title: '帳戶餘額', subtitle: '輸入實際餘額，差額會補登為調整'),
         const SizedBox(height: 12),
         if (accounts.isEmpty)
           const EmptyState(
@@ -146,11 +159,8 @@ class ReconciliationPage extends ConsumerWidget {
               ],
             ),
           ),
-        const SizedBox(height: 28),
-        const _SectionTitle(
-          title: '投資部位',
-          subtitle: '輸入券商顯示的持有數量（必要時含平均成本），差異會補一筆持倉快照',
-        ),
+        const SizedBox(height: 20),
+        const _SectionTitle(title: '投資部位', subtitle: '輸入實際持有數量，差異會補登為快照'),
         const SizedBox(height: 12),
         if (products.isEmpty)
           const EmptyState(
@@ -176,11 +186,8 @@ class ReconciliationPage extends ConsumerWidget {
               ],
             ),
           ),
-        const SizedBox(height: 28),
-        const _SectionTitle(
-          title: '帳單核對',
-          subtitle: '信用卡與電信帳單都會自動產生，拿到實際帳單後在這裡逐筆核對',
-        ),
+        const SizedBox(height: 20),
+        const _SectionTitle(title: '帳單核對', subtitle: '依銀行或電信帳單核對'),
         const SizedBox(height: 12),
         _BillsSection(
           store: store,
@@ -191,7 +198,7 @@ class ReconciliationPage extends ConsumerWidget {
           onReconcileTelecom: (payment) =>
               _showTelecomDialog(context, ref, payment),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
         const _SectionTitle(title: '對帳紀錄', subtitle: '撤銷帳戶、電信或投資對帳會一併移除它補登的調整'),
         const SizedBox(height: 12),
         if (history.isEmpty)
@@ -337,10 +344,7 @@ class ReconciliationPage extends ConsumerWidget {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: '實際持有數量',
-                        helperText: '券商 App 或對帳單上的股數／單位數',
-                      ),
+                      decoration: const InputDecoration(labelText: '實際持有數量'),
                       onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
@@ -367,7 +371,7 @@ class ReconciliationPage extends ConsumerWidget {
                       controller: note,
                       decoration: const InputDecoration(
                         labelText: '差異說明',
-                        helperText: '選填，例如：股票股利、零股、漏記交易',
+                        helperText: '選填：股利、零股或漏記交易',
                       ),
                     ),
                     if (error.isNotEmpty)
@@ -487,7 +491,7 @@ class ReconciliationPage extends ConsumerWidget {
                       controller: note,
                       decoration: const InputDecoration(
                         labelText: '差異說明',
-                        helperText: '選填，例如：漏記小額付款、月租費調整',
+                        helperText: '選填：漏記付款或月租調整',
                       ),
                     ),
                     if (error.isNotEmpty)
@@ -594,7 +598,6 @@ class ReconciliationPage extends ConsumerWidget {
                       autofocus: true,
                       decoration: InputDecoration(
                         labelText: '實際餘額（${account.currency}）',
-                        helperText: '網銀、存摺或錢包上看到的金額',
                       ),
                       onChanged: (_) => setState(() => error = ''),
                     ),
@@ -611,7 +614,7 @@ class ReconciliationPage extends ConsumerWidget {
                       controller: note,
                       decoration: const InputDecoration(
                         labelText: '差異說明',
-                        helperText: '選填，例如：利息、手續費、漏記消費',
+                        helperText: '選填：利息、手續費或漏記消費',
                       ),
                     ),
                     if (error.isNotEmpty)
@@ -1215,6 +1218,7 @@ class _BillsSectionState extends State<_BillsSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SegmentedButton<bool>(
+          showSelectedIcon: false,
           segments: const [
             ButtonSegment(value: true, label: Text('待核對')),
             ButtonSegment(value: false, label: Text('全部')),

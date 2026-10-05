@@ -46,23 +46,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const PageHeader(title: '設定', subtitle: '記帳偏好、分類、同步與資料管理'),
+        const PageHeader(title: '設定'),
         const SizedBox(height: 14),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SegmentedButton<_SettingsTab>(
-            segments: const [
-              ButtonSegment(
-                value: _SettingsTab.preferences,
-                label: Text('記帳偏好'),
-              ),
-              ButtonSegment(value: _SettingsTab.categories, label: Text('分類')),
-              ButtonSegment(value: _SettingsTab.sync, label: Text('通知與同步')),
-              ButtonSegment(value: _SettingsTab.data, label: Text('資料管理')),
-            ],
-            selected: {_tab},
-            onSelectionChanged: (value) => setState(() => _tab = value.single),
-          ),
+        KgzTabBar<_SettingsTab>(
+          tabs: const [
+            (_SettingsTab.preferences, '偏好', null),
+            (_SettingsTab.categories, '分類', null),
+            (_SettingsTab.sync, '同步', null),
+            (_SettingsTab.data, '資料', null),
+          ],
+          selected: _tab,
+          onSelected: (value) => setState(() => _tab = value),
         ),
         const SizedBox(height: 22),
         if (_tab == _SettingsTab.preferences)
@@ -106,7 +100,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               SwitchListTile(
                 title: const Text('遮罩財務金額'),
-                subtitle: const Text('在首頁與清單隱藏敏感金額'),
                 value: settings.maskBalances,
                 onChanged: (value) => store.updateSettings(
                   settings.copyWith(maskBalances: value),
@@ -526,6 +519,7 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SegmentedButton<BookkeepingCategoryKind>(
+                showSelectedIcon: false,
                 segments: const [
                   ButtonSegment(
                     value: BookkeepingCategoryKind.expense,

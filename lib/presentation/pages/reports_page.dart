@@ -89,8 +89,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         PageHeader(
+          dockAction: false,
           title: '財務報表',
-          subtitle: '管理用報表・不等同 IFRS／GAAP 法定財報',
           action: IconButton.filledTonal(
             tooltip: mask ? '顯示金額' : '隱藏金額',
             onPressed: () => store.updateSettings(
@@ -145,6 +145,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           _ReportTab.profitLoss => _profitLoss(snapshot, currency, mask),
           _ReportTab.cashFlow => _cashFlow(snapshot, currency, mask),
         },
+        const SizedBox(height: 16),
+        const ExpansionTile(
+          title: Text('報表說明'),
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text('供個人財務管理使用，非 IFRS／GAAP 法定財報。'),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -622,16 +632,21 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                     SizedBox(width: mobile ? 8 : 12),
                     SizedBox(
                       width: mobile ? 82 : 112,
-                      child: Text(
-                        mask
-                            ? '$currency ••••••'
-                            : '${row.$2 >= 0 ? '+' : '-'}${mobile ? compactMoneyText(row.$2.abs(), currency: currency) : moneyText(row.$2.abs(), currency: currency)}',
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          color: row.$2 >= 0
-                              ? context.colors.income
-                              : context.colors.expense,
-                          fontWeight: FontWeight.w700,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          mask
+                              ? '$currency ••••••'
+                              : '${row.$2 >= 0 ? '+' : '-'}${mobile ? compactMoneyText(row.$2.abs(), currency: currency) : moneyText(row.$2.abs(), currency: currency)}',
+                          textAlign: TextAlign.end,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: row.$2 >= 0
+                                ? context.colors.income
+                                : context.colors.expense,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
@@ -645,14 +660,22 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 '本期現金變動',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              trailing: Text(
-                moneyText(data.cashChange, currency: currency, mask: mask),
-                style: TextStyle(
-                  color: data.cashChange >= 0
-                      ? context.colors.asset
-                      : context.colors.expense,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
+              trailing: SizedBox(
+                width: mobile ? 140 : 200,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    moneyText(data.cashChange, currency: currency, mask: mask),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: data.cashChange >= 0
+                          ? context.colors.asset
+                          : context.colors.expense,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
               ),
             ),

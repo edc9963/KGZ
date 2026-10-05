@@ -68,6 +68,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         PageHeader(
+          dockAction: false,
           title: '財務總覽',
           subtitle: DateFormat('yyyy 年 M 月', 'zh_TW').format(DateTime.now()),
           action: Row(

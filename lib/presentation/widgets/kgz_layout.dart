@@ -18,11 +18,15 @@ class WorkspaceScope extends InheritedWidget {
     required this.label,
     required super.child,
     this.tabs,
+    this.mobileActions,
+    this.path = '',
     super.key,
   });
 
   final String label;
   final Widget? tabs;
+  final ValueNotifier<Map<String, Widget?>>? mobileActions;
+  final String path;
 
   static WorkspaceScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<WorkspaceScope>();
@@ -31,7 +35,9 @@ class WorkspaceScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(WorkspaceScope oldWidget) =>
-      label != oldWidget.label || tabs != oldWidget.tabs;
+      label != oldWidget.label ||
+      tabs != oldWidget.tabs ||
+      path != oldWidget.path;
 }
 
 /// Drop-in replacement for [AlertDialog] used by every form in the app.
@@ -185,7 +191,7 @@ class HeroMetricCard extends StatelessWidget {
     final colors = context.colors;
     final accent = tone ?? valueColor;
     final content = Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -226,7 +232,7 @@ class HeroMetricCard extends StatelessWidget {
                 value,
                 maxLines: 1,
                 style: TextStyle(
-                  fontSize: 34,
+                  fontSize: 32,
                   height: 1.2,
                   fontWeight: FontWeight.w900,
                   color: accent ?? colors.text,
@@ -337,6 +343,25 @@ class SectionCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Keep secondary figures available without pushing the mobile list off screen.
+class SecondaryMetrics extends StatelessWidget {
+  const SecondaryMetrics({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width >= AppBreakpoints.mobile) return child;
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 12),
+      title: const Text('更多摘要', style: TextStyle(fontSize: 13)),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      children: [child],
+    );
+  }
 }
 
 enum PillTone { ok, warn, action, muted, danger }
@@ -485,7 +510,7 @@ class KgzTabBar<T> extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: colors.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: colors.border),
         boxShadow: [
           BoxShadow(

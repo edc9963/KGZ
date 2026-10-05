@@ -92,7 +92,6 @@ class OrdersPage extends ConsumerWidget {
       children: [
         PageHeader(
           title: '代訂收款',
-          subtitle: '刷整筆、只算自己的支出；同事款項逐筆追蹤',
           action: Wrap(
             spacing: 8,
             children: [
@@ -128,21 +127,23 @@ class OrdersPage extends ConsumerWidget {
           icon: Icons.handshake_outlined,
         ),
         const SizedBox(height: 12),
-        ResponsiveGrid(
-          children: [
-            SummaryCard(
-              label: '待確認',
-              value:
-                  '${orders.expand((item) => item.participants).where((item) => item.status == CollectionStatus.pending).length} 人',
-              icon: Icons.hourglass_top_rounded,
-              tone: context.colors.warn,
-            ),
-            SummaryCard(
-              label: '代訂筆數',
-              value: '${orders.length} 筆',
-              icon: Icons.receipt_long_outlined,
-            ),
-          ],
+        SecondaryMetrics(
+          child: ResponsiveGrid(
+            children: [
+              SummaryCard(
+                label: '待確認',
+                value:
+                    '${orders.expand((item) => item.participants).where((item) => item.status == CollectionStatus.pending).length} 人',
+                icon: Icons.hourglass_top_rounded,
+                tone: context.colors.warn,
+              ),
+              SummaryCard(
+                label: '代訂筆數',
+                value: '${orders.length} 筆',
+                icon: Icons.receipt_long_outlined,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 18),
         if (orders.isEmpty)
@@ -164,14 +165,25 @@ class OrdersPage extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(20),
                   onTap: () => context.go('/orders/${order.id}'),
                   child: Padding(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 24,
-                          child: Text('${order.participants.length}'),
+                        Container(
+                          width: 38,
+                          height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: context.colors.accentPale,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${order.participants.length}',
+                            style: TextStyle(
+                              color: context.colors.accentPaleText,
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,6 +197,10 @@ class OrdersPage extends ConsumerWidget {
                               Text(
                                 '${dateText(order.date)}・${order.platform}・'
                                 '${store.cardById(order.cardId)?.name ?? '信用卡'}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: context.colors.textMuted,
+                                ),
                               ),
                             ],
                           ),
@@ -463,6 +479,11 @@ class OrdersPage extends ConsumerWidget {
         store.data.cards.where((card) => card.isCredit).firstOrNull?.id;
     final splitMethod = existing?.splitMethod ?? SplitMethod.equal;
     var editorStep = 0;
+    var showOtherFees = [
+      delivery,
+      service,
+      discount,
+    ].any((controller) => parseMoney(controller.text) != 0);
     var includeSelfInDeliveryFee = existing?.includeSelfInDeliveryFee ?? false;
     var includeSelfInServiceFee = existing?.includeSelfInServiceFee ?? false;
     // Which category the order's own (isSelf) consumption is grouped under
@@ -761,11 +782,13 @@ class OrdersPage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                   ],
+                  // Step 1 keeps every field on the same two-column grid;
+                  // the optional fees sit behind 「其他費用」 so the form only
+                  // asks for the card total up front.
                   if (editorStep == 0)
                     Row(
                       children: [
                         Expanded(
-                          flex: 2,
                           child: TextField(
                             controller: name,
                             decoration: const InputDecoration(
@@ -783,51 +806,6 @@ class OrdersPage extends ConsumerWidget {
                           ),
                         ),
                       ],
-                    ),
-                  if (editorStep == 0) const SizedBox(height: 4),
-                  if (editorStep == 0)
-                    Builder(
-                      builder: (context) {
-                        final itemTotal = drafts.fold<int>(
-                          0,
-                          (sum, draft) => sum + parseMoney(draft.amount.text),
-                        );
-                        final calculated =
-                            itemTotal +
-                            parseMoney(delivery.text) +
-                            parseMoney(service.text) -
-                            parseMoney(discount.text);
-                        final entered = parseMoney(total.text);
-                        final matches = entered == calculated && calculated > 0;
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '明細計算：${moneyText(calculated)}'
-                                '${matches ? '（金額一致）' : ''}',
-                                style: TextStyle(
-                                  color: matches
-                                      ? context.colors.income
-                                      : context.colors.textMuted,
-                                  fontWeight: matches
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: calculated <= 0
-                                  ? null
-                                  : () => setState(() {
-                                      total.text = (calculated / 100)
-                                          .toStringAsFixed(2);
-                                      error = null;
-                                    }),
-                              child: const Text('帶入總刷卡金額'),
-                            ),
-                          ],
-                        );
-                      },
                     ),
                   if (editorStep == 0) const SizedBox(height: 12),
                   if (editorStep == 0)
@@ -907,7 +885,6 @@ class OrdersPage extends ConsumerWidget {
                               : null,
                           decoration: const InputDecoration(
                             labelText: '本人消費分類',
-                            helperText: '此代訂中屬於自己（非代墊）的消費，記帳分類要歸到哪一類',
                           ),
                           items: [
                             for (final category in items)
@@ -937,56 +914,162 @@ class OrdersPage extends ConsumerWidget {
                     ),
                   if (editorStep == 0) const SizedBox(height: 12),
                   if (editorStep == 0)
+                    TextField(
+                      controller: total,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(labelText: '總刷卡金額'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  if (editorStep == 0)
                     Builder(
-                      // Deliberately reading MediaQuery instead of using a
-                      // LayoutBuilder here: this sits inside an AlertDialog
-                      // whose content column can be asked for its intrinsic
-                      // width (e.g. by the dialog's own sizing/animation),
-                      // and LayoutBuilder's render object throws
-                      // "does not support returning intrinsic dimensions"
-                      // whenever that happens. MediaQuery is a plain
-                      // InheritedWidget read, so it doesn't participate in
-                      // the intrinsic-size protocol at all. The width read
-                      // here is the screen width rather than this widget's
-                      // exact local constraint, which can slightly
-                      // overestimate available space on very narrow dialogs
-                      // -- harmless, since Wrap still reflows on its real
-                      // incoming constraints regardless of this estimate.
                       builder: (context) {
-                        final compact = MediaQuery.sizeOf(context).width < 480;
-                        final columns = compact ? 2 : 4;
-                        const spacing = 8.0;
-                        final fieldWidth =
-                            (MediaQuery.sizeOf(context).width -
-                                spacing * (columns - 1)) /
-                            columns;
-                        return Wrap(
-                          spacing: spacing,
-                          runSpacing: 8,
+                        final itemTotal = drafts.fold<int>(
+                          0,
+                          (sum, draft) => sum + parseMoney(draft.amount.text),
+                        );
+                        final calculated =
+                            itemTotal +
+                            parseMoney(delivery.text) +
+                            parseMoney(service.text) -
+                            parseMoney(discount.text);
+                        final entered = parseMoney(total.text);
+                        final matches = entered == calculated && calculated > 0;
+                        return Row(
                           children: [
-                            for (final field in [
-                              ('總刷卡金額', total),
-                              ('外送費', delivery),
-                              ('服務費', service),
-                              ('折扣', discount),
-                            ])
-                              SizedBox(
-                                width: fieldWidth,
-                                child: TextField(
-                                  controller: field.$2,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: InputDecoration(
-                                    labelText: field.$1,
-                                  ),
-                                  onChanged: (_) => setState(() {
-                                    if (field.$1 == '折扣') syncDiscounts();
-                                  }),
+                            Expanded(
+                              child: Text(
+                                '明細計算：${moneyText(calculated)}'
+                                '${matches ? '（金額一致）' : ''}',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: matches
+                                      ? context.colors.income
+                                      : context.colors.textMuted,
+                                  fontWeight: matches
+                                      ? FontWeight.w700
+                                      : FontWeight.normal,
                                 ),
                               ),
+                            ),
+                            TextButton(
+                              onPressed: calculated <= 0
+                                  ? null
+                                  : () => setState(() {
+                                      total.text = (calculated / 100)
+                                          .toStringAsFixed(2);
+                                      error = null;
+                                    }),
+                              child: const Text('帶入總刷卡金額'),
+                            ),
                           ],
+                        );
+                      },
+                    ),
+                  if (editorStep == 0)
+                    Builder(
+                      builder: (context) {
+                        final fees = [
+                          ('外送費', delivery),
+                          ('服務費', service),
+                          ('折扣', discount),
+                        ];
+                        final summary = [
+                          for (final (label, controller) in fees)
+                            if (parseMoney(controller.text) != 0)
+                              '$label ${moneyText(parseMoney(controller.text))}',
+                        ];
+                        return Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: context.colors.border),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              InkWell(
+                                key: const ValueKey('order-other-fees'),
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () => setState(
+                                  () => showOtherFees = !showOtherFees,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Text(
+                                        '其他費用',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          summary.isEmpty
+                                              ? '外送費、服務費、折扣'
+                                              : summary.join('・'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: context.colors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        showOtherFees
+                                            ? Icons.expand_less
+                                            : Icons.expand_more,
+                                        color: context.colors.textMuted,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (showOtherFees)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    0,
+                                    12,
+                                    12,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      for (
+                                        var index = 0;
+                                        index < fees.length;
+                                        index++
+                                      ) ...[
+                                        if (index > 0) const SizedBox(width: 8),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: fees[index].$2,
+                                            keyboardType:
+                                                const TextInputType.numberWithOptions(
+                                                  decimal: true,
+                                                ),
+                                            decoration: InputDecoration(
+                                              labelText: fees[index].$1,
+                                            ),
+                                            onChanged: (_) => setState(() {
+                                              if (fees[index].$1 == '折扣') {
+                                                syncDiscounts();
+                                              }
+                                            }),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
                         );
                       },
                     ),

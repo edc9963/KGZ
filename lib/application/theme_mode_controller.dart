@@ -6,8 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// does not need to round-trip through the cloud-synced [AppData.settings]
 /// like other account preferences do.
 class ThemeModeController extends ChangeNotifier {
-  ThemeModeController(this._preferences, {ThemeMode initialMode = ThemeMode.system})
-    : _mode = initialMode;
+  ThemeModeController(
+    this._preferences, {
+    ThemeMode initialMode = ThemeMode.system,
+  }) : _mode = initialMode;
 
   static const _prefsKey = 'theme_mode';
 

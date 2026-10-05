@@ -31,6 +31,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
   bool _editorOpened = false;
   bool _marketUpgradeChecked = false;
 
+  /// null until the user toggles the charts: then they follow the screen
+  /// width (collapsed on phones, open on wider screens).
+  bool? _chartsExpanded;
+
   @override
   void initState() {
     super.initState();
@@ -142,12 +146,12 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
         .where((product) => product.currentPriceMinor <= 0)
         .length;
     final pricedHoldingCount = heldProducts.length - unpricedHoldingCount;
+    final phone = MediaQuery.sizeOf(context).width < AppBreakpoints.mobile;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         PageHeader(
           title: '投資管理',
-          subtitle: '交易自動推導庫存，也可透過盤點調整校正',
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -195,24 +199,26 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               : '$unpricedHoldingCount 項持倉尚待補目前價格',
         ),
         const SizedBox(height: 12),
-        ResponsiveGrid(
-          children: [
-            SummaryCard(
-              label: '持有商品',
-              value:
-                  '${store.holdings.values.where((item) => item.quantityMicros > 0).length} 項',
-              icon: Icons.inventory_2_outlined,
-            ),
-            SummaryCard(
-              label: '交易紀錄',
-              value: '${store.data.investmentTransactions.length} 筆',
-              icon: Icons.swap_horiz_rounded,
-            ),
-          ],
+        SecondaryMetrics(
+          child: ResponsiveGrid(
+            children: [
+              SummaryCard(
+                label: '持有商品',
+                value:
+                    '${store.holdings.values.where((item) => item.quantityMicros > 0).length} 項',
+                icon: Icons.inventory_2_outlined,
+              ),
+              SummaryCard(
+                label: '交易紀錄',
+                value: '${store.data.investmentTransactions.length} 筆',
+                icon: Icons.swap_horiz_rounded,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 18),
-        const InvestmentCharts(key: ValueKey('investment-charts')),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
+        // Holdings come first; the charts follow and start collapsed on
+        // phones, where a pie chart alone used to fill most of the screen.
         Card(
           child: TabBar(
             controller: _tabs,
@@ -223,25 +229,31 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 620,
-          child: TabBarView(
-            controller: _tabs,
-            children: [
-              _HoldingsList(
-                onCreate: () => _showCreateHoldingDialog(context),
-                onAdjust: (id) => _showAdjustmentDialog(context, id),
-              ),
-              _TransactionsList(
-                onEdit: (item) => _showTransactionDialog(context, item),
-              ),
-              _ProductsList(
-                onEdit: (item) => _showProductDialog(context, item),
-              ),
-            ],
-          ),
+        const SizedBox(height: 12),
+        ListenableBuilder(
+          listenable: _tabs,
+          builder: (context, _) => switch (_tabs.index) {
+            1 => _TransactionsList(
+              onEdit: (item) => _showTransactionDialog(context, item),
+            ),
+            2 => _ProductsList(
+              onEdit: (item) => _showProductDialog(context, item),
+            ),
+            _ => _HoldingsList(
+              onCreate: () => _showCreateHoldingDialog(context),
+              onAdjust: (id) => _showAdjustmentDialog(context, id),
+            ),
+          },
         ),
+        const SizedBox(height: 18),
+        if (pricedHoldingCount == 0)
+          const InvestmentCharts(key: ValueKey('investment-charts'))
+        else
+          _ChartsSection(
+            expanded: _chartsExpanded ?? !phone,
+            onToggle: () =>
+                setState(() => _chartsExpanded = !(_chartsExpanded ?? !phone)),
+          ),
       ],
     );
   }
@@ -313,6 +325,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SegmentedButton<_HoldingCreationMode>(
+                      showSelectedIcon: false,
                       segments: const [
                         ButtonSegment(
                           value: _HoldingCreationMode.snapshot,
@@ -339,6 +352,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                     ),
                     const SizedBox(height: 16),
                     SegmentedButton<bool>(
+                      showSelectedIcon: false,
                       segments: const [
                         ButtonSegment(
                           value: true,
@@ -1226,6 +1240,8 @@ class _HoldingsList extends ConsumerWidget {
       );
     }
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: products.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -1349,6 +1365,8 @@ class _TransactionsList extends ConsumerWidget {
       );
     }
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: items.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
@@ -1407,6 +1425,8 @@ class _ProductsList extends ConsumerWidget {
       );
     }
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: store.data.products.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
@@ -1519,5 +1539,58 @@ class _MarketAutocomplete extends StatelessWidget {
         ),
       );
     },
+  );
+}
+
+/// "投資分析" header that shows or hides the allocation / profit / trend
+/// charts below the holdings.
+class _ChartsSection extends StatelessWidget {
+  const _ChartsSection({required this.expanded, required this.onToggle});
+
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: const ValueKey('investment-charts-toggle'),
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.insights_outlined, color: context.colors.accent),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    '投資分析',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  expanded ? '收合' : '配置・損益・走勢',
+                  style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 12.5,
+                  ),
+                ),
+                Icon(
+                  expanded ? Icons.expand_less : Icons.expand_more,
+                  color: context.colors.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      if (expanded) ...[
+        const SizedBox(height: 12),
+        const InvestmentCharts(key: ValueKey('investment-charts')),
+      ],
+    ],
   );
 }

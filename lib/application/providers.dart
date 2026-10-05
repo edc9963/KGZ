@@ -8,6 +8,7 @@ final appStoreProvider = ChangeNotifierProvider<AppStore>(
 );
 
 final themeModeControllerProvider = ChangeNotifierProvider<ThemeModeController>(
-  (ref) =>
-      throw UnimplementedError('ThemeModeController must be overridden at startup'),
+  (ref) => throw UnimplementedError(
+    'ThemeModeController must be overridden at startup',
+  ),
 );

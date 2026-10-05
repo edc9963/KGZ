@@ -235,9 +235,12 @@ class _CollectionDetailsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '此頁不會自動確認付款結果，收款人確認後才會入帳。',
+                    '收款人確認後才會入帳。',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: context.colors.textMuted),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.colors.textMuted,
+                    ),
                   ),
                 ],
               ),

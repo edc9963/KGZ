@@ -28,7 +28,6 @@ class AccountsPage extends ConsumerWidget {
       children: [
         PageHeader(
           title: '帳戶管理',
-          subtitle: '銀行、現金、外幣與電子支付帳戶集中管理',
           action: Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -50,68 +49,70 @@ class AccountsPage extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
         HeroMetricCard(
-          label: '總資產',
+          label: '帳戶總餘額',
           value: moneyText(
-            store.totalAssetsMinor,
+            store.depositTotalMinor,
             currency: store.data.settings.defaultCurrency,
             mask: mask,
           ),
           compactValue: compactMoneyText(
-            store.totalAssetsMinor,
+            store.depositTotalMinor,
             currency: store.data.settings.defaultCurrency,
             mask: mask,
           ),
           icon: Icons.account_balance_wallet_outlined,
         ),
         const SizedBox(height: 12),
-        ResponsiveGrid(
-          minWidth: 210,
-          children: [
-            SummaryCard(
-              label: '信用卡負債',
-              value: moneyText(
-                store.pendingCardDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
+        SecondaryMetrics(
+          child: ResponsiveGrid(
+            minWidth: 210,
+            children: [
+              SummaryCard(
+                label: '信用卡負債',
+                value: moneyText(
+                  store.pendingCardDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                compactValue: compactMoneyText(
+                  store.pendingCardDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                icon: Icons.credit_card_outlined,
+                tone: Theme.of(context).colorScheme.error,
               ),
-              compactValue: compactMoneyText(
-                store.pendingCardDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
+              SummaryCard(
+                label: '代訂應收款',
+                value: moneyText(
+                  store.receivablesDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                compactValue: compactMoneyText(
+                  store.receivablesDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                icon: Icons.request_quote_outlined,
               ),
-              icon: Icons.credit_card_outlined,
-              tone: Theme.of(context).colorScheme.error,
-            ),
-            SummaryCard(
-              label: '代訂應收款',
-              value: moneyText(
-                store.receivablesDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
+              SummaryCard(
+                label: '淨資產',
+                value: moneyText(
+                  store.netWorthMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                compactValue: compactMoneyText(
+                  store.netWorthMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                icon: Icons.insights_outlined,
+                tone: context.colors.asset,
               ),
-              compactValue: compactMoneyText(
-                store.receivablesDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.request_quote_outlined,
-            ),
-            SummaryCard(
-              label: '淨資產',
-              value: moneyText(
-                store.netWorthMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              compactValue: compactMoneyText(
-                store.netWorthMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.insights_outlined,
-              tone: context.colors.asset,
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 24),
         if (accounts.isEmpty)
@@ -125,57 +126,55 @@ class AccountsPage extends ConsumerWidget {
             ),
           )
         else
-          Card(
-            child: Column(
-              children: [
-                for (var index = 0; index < accounts.length; index++) ...[
-                  _AccountRow(
-                    account: accounts[index],
-                    balance: store.accountBalance(accounts[index].id),
-                    mask: mask,
-                    onTap: () =>
-                        _showLedgerDialog(context, ref, accounts[index]),
-                    onEdit: accounts[index].id == systemCashAccountId
-                        ? null
-                        : () =>
-                              _showAccountDialog(context, ref, accounts[index]),
-                    onAdjust: () =>
-                        _showAdjustmentDialog(context, ref, accounts[index]),
-                    onTransfer: canTransfer && accounts[index].isActive
-                        ? () => _showTransferDialog(
-                            context,
-                            ref,
-                            fromAccount: accounts[index],
+          Column(
+            children: [
+              for (var index = 0; index < accounts.length; index++) ...[
+                _AccountRow(
+                  account: accounts[index],
+                  balance: store.accountBalance(accounts[index].id),
+                  mask: mask,
+                  onTap: () => _showLedgerDialog(context, ref, accounts[index]),
+                  onEdit: accounts[index].id == systemCashAccountId
+                      ? null
+                      : () => _showAccountDialog(context, ref, accounts[index]),
+                  onAdjust: () =>
+                      _showAdjustmentDialog(context, ref, accounts[index]),
+                  onTransfer: canTransfer && accounts[index].isActive
+                      ? () => _showTransferDialog(
+                          context,
+                          ref,
+                          fromAccount: accounts[index],
+                        )
+                      : null,
+                  onMerge:
+                      accounts[index].id == systemCashAccountId ||
+                          !accounts.any(
+                            (item) =>
+                                item.id != accounts[index].id &&
+                                item.currency == accounts[index].currency,
                           )
-                        : null,
-                    onMerge:
-                        accounts[index].id == systemCashAccountId ||
-                            !accounts.any(
-                              (item) =>
-                                  item.id != accounts[index].id &&
-                                  item.currency == accounts[index].currency,
-                            )
-                        ? null
-                        : () => _showMergeDialog(context, ref, accounts[index]),
-                    onDelete: accounts[index].id == systemCashAccountId
-                        ? null
-                        : () async {
-                            if (await confirmDelete(context, '帳戶')) {
-                              await store.deleteAccount(accounts[index].id);
-                            }
-                          },
-                  ),
-                  if (index < accounts.length - 1)
-                    const Divider(height: 1, indent: 76),
-                ],
+                      ? null
+                      : () => _showMergeDialog(context, ref, accounts[index]),
+                  onDelete: accounts[index].id == systemCashAccountId
+                      ? null
+                      : () async {
+                          if (await confirmDelete(context, '帳戶')) {
+                            await store.deleteAccount(accounts[index].id);
+                          }
+                        },
+                ),
               ],
-            ),
+            ],
           ),
         const SizedBox(height: 18),
-        Text(
-          '目前餘額 = 期初餘額＋所有消費、投資、帳單、收款及調整紀錄。'
-          '編輯來源資料會自動重新計算。',
-          style: TextStyle(color: context.colors.textMuted),
+        const ExpansionTile(
+          title: Text('餘額計算方式', style: TextStyle(fontSize: 13)),
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text('期初餘額加上收支、投資、繳款與調整；編輯來源紀錄後自動重算。'),
+            ),
+          ],
         ),
       ],
     );
@@ -662,6 +661,7 @@ class AccountsPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 SegmentedButton<String>(
+                  showSelectedIcon: false,
                   segments: const [
                     ButtonSegment(
                       value: 'difference',
@@ -1128,15 +1128,23 @@ class _AccountRow extends StatelessWidget {
   final VoidCallback? onDelete;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 8),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       onTap: onTap,
-      leading: CircleAvatar(
-        backgroundColor: account.isActive
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Colors.grey.shade200,
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: account.isActive
+              ? context.colors.accentPale
+              : context.colors.subtle,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Icon(
+          color: context.colors.accent,
           account.type == '現金'
               ? Icons.payments_outlined
               : Icons.account_balance_outlined,
@@ -1154,24 +1162,38 @@ class _AccountRow extends StatelessWidget {
           if (!account.isActive)
             const Padding(
               padding: EdgeInsets.only(left: 8),
-              child: Chip(label: Text('停用')),
+              child: StatusPill('停用'),
             ),
           if (account.id == systemCashAccountId)
             const Padding(
               padding: EdgeInsets.only(left: 8),
-              child: Chip(label: Text('系統')),
+              child: StatusPill('系統'),
             ),
         ],
       ),
       subtitle: Text(
-        '${account.institution}・${account.type}・${account.currency}',
+        [
+          account.institution,
+          account.type,
+          account.currency,
+        ].where((value) => value.isNotEmpty).join(' · '),
+        style: TextStyle(fontSize: 11.5, color: context.colors.textMuted),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            moneyText(balance, currency: account.currency, mask: mask),
-            style: const TextStyle(fontWeight: FontWeight.w800),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 112),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                moneyText(balance, currency: account.currency, mask: mask),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {

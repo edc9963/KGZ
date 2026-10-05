@@ -1678,40 +1678,43 @@ void main() {
       expect(store.data.investmentAdjustments, isEmpty);
     });
 
-    test('undoing removes the snapshot; deleting it drops the record', () async {
-      final store = await _store(
-        AppData(
-          products: [product],
-          investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
-        ),
-      );
-      await store.reconcileInvestment(
-        productId: product.id,
-        actualQuantityMicros: 900 * 1000000,
-        date: DateTime(2026, 10, 1),
-      );
-      await store.deleteReconciliation(store.data.reconciliations.single.id);
-      expect(store.data.investmentAdjustments, isEmpty);
-      expect(store.holdings[product.id]!.quantityMicros, 1000 * 1000000);
+    test(
+      'undoing removes the snapshot; deleting it drops the record',
+      () async {
+        final store = await _store(
+          AppData(
+            products: [product],
+            investmentTransactions: [buy('b1', DateTime(2026, 9, 1), 1000)],
+          ),
+        );
+        await store.reconcileInvestment(
+          productId: product.id,
+          actualQuantityMicros: 900 * 1000000,
+          date: DateTime(2026, 10, 1),
+        );
+        await store.deleteReconciliation(store.data.reconciliations.single.id);
+        expect(store.data.investmentAdjustments, isEmpty);
+        expect(store.holdings[product.id]!.quantityMicros, 1000 * 1000000);
 
-      await store.reconcileInvestment(
-        productId: product.id,
-        actualQuantityMicros: 900 * 1000000,
-        date: DateTime(2026, 10, 1),
-      );
-      await store.deleteInvestmentAdjustment(
-        store.data.investmentAdjustments.single.id,
-      );
-      expect(store.data.reconciliations, isEmpty);
+        await store.reconcileInvestment(
+          productId: product.id,
+          actualQuantityMicros: 900 * 1000000,
+          date: DateTime(2026, 10, 1),
+        );
+        await store.deleteInvestmentAdjustment(
+          store.data.investmentAdjustments.single.id,
+        );
+        expect(store.data.reconciliations, isEmpty);
 
-      await store.reconcileInvestment(
-        productId: product.id,
-        actualQuantityMicros: 900 * 1000000,
-        date: DateTime(2026, 10, 1),
-      );
-      await store.deleteProduct(product.id);
-      expect(store.data.reconciliations, isEmpty);
-    });
+        await store.reconcileInvestment(
+          productId: product.id,
+          actualQuantityMicros: 900 * 1000000,
+          date: DateTime(2026, 10, 1),
+        );
+        await store.deleteProduct(product.id);
+        expect(store.data.reconciliations, isEmpty);
+      },
+    );
 
     test('unknown reconciliation types are skipped on load', () {
       final json = const AppData().toJson()
@@ -2151,10 +2154,7 @@ void main() {
           // silently starts failing once a real run happens after that date
           // (billStatus() then sees the due date as already past and
           // reports overdue instead of partiallyPaid).
-          store.billStatus(
-            store.data.bills.single,
-            now: DateTime(2026, 9, 11),
-          ),
+          store.billStatus(store.data.bills.single, now: DateTime(2026, 9, 11)),
           CardBillStatus.partiallyPaid,
         );
 

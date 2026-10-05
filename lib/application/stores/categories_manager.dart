@@ -149,7 +149,8 @@ class CategoriesManager {
       _store.notify();
       return;
     }
-    final defaultIsSource = _data.settings.defaultExpenseCategoryId == source.id;
+    final defaultIsSource =
+        _data.settings.defaultExpenseCategoryId == source.id;
     await _store.commit(
       _data.copyWith(
         categories: [

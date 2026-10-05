@@ -143,8 +143,11 @@ class CardsManager {
     }
     final chargeIds = bill.chargeIds.toSet().toList();
     final invalid = chargeIds.where(
-      (id) =>
-          !_store.ledger.canAssignChargeToBill(id, bill.cardId, billId: bill.id),
+      (id) => !_store.ledger.canAssignChargeToBill(
+        id,
+        bill.cardId,
+        billId: bill.id,
+      ),
     );
     if (invalid.isNotEmpty) {
       _store.lastSyncError = '有刷卡紀錄已屬於其他帳單，請重新確認明細';
@@ -177,7 +180,8 @@ class CardsManager {
       _store.notify();
       return;
     }
-    final difference = statementAmount - _store.ledger.calculatedBillAmount(bill);
+    final difference =
+        statementAmount - _store.ledger.calculatedBillAmount(bill);
     if (difference != 0 &&
         bill.reconciliationReason == CardBillReconciliationReason.none) {
       _store.lastSyncError = '帳單有差額時請選擇差異原因';
@@ -382,7 +386,9 @@ class CardsManager {
           item,
     ];
     _store.lastSyncError = null;
-    await _store.commit(_data.copyWith(bills: bills, transactions: transactions));
+    await _store.commit(
+      _data.copyWith(bills: bills, transactions: transactions),
+    );
   }
 
   Future<void> deleteBillPayment(String billId, String transactionId) async {
@@ -461,10 +467,7 @@ class CardsManager {
   Future<void> acknowledgeBillReminder(String billId) async {
     final bills = [
       for (final item in _data.bills)
-        if (item.id == billId)
-          item.copyWith(reminderDismissed: true)
-        else
-          item,
+        if (item.id == billId) item.copyWith(reminderDismissed: true) else item,
     ];
     await _store.commit(_data.copyWith(bills: bills));
   }
@@ -527,10 +530,7 @@ class CardsManager {
           if (order.cardId == card.id &&
               order.date.isAfter(previousClosing) &&
               !order.date.isAfter(dates.closingDate) &&
-              _store.ledger.canAssignChargeToBill(
-                'order:${order.id}',
-                card.id,
-              ))
+              _store.ledger.canAssignChargeToBill('order:${order.id}', card.id))
             'order:${order.id}',
       ];
       final existing = _data.bills

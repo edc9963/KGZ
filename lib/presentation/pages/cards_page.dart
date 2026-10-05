@@ -67,7 +67,6 @@ class _CardsPageState extends ConsumerState<CardsPage>
           children: [
             PageHeader(
               title: '卡片',
-              subtitle: '管理信用卡帳單，以及直接扣款的金融卡',
               action: FilledButton.icon(
                 onPressed: () => _tabs.index == 0
                     ? _showCardDialog(context)
@@ -806,7 +805,7 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       controller: actualAmount,
                       decoration: const InputDecoration(
                         labelText: '銀行實際帳單總額',
-                        helperText: '此金額是待繳金額的唯一依據',
+                        helperText: '依銀行帳單填寫',
                       ),
                       onChanged: (_) => setState(() {}),
                     ),

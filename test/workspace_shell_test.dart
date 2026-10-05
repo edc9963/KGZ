@@ -14,6 +14,101 @@ import 'package:quick_ledger/presentation/theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
+  testWidgets('mobile actions stay docked and follow the active route', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final store = AppStore(
+      authRepository: _Auth(),
+      financeRepository: _Finance(),
+      csvExportService: _Csv(),
+    );
+    await store.initialize();
+    String? lastAction;
+    final router = GoRouter(
+      initialLocation: '/accounts',
+      routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) =>
+              AppShell(navigationShell: navigationShell),
+          branches: [
+            for (final path in ['/accounts', '/expenses', '/settings'])
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(
+                    path: path,
+                    builder: (context, state) => Column(
+                      children: [
+                        PageHeader(
+                          title: path,
+                          action: path == '/settings'
+                              ? null
+                              : FilledButton(
+                                  onPressed: () => lastAction = path,
+                                  child: Text('新增 $path'),
+                                ),
+                        ),
+                        const SizedBox(height: 1600),
+                        const Text('清單底部'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp.router(
+          theme: buildAppTheme(Brightness.light),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final action = find.widgetWithText(FilledButton, '新增 /accounts');
+    expect(action, findsOneWidget);
+    final original = tester.getTopLeft(action);
+    expect(
+      tester.getBottomLeft(action).dy,
+      lessThan(tester.getTopLeft(find.byType(NavigationBar)).dy),
+    );
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(action), original);
+    await tester.tap(action);
+    expect(lastAction, '/accounts');
+    router.go('/expenses');
+    await tester.pumpAndSettle();
+    expect(action, findsNothing);
+    await tester.tap(find.text('新增 /expenses'));
+    expect(lastAction, '/expenses');
+    await tester.tap(find.text('設定').last);
+    await tester.pumpAndSettle();
+    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(nav.destinations, hasLength(5));
+    expect(nav.selectedIndex, 4);
+    expect(find.text('新增 /expenses'), findsNothing);
+    router.go('/accounts');
+    await tester.pumpAndSettle();
+    expect(action, findsOneWidget);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    expect(action, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cards page renders inside the scrollable workspace shell', (
     tester,
   ) async {
@@ -135,7 +230,8 @@ void main() {
       expect(tester.takeException(), isNull);
       if (size.width < 600) {
         expect(find.byType(NavigationBar), findsOneWidget);
-        expect(find.byIcon(Icons.menu), findsOneWidget);
+        expect(find.byIcon(Icons.menu), findsNothing);
+        expect(find.text('KGZ  /  總覽'), findsNothing);
       } else if (size.width < 1024) {
         expect(find.byType(NavigationRail), findsOneWidget);
         expect(find.byType(NavigationBar), findsNothing);

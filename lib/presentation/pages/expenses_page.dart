@@ -132,7 +132,6 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
       children: [
         PageHeader(
           title: '帳務',
-          subtitle: '收入與支出各自入帳，信用卡付款仍由帳單流程處理',
           action: FilledButton.icon(
             onPressed: () => switch (_tab) {
               _RecordTab.income => _showIncomeDialog(context),
@@ -147,199 +146,149 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
             }),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
         HeroMetricCard(
-          label: '本月收入',
+          label: '本月結餘',
           value: moneyText(
-            store.currentMonthIncomeDefaultMinor,
+            store.currentMonthBalanceDefaultMinor,
             currency: store.data.settings.defaultCurrency,
             mask: mask,
           ),
           compactValue: compactMoneyText(
-            store.currentMonthIncomeDefaultMinor,
+            store.currentMonthBalanceDefaultMinor,
             currency: store.data.settings.defaultCurrency,
             mask: mask,
           ),
           icon: Icons.south_west_rounded,
-          tone: context.colors.income,
         ),
         const SizedBox(height: 12),
-        ResponsiveGrid(
-          minWidth: 180,
-          spacing: 12,
-          children: [
-            SummaryCard(
-              label: '本月支出',
-              value: moneyText(
-                store.currentMonthExpenseDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
+        SecondaryMetrics(
+          child: ResponsiveGrid(
+            minWidth: 180,
+            spacing: 12,
+            children: [
+              SummaryCard(
+                label: '本月支出',
+                value: moneyText(
+                  store.currentMonthExpenseDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                compactValue: compactMoneyText(
+                  store.currentMonthExpenseDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                icon: Icons.north_east_rounded,
+                tone: context.colors.expense,
               ),
-              compactValue: compactMoneyText(
-                store.currentMonthExpenseDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.north_east_rounded,
-              tone: context.colors.expense,
-            ),
-            SummaryCard(
-              label: '本月結餘',
-              value: moneyText(
-                store.currentMonthBalanceDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              compactValue: compactMoneyText(
-                store.currentMonthBalanceDefaultMinor,
-                currency: store.data.settings.defaultCurrency,
-                mask: mask,
-              ),
-              icon: Icons.account_balance_wallet_outlined,
-              tone: store.currentMonthBalanceDefaultMinor >= 0
-                  ? context.colors.asset
-                  : context.colors.expense,
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SegmentedButton<_RecordTab>(
-            segments: const [
-              ButtonSegment(value: _RecordTab.all, label: Text('全部')),
-              ButtonSegment(value: _RecordTab.expense, label: Text('支出')),
-              ButtonSegment(value: _RecordTab.income, label: Text('收入')),
-              ButtonSegment(
-                value: _RecordTab.recurring,
-                label: Text('固定支出'),
-                icon: Icon(Icons.event_repeat_outlined),
+              SummaryCard(
+                label: '本月收入',
+                value: moneyText(
+                  store.currentMonthIncomeDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                compactValue: compactMoneyText(
+                  store.currentMonthIncomeDefaultMinor,
+                  currency: store.data.settings.defaultCurrency,
+                  mask: mask,
+                ),
+                icon: Icons.account_balance_wallet_outlined,
+                tone: context.colors.income,
               ),
             ],
-            selected: {_tab},
-            onSelectionChanged: (value) => setState(() {
-              _tab = value.first;
-              _category = '全部';
-            }),
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
+        KgzTabBar<_RecordTab>(
+          tabs: const [
+            (_RecordTab.all, '全部', null),
+            (_RecordTab.expense, '支出', null),
+            (_RecordTab.income, '收入', null),
+            (_RecordTab.recurring, '固定支出', null),
+          ],
+          selected: _tab,
+          onSelected: (value) => setState(() {
+            _tab = value;
+            _category = '全部';
+          }),
+        ),
+        const SizedBox(height: 12),
         if (_tab == _RecordTab.recurring)
           _recurringExpenseList(store)
         else ...[
-          TextField(
-            controller: _search,
-            decoration: InputDecoration(
-              hintText: '搜尋交易',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: '清除搜尋',
-                      onPressed: () => setState(_search.clear),
-                      icon: const Icon(Icons.close),
-                    ),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                DropdownButton<_DateFilter>(
-                  value: _dateFilter,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(
-                      value: _DateFilter.month,
-                      child: Text('本月'),
-                    ),
-                    DropdownMenuItem(
-                      value: _DateFilter.previousMonth,
-                      child: Text('上月'),
-                    ),
-                    DropdownMenuItem(
-                      value: _DateFilter.threeMonths,
-                      child: Text('近三個月'),
-                    ),
-                    DropdownMenuItem(
-                      value: _DateFilter.all,
-                      child: Text('全部日期'),
-                    ),
-                  ],
-                  onChanged: (value) => setState(() => _dateFilter = value!),
-                ),
-                const SizedBox(width: 16),
-                DropdownButton<String?>(
-                  value: _accountFilter,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('全部帳戶'),
-                    ),
-                    for (final account in store.activeAssetAccounts)
-                      DropdownMenuItem<String?>(
-                        value: account.id,
-                        child: Text(account.name),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _accountFilter = value),
-                ),
-                const SizedBox(width: 16),
-                DropdownButton<PaymentMethod?>(
-                  value: _paymentFilter,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    const DropdownMenuItem<PaymentMethod?>(
-                      value: null,
-                      child: Text('付款方式'),
-                    ),
-                    for (final method in PaymentMethod.values)
-                      DropdownMenuItem<PaymentMethod?>(
-                        value: method,
-                        child: Text(method.label),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _paymentFilter = value),
-                ),
-                if (_accountFilter != null ||
-                    _paymentFilter != null ||
-                    _dateFilter != _DateFilter.month) ...[
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _dateFilter = _DateFilter.month;
-                      _accountFilter = null;
-                      _paymentFilter = null;
-                    }),
-                    child: const Text('清除篩選'),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
-              for (final item in categories)
-                ChoiceChip(
-                  label: Text(item),
-                  avatar: item == '全部'
-                      ? null
-                      : Icon(
-                          categoryVisual(item, context.colors).icon,
-                          size: 16,
-                        ),
-                  selected: _category == item,
-                  onSelected: (_) => setState(() => _category = item),
+              Expanded(
+                child: TextField(
+                  controller: _search,
+                  decoration: InputDecoration(
+                    hintText: '搜尋交易',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _search.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: '清除搜尋',
+                            onPressed: () => setState(_search.clear),
+                            icon: const Icon(Icons.close),
+                          ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Badge(
+                isLabelVisible: _activeFilterCount > 0,
+                label: Text('$_activeFilterCount'),
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  onPressed: () => _showFilterSheet(store, categories),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('篩選'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                '${_dateFilterLabel(_dateFilter)} · ${filtered.length} 筆',
+                style: TextStyle(
+                  color: context.colors.textMuted,
+                  fontSize: 12.5,
+                ),
+              ),
+              if (_category != '全部')
+                _FilterChip(
+                  label: _category,
+                  onDeleted: () => setState(() => _category = '全部'),
+                ),
+              if (_accountFilter case final accountId?)
+                _FilterChip(
+                  label:
+                      store.data.accounts
+                          .where((item) => item.id == accountId)
+                          .firstOrNull
+                          ?.name ??
+                      '帳戶',
+                  onDeleted: () => setState(() => _accountFilter = null),
+                ),
+              if (_paymentFilter case final method?)
+                _FilterChip(
+                  label: method.label,
+                  onDeleted: () => setState(() => _paymentFilter = null),
                 ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
           if (filtered.isEmpty)
             EmptyState(
               icon: Icons.receipt_long_outlined,
@@ -374,6 +323,155 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
       ],
     );
   }
+
+  int get _activeFilterCount =>
+      (_dateFilter == _DateFilter.month ? 0 : 1) +
+      (_category == '全部' ? 0 : 1) +
+      (_accountFilter == null ? 0 : 1) +
+      (_paymentFilter == null ? 0 : 1);
+
+  static String _dateFilterLabel(_DateFilter filter) => switch (filter) {
+    _DateFilter.month => '本月',
+    _DateFilter.previousMonth => '上月',
+    _DateFilter.threeMonths => '近三個月',
+    _DateFilter.all => '全部日期',
+  };
+
+  /// Period, category, account and payment filters live in one sheet so the
+  /// transaction list starts right under the search field.
+  Future<void> _showFilterSheet(AppStore store, Set<String> categories) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            void update(VoidCallback change) {
+              setState(change);
+              setSheetState(() {});
+            }
+
+            Widget section(String title, List<Widget> chips) => Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: chips),
+                ],
+              ),
+            );
+
+            ChoiceChip choice(
+              String label,
+              bool selected,
+              VoidCallback onSelected, {
+              IconData? icon,
+            }) => ChoiceChip(
+              showCheckmark: false,
+              label: Text(label),
+              avatar: icon == null ? null : Icon(icon, size: 16),
+              selected: selected,
+              onSelected: (_) => update(onSelected),
+            );
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * .8,
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '篩選交易',
+                        style: Theme.of(sheetContext).textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 16),
+                      section('期間', [
+                        for (final filter in _DateFilter.values)
+                          choice(
+                            _dateFilterLabel(filter),
+                            _dateFilter == filter,
+                            () => _dateFilter = filter,
+                          ),
+                      ]),
+                      section('分類', [
+                        for (final item in categories)
+                          choice(
+                            item,
+                            _category == item,
+                            () => _category = item,
+                            icon: item == '全部'
+                                ? null
+                                : categoryVisual(item, context.colors).icon,
+                          ),
+                      ]),
+                      section('帳戶', [
+                        choice(
+                          '全部帳戶',
+                          _accountFilter == null,
+                          () => _accountFilter = null,
+                        ),
+                        for (final account in store.activeAssetAccounts)
+                          choice(
+                            account.name,
+                            _accountFilter == account.id,
+                            () => _accountFilter = account.id,
+                          ),
+                      ]),
+                      section('付款方式', [
+                        choice(
+                          '全部',
+                          _paymentFilter == null,
+                          () => _paymentFilter = null,
+                        ),
+                        for (final method in PaymentMethod.values)
+                          choice(
+                            method.label,
+                            _paymentFilter == method,
+                            () => _paymentFilter = method,
+                          ),
+                      ]),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _activeFilterCount == 0
+                                  ? null
+                                  : () => update(() {
+                                      _dateFilter = _DateFilter.month;
+                                      _category = '全部';
+                                      _accountFilter = null;
+                                      _paymentFilter = null;
+                                    }),
+                              child: const Text('清除篩選'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              child: const Text('完成'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
 
   Widget _transactionList(
     AppStore store,
@@ -1441,4 +1539,20 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
       ),
     );
   }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({required this.label, required this.onDeleted});
+
+  final String label;
+  final VoidCallback onDeleted;
+
+  @override
+  Widget build(BuildContext context) => InputChip(
+    label: Text(label, style: const TextStyle(fontSize: 12.5)),
+    visualDensity: VisualDensity.compact,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    deleteButtonTooltipMessage: '移除篩選',
+    onDeleted: onDeleted,
+  );
 }

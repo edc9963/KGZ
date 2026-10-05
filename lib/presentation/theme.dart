@@ -202,7 +202,7 @@ ThemeData buildAppTheme(Brightness brightness) {
     // (dark) pill with dark ink — the filled, highest-emphasis button.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(48, AppSpacing.controlMinHeight),
+        minimumSize: const Size(48, 52),
         backgroundColor: colors.primary,
         foregroundColor: colors.onPrimary,
         disabledBackgroundColor: colors.subtle,
@@ -290,10 +290,14 @@ ThemeData buildAppTheme(Brightness brightness) {
       linearTrackColor: colors.subtle,
     ),
     tabBarTheme: TabBarThemeData(
-      labelColor: colors.text,
+      labelColor: colors.onSelection,
       unselectedLabelColor: colors.textMuted,
-      indicatorColor: colors.primary,
-      dividerColor: colors.border,
+      indicator: BoxDecoration(
+        color: colors.selection,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      indicatorSize: TabBarIndicatorSize.tab,
+      dividerColor: Colors.transparent,
     ),
     textTheme: baseTextTheme.apply(
       bodyColor: colors.text,

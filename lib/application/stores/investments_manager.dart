@@ -278,9 +278,7 @@ class InvestmentsManager {
                   date: DateTime(day.year, day.month, day.day, 23, 59, 59),
                   quantityMicros: actualQuantityMicros,
                   averageCostMinor: actualAverageCost,
-                  reason: trimmedNote.isEmpty
-                      ? '對帳調整'
-                      : '對帳調整：$trimmedNote',
+                  reason: trimmedNote.isEmpty ? '對帳調整' : '對帳調整：$trimmedNote',
                   origin: product.origin,
                 ),
               ],
@@ -327,7 +325,8 @@ class InvestmentsManager {
               AccountImpact(
                 accountId: accountId,
                 amountMinor: inflow ? amount : -amount,
-                currency: _store.ledger.accountById(accountId)?.currency ?? 'TWD',
+                currency:
+                    _store.ledger.accountById(accountId)?.currency ?? 'TWD',
               ),
             ],
       origin: transaction.origin,

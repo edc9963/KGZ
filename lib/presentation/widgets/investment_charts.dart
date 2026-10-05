@@ -167,6 +167,10 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
     ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
   );
 
+  bool get _phone => MediaQuery.sizeOf(context).width < AppBreakpoints.mobile;
+
+  double get _pieHeight => _phone ? 160 : 210;
+
   double get _chartHeight =>
       MediaQuery.sizeOf(context).width < AppBreakpoints.mobile ? 240 : 300;
 
@@ -197,7 +201,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
     final touched = _pieTouched < slices.length ? _pieTouched : -1;
     final chart = PieChart(
       PieChartData(
-        centerSpaceRadius: 44,
+        centerSpaceRadius: _phone ? 32 : 44,
         sectionsSpace: 2,
         pieTouchData: PieTouchData(
           touchCallback: (event, response) {
@@ -212,7 +216,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
             PieChartSectionData(
               color: colorAt(i),
               value: slices[i].amountMinor.toDouble(),
-              radius: touched == i ? 80 : 72,
+              radius: (touched == i ? 80 : 72) * (_phone ? .75 : 1),
               title: '${(slices[i].amountMinor / total * 100).round()}%',
               titleStyle: const TextStyle(
                 color: Colors.white,
@@ -286,8 +290,12 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
                     '持股配置：${slices.map((item) => '${item.label} ${moneyText(item.amountMinor, currency: currency, mask: mask)}').join('，')}',
                 child: Column(
                   children: [
-                    SizedBox(height: 210, child: chart),
-                    const SizedBox(height: 10),
+                    // A single holding is always 100%; the legend row says
+                    // that without a full-circle chart.
+                    if (slices.length > 1) ...[
+                      SizedBox(height: _pieHeight, child: chart),
+                      const SizedBox(height: 10),
+                    ],
                     for (var i = 0; i < slices.length; i++) legendRow(i),
                   ],
                 ),

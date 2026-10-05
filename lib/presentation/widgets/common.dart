@@ -52,15 +52,17 @@ double parseQuantity(String text) =>
 class PageHeader extends StatelessWidget {
   const PageHeader({
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     this.action,
+    this.dockAction = true,
     this.breadcrumb,
     super.key,
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final Widget? action;
+  final bool dockAction;
 
   /// Workspace name shown as "KGZ / [breadcrumb]" above the title.
   final String? breadcrumb;
@@ -69,8 +71,32 @@ class PageHeader extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final scope = WorkspaceScope.maybeOf(context);
-      final crumb = breadcrumb ?? scope?.label;
+      final phone = constraints.maxWidth < AppBreakpoints.mobile;
+      // Phones already show the brand bar and the bottom navigation, so the
+      // "KGZ / workspace" path only costs vertical space there.
+      final crumb = phone ? null : breadcrumb ?? scope?.label;
       final tabs = scope?.tabs;
+      final dock =
+          constraints.maxWidth < AppBreakpoints.mobile &&
+          scope?.mobileActions != null &&
+          dockAction;
+      if (scope?.mobileActions != null &&
+          TickerMode.valuesOf(context).enabled) {
+        final route = ModalRoute.of(context);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted ||
+              !TickerMode.valuesOf(context).enabled ||
+              (route != null && !route.isCurrent)) {
+            return;
+          }
+          final controller = scope!.mobileActions!;
+          final next = dock ? action : null;
+          if (!controller.value.containsKey(scope.path) ||
+              controller.value[scope.path] != next) {
+            controller.value = {...controller.value, scope.path: next};
+          }
+        });
+      }
       final heading = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -91,17 +117,22 @@ class PageHeader extends StatelessWidget {
               context,
             ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: context.colors.textMuted),
-          ),
+          if (subtitle?.isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: context.colors.textMuted),
+            ),
+          ],
         ],
       );
       final Widget header;
-      if (constraints.maxWidth < AppBreakpoints.mobile && action != null) {
+      if (constraints.maxWidth < AppBreakpoints.mobile &&
+          action != null &&
+          !dock &&
+          dockAction) {
         header = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -115,7 +146,7 @@ class PageHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: heading),
-            if (action != null) ...[
+            if (action != null && !dock) ...[
               const SizedBox(width: 16),
               Flexible(child: action!),
             ],
@@ -125,7 +156,11 @@ class PageHeader extends StatelessWidget {
       if (tabs == null) return header;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [header, const SizedBox(height: 16), tabs],
+        children: [
+          header,
+          SizedBox(height: phone ? 12 : 16),
+          tabs,
+        ],
       );
     },
   );

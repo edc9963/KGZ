@@ -38,12 +38,8 @@ class ExpensesManager {
   }
 
   Future<void> deleteExpense(String id) async {
-    if (_data.recurringExpenseOccurrences.any(
-          (item) => item.expenseId == id,
-        ) ||
-        _data.telecomBillPayments.any(
-          (item) => item.expenseIds.contains(id),
-        )) {
+    if (_data.recurringExpenseOccurrences.any((item) => item.expenseId == id) ||
+        _data.telecomBillPayments.any((item) => item.expenseIds.contains(id))) {
       _store.lastSyncError = '已入帳的固定支出或電信帳單不可刪除';
       _store.notify();
       return;
@@ -129,8 +125,7 @@ class ExpensesManager {
           accountId: expense.accountId!,
           amountMinor: -expense.amountMinor,
           currency:
-              _store.ledger.accountById(expense.accountId)?.currency ??
-              'TWD',
+              _store.ledger.accountById(expense.accountId)?.currency ?? 'TWD',
         ),
       );
     }
@@ -163,11 +158,11 @@ class ExpensesManager {
         type: FinancialTransactionType.income,
         label: income.item,
         amountMinor: income.amountMinor,
-        currency: _store.ledger.accountById(income.accountId)?.currency ?? 'TWD',
-        categoryId: _store.ledger.categoryByName(
-          income.category,
-          BookkeepingCategoryKind.income,
-        )?.id,
+        currency:
+            _store.ledger.accountById(income.accountId)?.currency ?? 'TWD',
+        categoryId: _store.ledger
+            .categoryByName(income.category, BookkeepingCategoryKind.income)
+            ?.id,
         note: income.note,
         relatedEntityType: 'income',
         relatedEntityId: income.id,
@@ -176,8 +171,7 @@ class ExpensesManager {
             accountId: income.accountId,
             amountMinor: income.amountMinor,
             currency:
-                _store.ledger.accountById(income.accountId)?.currency ??
-                'TWD',
+                _store.ledger.accountById(income.accountId)?.currency ?? 'TWD',
           ),
         ],
         origin: income.origin,
