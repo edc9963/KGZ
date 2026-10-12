@@ -31,10 +31,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # OCR runtime files (kgz_ocr.js, ppocr/, tesseract/) are served straight
+  # from web/, which the web build copies as-is; listing them here too would
+  # ship a second ~160MB copy under assets/web/.
   assets:
-    - web/kgz_ocr.js
     - web/icons/icon-192.png
-    - web/ppocr/
-    - web/tesseract/
-    - web/tesseract/core/
-    - web/tesseract/lang/

@@ -1,12 +1,12 @@
 (function () {
   "use strict";
 
-  const ASSET_ROOT = new URL("assets/web/ppocr/", document.baseURI).href;
+  const ASSET_ROOT = new URL("ppocr/", document.baseURI).href;
   const TESSERACT_ROOT = new URL(
-    "assets/web/tesseract/",
+    "tesseract/",
     document.baseURI
   ).href;
-  const CACHE_NAME = "kgz-ppocr-v5-adaptive-v1";
+  const CACHE_NAME = "kgz-ppocr-v5-adaptive-v2";
   const ENGINE_VERSION = "ppocr-v5-mobile-det+adaptive-rec@v1";
   const MODEL_ASSETS = {
     detector: `${ASSET_ROOT}PP-OCRv5_mobile_det.onnx`,
