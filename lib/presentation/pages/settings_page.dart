@@ -349,14 +349,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 DropdownButtonFormField<PaymentMethod>(
                   initialValue: payment,
                   decoration: const InputDecoration(labelText: '預設付款方式'),
-                  items: PaymentMethod.values
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value.label),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      PaymentMethod.selectableWith(current.defaultPaymentMethod)
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value.label),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (value) => setState(() => payment = value!),
                 ),
                 const SizedBox(height: 12),

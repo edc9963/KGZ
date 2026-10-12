@@ -48,6 +48,17 @@ const paymentMethods: Record<string, string> = {
   other: '其他',
 }
 
+// Offered in the bot's payment picker; kept in sync with the web app's
+// selectable methods (PaymentMethod.isSelectable). The full map above still
+// labels older records that used a retired method.
+const selectablePaymentMethods = [
+  'cash',
+  'transfer',
+  'debitCard',
+  'creditCard',
+  'telecomBill',
+]
+
 Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return Response.json({ error: 'method_not_allowed' }, { status: 405 })
@@ -462,15 +473,17 @@ async function expensePostback(
     })
     return [textMessage(
       '選擇付款方式：',
-      Object.entries(paymentMethods).map(([key, label]) =>
-        postback(label, `expense:payment:${key}`, label)
+      selectablePaymentMethods.map((key) =>
+        postback(paymentMethods[key], `expense:payment:${key}`, paymentMethods[key])
       ),
     )]
   }
 
   if (data.startsWith('expense:payment:') && conversation.step === 'payment') {
     const method = data.substring('expense:payment:'.length)
-    if (!paymentMethods[method]) return [textMessage('付款方式無效。')]
+    if (!selectablePaymentMethods.includes(method)) {
+      return [textMessage('付款方式無效。')]
+    }
     const next = { ...payload, paymentMethod: method }
     const sources = payload.sources as Json
     if (method === 'creditCard' || method === 'debitCard') {

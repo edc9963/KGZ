@@ -433,7 +433,14 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                           _paymentFilter == null,
                           () => _paymentFilter = null,
                         ),
-                        for (final method in PaymentMethod.values)
+                        for (final method in PaymentMethod.values.where(
+                          (method) =>
+                              method.isSelectable ||
+                              method == _paymentFilter ||
+                              store.data.expenses.any(
+                                (item) => item.paymentMethod == method,
+                              ),
+                        ))
                           choice(
                             method.label,
                             _paymentFilter == method,
@@ -881,14 +888,15 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       initialValue: method,
                       isExpanded: true,
                       decoration: const InputDecoration(labelText: '付款方式'),
-                      items: PaymentMethod.values
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value.label),
-                            ),
-                          )
-                          .toList(),
+                      items:
+                          PaymentMethod.selectableWith(existing?.paymentMethod)
+                              .map(
+                                (value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(value.label),
+                                ),
+                              )
+                              .toList(),
                       onChanged: (value) => setState(() => method = value!),
                     ),
                     const SizedBox(height: 12),
@@ -1332,7 +1340,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
           initialValue: method,
           isExpanded: true,
           decoration: const InputDecoration(labelText: '付款方式'),
-          items: PaymentMethod.values
+          items: PaymentMethod.selectableWith(existing?.paymentMethod)
               .map(
                 (value) =>
                     DropdownMenuItem(value: value, child: Text(value.label)),

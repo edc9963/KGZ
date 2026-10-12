@@ -92,7 +92,7 @@ class DemoDataManager {
         userId: _store.userId,
         date: now.subtract(const Duration(days: 1)),
         amountMinor: 4000,
-        paymentMethod: PaymentMethod.linePay,
+        paymentMethod: PaymentMethod.cash,
         item: '捷運加值',
         category: '交通',
         accountId: linePay.id,

@@ -283,6 +283,20 @@ enum PaymentMethod {
 
   const PaymentMethod(this.label);
   final String label;
+
+  /// Methods offered in pickers. The rest are kept only so older records
+  /// still load and display; they behave like cash (debit a chosen account).
+  bool get isSelectable => switch (this) {
+    cash || transfer || debitCard || creditCard || telecomBill => true,
+    _ => false,
+  };
+
+  /// Picker options, plus [current] when an existing record still uses a
+  /// retired method, so editing it doesn't silently change the method.
+  static List<PaymentMethod> selectableWith([PaymentMethod? current]) => [
+    for (final method in values)
+      if (method.isSelectable || method == current) method,
+  ];
 }
 
 enum PaymentCardType {

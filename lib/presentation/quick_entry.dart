@@ -70,6 +70,7 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
     _kind = widget.initialKind;
     final store = ref.read(appStoreProvider);
     _payment = store.data.settings.defaultPaymentMethod;
+    if (!_payment.isSelectable) _payment = PaymentMethod.cash;
     _category = store.data.settings.defaultCategory;
     _accountId = store.activeAssetAccounts.firstOrNull?.id;
     _cardId = store.data.cards
@@ -251,7 +252,7 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                           isExpanded: true,
                           decoration: const InputDecoration(labelText: '付款方式'),
                           items: [
-                            for (final method in PaymentMethod.values)
+                            for (final method in PaymentMethod.selectableWith())
                               DropdownMenuItem(
                                 value: method,
                                 child: Text(method.label),
