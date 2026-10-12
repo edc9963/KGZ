@@ -1363,8 +1363,8 @@ class _CalculatorGrid extends StatelessWidget {
       int flex = 1,
     }) => Expanded(
       flex: flex,
-      child: AspectRatio(
-        aspectRatio: 1.4 * flex,
+      child: SizedBox(
+        height: 54,
         child: Material(
           color: background ?? Theme.of(context).colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(12),
@@ -1385,7 +1385,8 @@ class _CalculatorGrid extends StatelessWidget {
         ),
       ),
     );
-    Widget spacer() => const SizedBox(width: 8);
+    Widget spacer() => const SizedBox(width: 10);
+    Widget rowGap() => const SizedBox(height: 10);
 
     final accent = Theme.of(context).colorScheme.primary;
     final onAccent = Theme.of(context).colorScheme.onPrimary;
@@ -1410,7 +1411,7 @@ class _CalculatorGrid extends StatelessWidget {
             ),
           ],
         ),
-        spacer(),
+        rowGap(),
         Row(
           children: [
             button('7', onPressed: () => onDigit('7')),
@@ -1427,7 +1428,7 @@ class _CalculatorGrid extends StatelessWidget {
             ),
           ],
         ),
-        spacer(),
+        rowGap(),
         Row(
           children: [
             button('4', onPressed: () => onDigit('4')),
@@ -1444,7 +1445,7 @@ class _CalculatorGrid extends StatelessWidget {
             ),
           ],
         ),
-        spacer(),
+        rowGap(),
         Row(
           children: [
             button('1', onPressed: () => onDigit('1')),
@@ -1461,7 +1462,7 @@ class _CalculatorGrid extends StatelessWidget {
             ),
           ],
         ),
-        spacer(),
+        rowGap(),
         Row(
           children: [
             button('0', onPressed: () => onDigit('0'), flex: 2),
