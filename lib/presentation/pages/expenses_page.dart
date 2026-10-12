@@ -835,8 +835,12 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextFormField(
+                    ItemNameField(
                       controller: item,
+                      suggestions: store.itemNamesFor(
+                        BookkeepingCategoryKind.expense,
+                        category,
+                      ),
                       autofocus: true,
                       decoration: const InputDecoration(labelText: '支出項目'),
                       validator: (value) =>
@@ -1130,8 +1134,12 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       children: [
                         Expanded(
                           flex: 2,
-                          child: TextFormField(
+                          child: ItemNameField(
                             controller: item,
+                            suggestions: store.itemNamesFor(
+                              BookkeepingCategoryKind.income,
+                              category,
+                            ),
                             autofocus: true,
                             decoration: const InputDecoration(
                               labelText: '收入項目',
@@ -1288,8 +1296,12 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
         : store.data.cards.where((card) => card.isCredit).firstOrNull?.id;
     var necessary = existing?.isNecessary ?? false;
     final formKey = GlobalKey<FormState>();
-    Widget itemField() => TextFormField(
+    Widget itemField() => ItemNameField(
       controller: item,
+      suggestions: store.itemNamesFor(
+        BookkeepingCategoryKind.expense,
+        category,
+      ),
       autofocus: true,
       decoration: const InputDecoration(labelText: '消費項目'),
       validator: (value) =>

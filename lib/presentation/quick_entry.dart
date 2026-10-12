@@ -172,8 +172,14 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                             parseMoney(value ?? '') <= 0 ? '請輸入大於 0 的金額' : null,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
+                      ItemNameField(
                         controller: _item,
+                        suggestions: store.itemNamesFor(
+                          _kind == QuickEntryKind.expense
+                              ? BookkeepingCategoryKind.expense
+                              : BookkeepingCategoryKind.income,
+                          _category,
+                        ),
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: _kind == QuickEntryKind.expense

@@ -52,6 +52,48 @@ void main() {
       store.dispose();
     },
   );
+
+  test('item names are remembered per category, most used first', () async {
+    final store = AppStore(
+      authRepository: _Auth(),
+      financeRepository: LocalFinanceRepository(_MemoryPersistence()),
+      csvExportService: _Csv(),
+    );
+    await store.initialize();
+
+    Future<void> add(String item, String category, DateTime date) =>
+        store.upsertExpense(
+          Expense(
+            id: store.newId(),
+            userId: store.userId,
+            date: date,
+            amountMinor: 10000,
+            paymentMethod: PaymentMethod.cash,
+            item: item,
+            category: category,
+            merchant: '',
+            note: '',
+            isNecessary: false,
+            accountId: store.activeAssetAccounts.first.id,
+          ),
+        );
+
+    await add('早餐', '餐飲', DateTime(2026, 1, 1));
+    await add('午餐 ', '餐飲', DateTime(2026, 1, 2));
+    await add('午餐', '餐飲', DateTime(2026, 1, 3));
+    await add('晚餐', '餐飲', DateTime(2026, 1, 4));
+    await add('捷運', '交通', DateTime(2026, 1, 5));
+
+    expect(store.itemNamesFor(BookkeepingCategoryKind.expense, '餐飲'), [
+      '午餐',
+      '晚餐',
+      '早餐',
+    ]);
+    expect(store.itemNamesFor(BookkeepingCategoryKind.expense, '交通'), ['捷運']);
+    expect(store.itemNamesFor(BookkeepingCategoryKind.expense, null), isEmpty);
+
+    store.dispose();
+  });
 }
 
 class _Auth implements AuthRepository {

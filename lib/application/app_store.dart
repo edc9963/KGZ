@@ -414,6 +414,9 @@ class AppStore extends ChangeNotifier {
     String? includeInactiveName,
   }) => ledger.categoryNamesFor(kind, includeInactiveName: includeInactiveName);
 
+  List<String> itemNamesFor(BookkeepingCategoryKind kind, String? category) =>
+      ledger.itemNamesFor(kind, category);
+
   String categoryName(String? id, {String fallback = '其他'}) =>
       ledger.categoryName(id, fallback: fallback);
 

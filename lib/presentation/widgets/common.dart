@@ -853,6 +853,56 @@ String accountName(AppStore store, String? id) =>
 /// It accepts (and ignores) [keyboardType]/[inputFormatters]/
 /// [textInputAction] so it can be swapped in for an existing
 /// `TextField`/`TextFormField` without touching those call sites.
+/// Free-text item name field with a dropdown of [suggestions] — the names
+/// previously used under the selected category — so repeat entries can be
+/// picked instead of retyped.
+class ItemNameField extends StatelessWidget {
+  const ItemNameField({
+    super.key,
+    required this.controller,
+    required this.suggestions,
+    this.decoration = const InputDecoration(),
+    this.autofocus = false,
+    this.textInputAction,
+    this.validator,
+  });
+
+  final TextEditingController controller;
+  final List<String> suggestions;
+  final InputDecoration decoration;
+  final bool autofocus;
+  final TextInputAction? textInputAction;
+  final FormFieldValidator<String>? validator;
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+    controller: controller,
+    autofocus: autofocus,
+    textInputAction: textInputAction,
+    validator: validator,
+    decoration: decoration.copyWith(
+      suffixIcon: suggestions.isEmpty
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: '選擇常用項目',
+              icon: const Icon(Icons.arrow_drop_down),
+              constraints: const BoxConstraints(maxHeight: 320),
+              onSelected: (value) {
+                HapticFeedback.selectionClick();
+                controller.value = TextEditingValue(
+                  text: value,
+                  selection: TextSelection.collapsed(offset: value.length),
+                );
+              },
+              itemBuilder: (_) => [
+                for (final name in suggestions)
+                  PopupMenuItem(value: name, child: Text(name)),
+              ],
+            ),
+    ),
+  );
+}
+
 class MoneyField extends StatelessWidget {
   const MoneyField({
     required this.controller,

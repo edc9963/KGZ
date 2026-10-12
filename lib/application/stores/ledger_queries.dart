@@ -96,6 +96,37 @@ class LedgerQueries {
     return names;
   }
 
+  /// Item names previously recorded under [category], most used first (ties
+  /// broken by most recent use). Remembered per category straight from the
+  /// ledger history, so it needs no extra storage and syncs with the data.
+  List<String> itemNamesFor(BookkeepingCategoryKind kind, String? category) {
+    if (category == null) return const [];
+    final entries = kind == BookkeepingCategoryKind.expense
+        ? [
+            for (final item in _data.expenses)
+              if (item.category == category) (item.item, item.date),
+            for (final item in _data.recurringExpenses)
+              if (item.category == category) (item.item, DateTime(0)),
+          ]
+        : [
+            for (final item in _data.incomes)
+              if (item.category == category) (item.item, item.date),
+          ];
+    final counts = <String, int>{};
+    final lastUsed = <String, DateTime>{};
+    for (final (rawName, date) in entries) {
+      final name = rawName.trim();
+      if (name.isEmpty) continue;
+      counts[name] = (counts[name] ?? 0) + 1;
+      final previous = lastUsed[name];
+      if (previous == null || date.isAfter(previous)) lastUsed[name] = date;
+    }
+    return counts.keys.toList()..sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      return byCount != 0 ? byCount : lastUsed[b]!.compareTo(lastUsed[a]!);
+    });
+  }
+
   String categoryName(String? id, {String fallback = '其他'}) =>
       categoryById(id)?.name ?? fallback;
 
