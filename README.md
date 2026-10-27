@@ -137,6 +137,46 @@ LINE 新增的資料。待收款會從同一組雲端代訂資料載入完整清
 建立與 Uber Eats 截圖匯入的未收款項目會同步顯示。Secret 不得放入
 Flutter 或提交到專案。
 
+### Apple Pay 自動記帳（捷徑 → 待確認收件匣 → LINE 確認）
+
+iPhone「捷徑」的「交易」自動化會在每次感應 Apple Pay 後，把金額、商家與
+Wallet 卡片名稱送到 `apple-pay-ingest`。資料先存進 `capture_inbox`（待確認），
+再由 LINE 官方帳號推播一則訊息，點分類即透過既有的 `line_confirm_expense`
+入帳（同樣遞增雲端 revision）。商家上次用過的分類會排在第一個；Wallet 卡片
+若對不到快記帳的卡，第一次會問一次並記住。外幣消費只能略過、到網頁記錄。
+
+```powershell
+npx supabase db push
+npx supabase functions deploy apple-pay-ingest --no-verify-jwt
+npx supabase functions deploy line-webhook --no-verify-jwt
+```
+
+不需要新的 Secret（沿用 `LINE_CHANNEL_ACCESS_TOKEN`）。在官方帳號輸入
+「捷徑設定」→「產生金鑰」取得網址與金鑰；金鑰只存 SHA-256，重新產生後舊金鑰
+立即失效。「待確認」可重新開啟沒處理到的消費。每筆 Apple Pay 會用掉 1 則
+LINE push 訊息額度。
+
+### LINE Pay 自動記帳（刷卡通知信 → 待確認收件匣 → LINE 確認）
+
+LINE Pay 沒有個人交易 API，也不會觸發捷徑的「交易」自動化；但綁信用卡付款時，
+發卡銀行會寄刷卡通知信。[`tool/line-pay-gmail-forwarder.gs`](tool/line-pay-gmail-forwarder.gs)
+是 Gmail 的 Apps Script，每 10 分鐘把疑似 LINE Pay 的通知信送到
+`card-email-ingest`，由伺服器解析金額、商家（去掉「連加*」/「LINE PAY*」前綴）、
+卡號末四碼與交易時間（支援民國年），只保留 LINE Pay 消費、略過退款，存進
+`capture_inbox`（`source = 'linePay'`），之後與 Apple Pay 共用同一套 LINE 確認流程。
+同一封信（Message-ID）只會收一次。
+
+```powershell
+npx supabase db push
+npx supabase functions deploy card-email-ingest --no-verify-jwt
+npx supabase functions deploy line-webhook --no-verify-jwt
+```
+
+金鑰與 Apple Pay 共用（LINE「捷徑設定」→「產生金鑰」的訊息會列出 LINE Pay 網址）；
+重新產生金鑰時兩邊都要更新。用 LINE Pay Money／iPASS MONEY 餘額付款不會有
+刷卡通知，這條路抓不到。各銀行信件格式未逐一驗證，解析不到時回應
+`ignored` 並附原因，可在 Apps Script 執行記錄看到。
+
 ### PWA
 
 網站 manifest、Apple Touch Icon、favicon 與 maskable icon 使用深炭灰、

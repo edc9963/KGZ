@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.card-bill-reminders]
 verify_jwt = false
+
+[functions.apple-pay-ingest]
+verify_jwt = false
+
+[functions.card-email-ingest]
+verify_jwt = false

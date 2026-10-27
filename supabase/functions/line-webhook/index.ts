@@ -6,6 +6,16 @@ import {
   textMessage,
   verifyLineSignature,
 } from '../_shared/line.ts'
+import {
+  captureMessage,
+  cardPickerMessage,
+  formatCaptureMoney,
+  formatTaipeiTime,
+  generateCaptureToken,
+  NO_CARD,
+  sha256Hex,
+  splitCapturePostback,
+} from '../_shared/capture.ts'
 
 type Json = Record<string, unknown>
 type LineEvent = {
@@ -247,6 +257,11 @@ async function handleText(
   if (['已繳費', '已繳款', '繳費', '已繳'].includes(normalized)) {
     return unpaidBillMessages(db, lineUserId)
   }
+  if (['捷徑設定', '捷徑', 'ApplePay', 'applepay', 'APPLEPAY', 'ApplePay設定']
+    .includes(normalized)) {
+    return captureSetupMessages(db, lineUserId)
+  }
+  if (normalized === '待確認') return pendingCaptureMessages(db, lineUserId)
 
   const conversation = await getConversation(db, lineUserId)
   if (!conversation) return [helpMessage()]
@@ -336,7 +351,207 @@ async function handlePostback(
   if (data.startsWith('bill:paid:')) {
     return markBillPaidMessages(db, lineUserId, data.substring('bill:paid:'.length))
   }
+  if (data.startsWith('capture:')) return capturePostback(db, lineUserId, data)
   return [helpMessage()]
+}
+
+// ---- Apple Pay／LINE Pay 收件匣（見 supabase/functions/apple-pay-ingest、
+// card-email-ingest）----
+
+const functionsBaseUrl = supabaseUrl
+  ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1`
+  : ''
+const captureIngestUrl = functionsBaseUrl ? `${functionsBaseUrl}/apple-pay-ingest` : ''
+const cardEmailIngestUrl = functionsBaseUrl ? `${functionsBaseUrl}/card-email-ingest` : ''
+
+async function captureSetupMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+): Promise<LineMessage[]> {
+  const identity = await rpc(db, 'line_resolve_identity', {
+    p_line_user_id: lineUserId,
+  })
+  if (identity.status !== 'linked') return identityPrompt(db, lineUserId)
+  return [textMessage(
+    [
+      'Apple Pay／LINE Pay 自動記帳',
+      '在 iPhone「捷徑」建立「交易」自動化後，每次感應 Apple Pay，這裡就會跳出一則待確認訊息，點分類即入帳。',
+      'LINE Pay 綁信用卡付款時，用 Gmail 的 Apps Script 轉送銀行刷卡通知信，也會跳出待確認訊息。',
+      '',
+      '按「產生金鑰」取得要用的網址與金鑰（兩者共用同一把）。重新產生後，舊金鑰會立即失效。',
+    ].join('\n'),
+    [
+      postback('產生金鑰', 'capture:token:new', '產生捷徑金鑰'),
+      postback('待確認', 'capture:pending', '待確認'),
+    ],
+  )]
+}
+
+async function issueCaptureToken(
+  db: SupabaseClient,
+  lineUserId: string,
+): Promise<LineMessage[]> {
+  const token = generateCaptureToken()
+  const result = await rpc(db, 'capture_issue_token', {
+    p_line_user_id: lineUserId,
+    p_token_hash: await sha256Hex(token),
+  })
+  if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
+  return [
+    textMessage([
+      '已產生新金鑰（舊金鑰已失效）。在捷徑的「取得 URL 內容」設定：',
+      `網址：${captureIngestUrl}`,
+      '方法：POST',
+      '標頭：x-capture-token ＝ 下一則訊息的金鑰',
+      '要求本文：JSON，欄位 amount（金額）、merchant（商家）、card（卡片或票卡）',
+      '',
+      'LINE Pay 刷卡通知（Gmail Apps Script 的指令碼屬性）：',
+      `KGZ_URL ＝ ${cardEmailIngestUrl}`,
+      'KGZ_TOKEN ＝ 下一則訊息的金鑰',
+      '',
+      '金鑰等同記帳權限，請勿轉傳給他人。',
+    ].join('\n')),
+    textMessage(token),
+  ]
+}
+
+async function pendingCaptureMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+): Promise<LineMessage[]> {
+  const result = await rpc(db, 'line_capture_list_pending', {
+    p_line_user_id: lineUserId,
+  })
+  if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
+  const items = (result.items ?? []) as Json[]
+  if (items.length === 0) {
+    return [textMessage('目前沒有待確認的 Apple Pay／LINE Pay 消費。', menuActions())]
+  }
+  const lines = items.map((item, index) => {
+    const merchant = String(item.merchant ?? '') || '（未提供商家）'
+    const amount = formatCaptureMoney(Number(item.amountMinor), String(item.currency))
+    const source = item.source === 'linePay' ? '［LINE Pay］' : ''
+    return `${index + 1}. ${formatTaipeiTime(String(item.occurredAt))} ${source}${merchant} ${amount}`
+  })
+  const total = Number(result.total ?? items.length)
+  const header = total > items.length
+    ? `待確認（共 ${total} 筆，顯示最近 ${items.length} 筆）`
+    : `待確認（共 ${total} 筆）`
+  return [textMessage(
+    [header, ...lines, '', '點選要處理的那一筆：'].join('\n'),
+    items.slice(0, 13).map((item, index) =>
+      postback(`第 ${index + 1} 筆`, `capture:open:${item.inboxId}`, `處理第 ${index + 1} 筆`)
+    ),
+  )]
+}
+
+async function capturePostback(
+  db: SupabaseClient,
+  lineUserId: string,
+  data: string,
+): Promise<LineMessage[]> {
+  if (data === 'capture:token:new') return issueCaptureToken(db, lineUserId)
+  if (data === 'capture:pending') return pendingCaptureMessages(db, lineUserId)
+
+  const open = splitCapturePostback(data, 'capture:open:')
+  if (open) {
+    const result = await rpc(db, 'line_capture_open', {
+      p_line_user_id: lineUserId,
+      p_inbox_id: open.id,
+    })
+    if (result.status === 'ok') return [captureMessage(result.capture as Json)]
+    return captureStatusMessages(db, lineUserId, result)
+  }
+
+  const skip = splitCapturePostback(data, 'capture:skip:')
+  if (skip) {
+    const result = await rpc(db, 'line_capture_dismiss', {
+      p_line_user_id: lineUserId,
+      p_inbox_id: skip.id,
+    })
+    if (result.status === 'dismissed') return [textMessage('已略過這筆，不會記帳。')]
+    return captureStatusMessages(db, lineUserId, result)
+  }
+
+  const category = splitCapturePostback(data, 'capture:cat:')
+  if (category?.rest) {
+    return confirmCapture(db, lineUserId, category.id, category.rest, null)
+  }
+  const card = splitCapturePostback(data, 'capture:card:')
+  if (card?.rest) {
+    return confirmCapture(db, lineUserId, card.id, null, card.rest)
+  }
+  return [textMessage('按鈕已失效，請輸入「待確認」重新開啟。')]
+}
+
+async function confirmCapture(
+  db: SupabaseClient,
+  lineUserId: string,
+  inboxId: string,
+  categoryId: string | null,
+  cardChoice: string | null,
+): Promise<LineMessage[]> {
+  const result = await rpc(db, 'line_capture_confirm', {
+    p_line_user_id: lineUserId,
+    p_inbox_id: inboxId,
+    p_category_id: categoryId,
+    p_card_choice: cardChoice,
+  })
+  if (result.status === 'saved') {
+    const card = result.cardName
+      ? `／${result.cardName}`
+      : cardChoice === NO_CARD ? '／不指定卡片' : ''
+    const amount = formatCaptureMoney(Number(result.amountMinor))
+    return [textMessage(
+      result.duplicate
+        ? '這筆先前已經入帳。'
+        : `已入帳：${result.merchant} ${amount}（${result.category}${card}）`,
+    )]
+  }
+  if (result.status === 'needs_card') {
+    return [cardPickerMessage(
+      inboxId,
+      String(result.cardLabel ?? ''),
+      (result.cards ?? []) as Json[],
+      result.source,
+    )]
+  }
+  if (result.status === 'invalid_category') {
+    const reopened = await rpc(db, 'line_capture_open', {
+      p_line_user_id: lineUserId,
+      p_inbox_id: inboxId,
+    })
+    if (reopened.status === 'ok') {
+      return [
+        textMessage('分類清單已變更，請重新選擇。'),
+        captureMessage(reopened.capture as Json),
+      ]
+    }
+    return captureStatusMessages(db, lineUserId, reopened)
+  }
+  if (result.status === 'invalid_card') {
+    return [textMessage('這張卡已停用或刪除，請輸入「待確認」重新選擇。')]
+  }
+  return captureStatusMessages(db, lineUserId, result)
+}
+
+async function captureStatusMessages(
+  db: SupabaseClient,
+  lineUserId: string,
+  result: Json,
+): Promise<LineMessage[]> {
+  switch (result.status) {
+    case 'not_linked':
+      return identityPrompt(db, lineUserId)
+    case 'already_confirmed':
+      return [textMessage('這筆已經入帳過了。')]
+    case 'already_dismissed':
+      return [textMessage('這筆已經略過了。')]
+    case 'unsupported_currency':
+      return [textMessage('外幣消費無法從 LINE 入帳，請到網頁記錄後按「略過」。')]
+    default:
+      return [textMessage('找不到這筆消費，可能已經處理過了。')]
+  }
 }
 
 async function unpaidBillMessages(
@@ -681,7 +896,7 @@ async function receivableMessages(
 
 function helpMessage(): LineMessage {
   return textMessage(
-    '快記帳可在一對一聊天室查詢財務總覽、快速記錄支出及處理待收款。複雜編輯與刪除請使用網頁。',
+    '快記帳可在一對一聊天室查詢財務總覽、快速記錄支出及處理待收款；輸入「捷徑設定」可開啟 Apple Pay／LINE Pay 自動記帳，「待確認」可處理尚未入帳的消費。複雜編輯與刪除請使用網頁。',
     menuActions(),
   )
 }
