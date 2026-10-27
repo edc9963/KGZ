@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(43);
+select plan(44);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -303,6 +303,12 @@ select public.capture_ingest(
   repeat('a', 64), 9900, 'TWD', '', 'Mystery Bank 0000', now(),
   'debitCard', '<other-1@example.invalid>'
 ) as result;
+-- Arrives in the same batch, before the account question is answered.
+create temporary table debit_capture_2 as
+select public.capture_ingest(
+  repeat('a', 64), 9800, 'TWD', '', 'Mystery Bank 0000', now(),
+  'debitCard', '<other-2@example.invalid>'
+) as result;
 select is(
   public.line_capture_confirm(
     'U-capture', (select (result->'capture'->>'inboxId')::uuid from debit_capture),
@@ -316,6 +322,13 @@ select is(
     null, null, 'bank'
   )->>'status',
   'saved', 'the chosen account books the debit-card purchase'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from debit_capture_2),
+    'legacy-food', null
+  )->>'status',
+  'saved', 'a capture already waiting with the same label uses the answer'
 );
 
 select ok(
