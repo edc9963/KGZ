@@ -166,6 +166,13 @@ LINE Pay 沒有個人交易 API，也不會觸發捷徑的「交易」自動化�
 `capture_inbox`（`source = 'linePay'`），之後與 Apple Pay 共用同一套 LINE 確認流程。
 同一封信（Message-ID）只會收一次。
 
+同一支腳本也會轉送彰化銀行數位存款帳戶的「扣帳通知」（`bill.chb.com.tw`）。
+依「交易資訊」分類：含「掃碼」/TWPAY 記為 `twPay`，含金融卡/消費/購貨記為
+`debitCard`，轉帳、提款等其他扣帳略過。這類通知只有轉出帳號、沒有卡號與商店，
+所以對應的是「帳戶」：第一次會在 LINE 問是哪個帳戶並記住。入帳時，金融卡消費若該帳戶
+恰好綁了一張金融卡就記成金融卡，其餘記成從該帳戶轉帳。金融卡同時綁在 Apple Pay 時，
+10 分鐘內同金額的 Apple Pay 紀錄會讓扣帳通知視為重複。
+
 ```powershell
 npx supabase db push
 npx supabase functions deploy card-email-ingest --no-verify-jwt

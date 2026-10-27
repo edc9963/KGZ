@@ -1,7 +1,8 @@
-// Receives one credit-card transaction notice email from the Gmail Apps
-// Script (tool/line-pay-gmail-forwarder.gs), keeps it only if it is a LINE
-// Pay charge, stores it in capture_inbox (source = linePay) and pushes the
-// same LINE confirmation message as apple-pay-ingest.
+// Receives one bank transaction notice email from the Gmail Apps Script
+// (tool/line-pay-gmail-forwarder.gs), keeps it only if it is a LINE Pay
+// credit-card charge or a TWPAY / debit-card account debit, stores it in
+// capture_inbox (source = linePay / twPay / debitCard) and pushes the same
+// LINE confirmation message as apple-pay-ingest.
 //
 //   POST /functions/v1/card-email-ingest
 //   header  x-capture-token: kgz_...   (same token as the Apple Pay shortcut)
@@ -71,7 +72,7 @@ Deno.serve(async (request) => {
     p_merchant: capture.merchant,
     p_card_label: capture.cardLabel,
     p_occurred_at: capture.occurredAt,
-    p_source: 'linePay',
+    p_source: parsed.source,
     p_external_ref: text(body.messageId).slice(0, 200) || null,
   })
   if (error) {

@@ -7,7 +7,9 @@ import {
   verifyLineSignature,
 } from '../_shared/line.ts'
 import {
+  accountPickerMessage,
   captureMessage,
+  captureSourceName,
   cardPickerMessage,
   formatCaptureMoney,
   formatTaipeiTime,
@@ -376,7 +378,7 @@ async function captureSetupMessages(
     [
       'Apple Pay／LINE Pay 自動記帳',
       '在 iPhone「捷徑」建立「交易」自動化後，每次感應 Apple Pay，這裡就會跳出一則待確認訊息，點分類即入帳。',
-      'LINE Pay 綁信用卡付款時，用 Gmail 的 Apps Script 轉送銀行刷卡通知信，也會跳出待確認訊息。',
+      'LINE Pay 綁信用卡付款、TWPAY 掃碼或金融卡消費時，用 Gmail 的 Apps Script 轉送銀行通知信，也會跳出待確認訊息。',
       '',
       '按「產生金鑰」取得要用的網址與金鑰（兩者共用同一把）。重新產生後，舊金鑰會立即失效。',
     ].join('\n'),
@@ -405,7 +407,7 @@ async function issueCaptureToken(
       '標頭：x-capture-token ＝ 下一則訊息的金鑰',
       '要求本文：JSON，欄位 amount（金額）、merchant（商家）、card（卡片或票卡）',
       '',
-      'LINE Pay 刷卡通知（Gmail Apps Script 的指令碼屬性）：',
+      '銀行通知信（Gmail Apps Script 的指令碼屬性）：',
       `KGZ_URL ＝ ${cardEmailIngestUrl}`,
       'KGZ_TOKEN ＝ 下一則訊息的金鑰',
       '',
@@ -425,12 +427,14 @@ async function pendingCaptureMessages(
   if (result.status === 'not_linked') return identityPrompt(db, lineUserId)
   const items = (result.items ?? []) as Json[]
   if (items.length === 0) {
-    return [textMessage('目前沒有待確認的 Apple Pay／LINE Pay 消費。', menuActions())]
+    return [textMessage('目前沒有待確認的自動記帳消費。', menuActions())]
   }
   const lines = items.map((item, index) => {
     const merchant = String(item.merchant ?? '') || '（未提供商家）'
     const amount = formatCaptureMoney(Number(item.amountMinor), String(item.currency))
-    const source = item.source === 'linePay' ? '［LINE Pay］' : ''
+    const source = item.source && item.source !== 'applePay'
+      ? `［${captureSourceName(item.source)}］`
+      : ''
     return `${index + 1}. ${formatTaipeiTime(String(item.occurredAt))} ${source}${merchant} ${amount}`
   })
   const total = Number(result.total ?? items.length)
@@ -475,11 +479,15 @@ async function capturePostback(
 
   const category = splitCapturePostback(data, 'capture:cat:')
   if (category?.rest) {
-    return confirmCapture(db, lineUserId, category.id, category.rest, null)
+    return confirmCapture(db, lineUserId, category.id, category.rest, null, null)
   }
   const card = splitCapturePostback(data, 'capture:card:')
   if (card?.rest) {
-    return confirmCapture(db, lineUserId, card.id, null, card.rest)
+    return confirmCapture(db, lineUserId, card.id, null, card.rest, null)
+  }
+  const account = splitCapturePostback(data, 'capture:acct:')
+  if (account?.rest) {
+    return confirmCapture(db, lineUserId, account.id, null, null, account.rest)
   }
   return [textMessage('按鈕已失效，請輸入「待確認」重新開啟。')]
 }
@@ -490,17 +498,23 @@ async function confirmCapture(
   inboxId: string,
   categoryId: string | null,
   cardChoice: string | null,
+  accountChoice: string | null,
 ): Promise<LineMessage[]> {
   const result = await rpc(db, 'line_capture_confirm', {
     p_line_user_id: lineUserId,
     p_inbox_id: inboxId,
     p_category_id: categoryId,
     p_card_choice: cardChoice,
+    p_account_choice: accountChoice,
   })
   if (result.status === 'saved') {
     const card = result.cardName
       ? `／${result.cardName}`
-      : cardChoice === NO_CARD ? '／不指定卡片' : ''
+      : cardChoice === NO_CARD
+      ? '／不指定卡片'
+      : accountChoice === NO_CARD
+      ? '／不指定帳戶'
+      : ''
     const amount = formatCaptureMoney(Number(result.amountMinor))
     return [textMessage(
       result.duplicate
@@ -514,6 +528,13 @@ async function confirmCapture(
       String(result.cardLabel ?? ''),
       (result.cards ?? []) as Json[],
       result.source,
+    )]
+  }
+  if (result.status === 'needs_account') {
+    return [accountPickerMessage(
+      inboxId,
+      String(result.cardLabel ?? ''),
+      (result.accounts ?? []) as Json[],
     )]
   }
   if (result.status === 'invalid_category') {
@@ -531,6 +552,9 @@ async function confirmCapture(
   }
   if (result.status === 'invalid_card') {
     return [textMessage('這張卡已停用或刪除，請輸入「待確認」重新選擇。')]
+  }
+  if (result.status === 'invalid_account') {
+    return [textMessage('這個帳戶已停用或刪除，請輸入「待確認」重新選擇。')]
   }
   return captureStatusMessages(db, lineUserId, result)
 }
@@ -896,7 +920,7 @@ async function receivableMessages(
 
 function helpMessage(): LineMessage {
   return textMessage(
-    '快記帳可在一對一聊天室查詢財務總覽、快速記錄支出及處理待收款；輸入「捷徑設定」可開啟 Apple Pay／LINE Pay 自動記帳，「待確認」可處理尚未入帳的消費。複雜編輯與刪除請使用網頁。',
+    '快記帳可在一對一聊天室查詢財務總覽、快速記錄支出及處理待收款；輸入「捷徑設定」可開啟 Apple Pay／LINE Pay／TWPAY 自動記帳，「待確認」可處理尚未入帳的消費。複雜編輯與刪除請使用網頁。',
     menuActions(),
   )
 }

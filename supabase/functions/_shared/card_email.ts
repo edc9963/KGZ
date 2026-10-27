@@ -1,7 +1,9 @@
-// Parses a bank's credit-card transaction notice email and keeps only LINE
-// Pay charges. Used by card-email-ingest; the Gmail Apps Script only
-// forwards subject / sender / plain body, so formats can be fixed here
-// without touching the user's script.
+// Parses a bank's transaction notice email. Used by card-email-ingest; the
+// Gmail Apps Script only forwards subject / sender / plain body, so formats
+// can be fixed here without touching the user's script. Two kinds are kept:
+//   - credit-card notices for LINE Pay charges            → linePay
+//   - account-debit notices (扣帳通知, e.g. 彰化銀行數位存款帳戶) for TWPAY
+//     scans and debit-card purchases                      → twPay / debitCard
 //
 // Banks differ, so the parser looks for common labelled fields in either
 // layout:
@@ -26,9 +28,11 @@ export type CardEmailCapture = {
   occurredAt: string
 }
 
+export type CardEmailSource = 'linePay' | 'twPay' | 'debitCard'
+
 export type CardEmailResult =
-  | { kind: 'linePay'; capture: CardEmailCapture }
-  | { kind: 'ignored'; reason: 'not_line_pay' | 'refund' | 'no_amount' }
+  | { kind: 'capture'; source: CardEmailSource; capture: CardEmailCapture }
+  | { kind: 'ignored'; reason: 'not_line_pay' | 'not_purchase' | 'refund' | 'no_amount' }
 
 const linePayMarker = /連加|LINE\s*PAY/i
 // "連加*全家" / "LINE PAY*全家" / "LINEPAY-全家": the descriptor banks print
@@ -46,6 +50,16 @@ const cardLabels = ['卡號末四碼', '末四碼', '卡片末四碼', '卡號',
 const dateLabels = ['消費日期', '交易日期', '授權日期']
 const clockLabels = ['消費時間', '交易時間', '授權時間', '刷卡時間']
 const typeLabels = ['交易類別', '交易類型', '交易種類']
+
+// Account-debit notices name no card and no merchant: 交易資訊 says what
+// moved the money (彰銀:「彰銀行動掃碼購貨」for a TWPAY scan) and 轉出帳號
+// which account. Transfers, withdrawals and auto-debits use the same
+// template, so only purchase-like 交易資訊 is kept.
+const debitSubject = /扣帳通知|扣款通知/
+const debitInfoLabels = ['交易資訊', '交易摘要', '摘要']
+const debitAccountLabels = ['轉出帳號', '扣款帳號']
+const twPayWords = /掃碼|TWPAY|台灣\s*PAY/i
+const debitCardWords = /金融卡|簽帳|VISA|DEBIT|SMART\s*PAY|刷卡|消費|購貨/i
 
 // Sender domain → bank name, so the card label reads like the bank and
 // capture_match_card can fall back to a bank-name match.
@@ -70,12 +84,19 @@ const bankDomains: [RegExp, string][] = [
   [/kgibank|kgi/i, '凱基'],
   [/skbank/i, '新光'],
   [/yuanta/i, '元大'],
+  [/chb\.com\.tw|bankchb/i, '彰化銀行'],
 ]
 
 export function parseCardEmail(email: CardEmail, now = new Date()): CardEmailResult {
   const subject = normalize(text(email.subject))
   const body = normalize(htmlToText(text(email.body)))
   const lines = body.split('\n').map((line) => line.trim()).filter(Boolean)
+  const receivedAt = validDate(text(email.receivedAt)) ?? now
+
+  const debitAccount = field(lines, debitAccountLabels)
+  if (debitSubject.test(subject) || debitAccount) {
+    return parseDebitNotice(text(email.from), subject, body, lines, debitAccount, receivedAt)
+  }
 
   const merchantField = field(lines, merchantLabels)
   const descriptor = `${subject}\n${body}`.match(linePayDescriptor)?.[0] ?? ''
@@ -91,16 +112,52 @@ export function parseCardEmail(email: CardEmail, now = new Date()): CardEmailRes
     parseCaptureAmount(sentenceAmount(`${subject}\n${body}`))
   if (!amount) return { kind: 'ignored', reason: 'no_amount' }
 
-  const receivedAt = validDate(text(email.receivedAt)) ?? now
   return {
-    kind: 'linePay',
+    kind: 'capture',
+    source: 'linePay',
     capture: {
       amountMinor: amount.amountMinor,
       currency: amount.currency,
       merchant: cleanMerchant(linePayMarker.test(merchantField) ? merchantField : descriptor) ||
         cleanMerchant(merchantField),
       cardLabel: cardLabel(text(email.from), field(lines, cardLabels) || body),
-      occurredAt: occurredAt(timeText(lines) || body, receivedAt),
+      occurredAt: occurredAt(whenText(lines, body), receivedAt),
+    },
+  }
+}
+
+function parseDebitNotice(
+  from: string,
+  subject: string,
+  body: string,
+  lines: string[],
+  account: string,
+  receivedAt: Date,
+): CardEmailResult {
+  const info = field(lines, debitInfoLabels)
+  if (refundWords.test(subject) || refundWords.test(info)) {
+    return { kind: 'ignored', reason: 'refund' }
+  }
+  const source: CardEmailSource | null = twPayWords.test(info)
+    ? 'twPay'
+    : debitCardWords.test(info)
+    ? 'debitCard'
+    : null
+  if (!source) return { kind: 'ignored', reason: 'not_purchase' }
+
+  const amount = parseCaptureAmount(field(lines, amountLabels))
+  if (!amount) return { kind: 'ignored', reason: 'no_amount' }
+
+  const bank = bankName(from)
+  return {
+    kind: 'capture',
+    source,
+    capture: {
+      amountMinor: amount.amountMinor,
+      currency: amount.currency,
+      merchant: cleanMerchant(field(lines, merchantLabels)),
+      cardLabel: [bank, account].filter(Boolean).join(' ').slice(0, 80),
+      occurredAt: occurredAt(whenText(lines, body), receivedAt),
     },
   }
 }
@@ -160,6 +217,18 @@ function timeText(lines: string[]): string {
   return [field(lines, dateLabels), clock].filter(Boolean).join(' ')
 }
 
+// The labelled time when it has a clock; otherwise the first full date-time
+// anywhere (彰銀:「2026/10/27 09:14:00 您的數位存款帳戶金額異動」above a
+// date-only 交易日期); otherwise whatever date there is.
+function whenText(lines: string[], body: string): string {
+  const labelled = timeText(lines)
+  if (/\d:\d{2}/.test(labelled)) return labelled
+  const stamp = body.match(
+    /\d{2,4}[/\-.年]\d{1,2}[/\-.月]\d{1,2}日?\s*\d{1,2}:\d{2}(?::\d{2})?/,
+  )?.[0]
+  return stamp ?? (labelled || body)
+}
+
 function sentenceAmount(value: string): string {
   const match = value.match(
     /(?:新(?:台|臺)幣|NT\$|NTD|TWD)\s*([\d,]+(?:\.\d+)?)|([\d,]+(?:\.\d+)?)\s*元/i,
@@ -181,8 +250,11 @@ function cardLabel(from: string, cardText: string): string {
     ?.slice(1).find(Boolean) ??
     cardText.match(/^\D*(\d{4})\D*$/)?.[1] ??
     ''
-  const bank = bankDomains.find(([pattern]) => pattern.test(from))?.[1] ?? ''
-  return [bank, lastFour ? `*${lastFour}` : ''].filter(Boolean).join(' ')
+  return [bankName(from), lastFour ? `*${lastFour}` : ''].filter(Boolean).join(' ')
+}
+
+function bankName(from: string): string {
+  return bankDomains.find(([pattern]) => pattern.test(from))?.[1] ?? ''
 }
 
 const taipeiOffset = '+08:00'

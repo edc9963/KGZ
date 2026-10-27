@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(37);
+select plan(43);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -269,6 +269,55 @@ select is(
   'linePay', 'card question knows the capture came from LINE Pay'
 );
 
+-- 銀行扣帳通知 (TWPAY / 金融卡) resolve to an asset account.
+create temporary table twpay_capture as
+select public.capture_ingest(
+  repeat('a', 64), 7700, 'TWD', '', '彰化銀行 1234-56-XXX78-9-00', now(),
+  'twPay', '<chb-1@bill.chb.com.tw>'
+) as result;
+select is(
+  (select result->'capture'->>'cardResolution' from twpay_capture),
+  'account', 'TWPAY notice is matched to the asset account by name'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from twpay_capture),
+    'legacy-food', null
+  )->>'merchant',
+  'TWPAY 消費', 'TWPAY capture is booked with a readable item'
+);
+select is(
+  (select payment_method || ':' || account_id || ':' || note from public.expenses
+   where user_id = '44444444-4444-4444-8444-444444444444' and amount_minor = 7700),
+  'transfer:bank:TWPAY 扣帳通知建立', 'TWPAY is a transfer out of the debited account'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 8500, 'TWD', '', '彰化銀行 1234-56-XXX78-9-00', now(),
+    'debitCard', '<chb-2@bill.chb.com.tw>'
+  )->>'status',
+  'duplicate', 'a debit notice for an Apple Pay tap is not a second purchase'
+);
+create temporary table debit_capture as
+select public.capture_ingest(
+  repeat('a', 64), 9900, 'TWD', '', 'Mystery Bank 0000', now(),
+  'debitCard', '<other-1@example.invalid>'
+) as result;
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from debit_capture),
+    'legacy-food', null
+  )->>'status',
+  'needs_account', 'unknown account asks which account was debited'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from debit_capture),
+    null, null, 'bank'
+  )->>'status',
+  'saved', 'the chosen account books the debit-card purchase'
+);
+
 select ok(
   not has_function_privilege(
     'anon',
@@ -279,7 +328,7 @@ select ok(
 );
 select ok(
   not has_function_privilege(
-    'authenticated', 'public.line_capture_confirm(text,uuid,text,text)', 'execute'
+    'authenticated', 'public.line_capture_confirm(text,uuid,text,text,text)', 'execute'
   ),
   'authenticated client cannot confirm captures'
 );

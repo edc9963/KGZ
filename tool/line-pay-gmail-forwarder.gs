@@ -1,14 +1,15 @@
 /**
- * 快記帳：LINE Pay 刷卡通知 → card-email-ingest
+ * 快記帳：銀行通知信（LINE Pay 刷卡、彰銀 TWPAY／金融卡扣帳）→ card-email-ingest
  *
- * LINE Pay 綁信用卡付款時，發卡銀行會寄刷卡通知信。這支 Google Apps Script
- * 每 10 分鐘掃一次 Gmail，把可能是 LINE Pay 的刷卡通知送到 Supabase 的
- * card-email-ingest；伺服器解析後存進待確認收件匣，再由 LINE 推播確認。
+ * LINE Pay 綁信用卡付款時，發卡銀行會寄刷卡通知信；彰化銀行數位存款帳戶的
+ * TWPAY 掃碼與金融卡消費會寄「扣帳通知」。這支 Google Apps Script 每 10 分鐘
+ * 掃一次 Gmail，把這些通知送到 Supabase 的 card-email-ingest；伺服器解析後
+ * 存進待確認收件匣，再由 LINE 推播確認。轉帳、提款等非消費扣帳會被略過。
  *
  * 設定方式：
  *   1. https://script.google.com 新增專案，貼上這個檔案。
  *   2. 專案設定 →「指令碼屬性」新增：
- *        KGZ_URL    LINE 官方帳號「捷徑設定」→「產生金鑰」訊息中的 LINE Pay 網址
+ *        KGZ_URL    LINE 官方帳號「捷徑設定」→「產生金鑰」訊息中的銀行通知信網址
  *        KGZ_TOKEN  同一則訊息後面那把 kgz_ 開頭的金鑰
  *        KGZ_QUERY  （選填）自訂 Gmail 搜尋條件，例如加上 from:銀行網域
  *   3. 執行一次 runOnce 授權並確認「執行記錄」沒有錯誤。
@@ -18,8 +19,10 @@
  * KGZ_URL，不會寫進記錄。
  */
 
+// Gmail binds OR tighter than the implied AND, so every group is explicit.
 var DEFAULT_QUERY =
-  'newer_than:2d ("LINE Pay" OR LINEPAY OR 連加) (消費 OR 刷卡 OR 交易)';
+  'newer_than:2d ((("LINE Pay" OR LINEPAY OR 連加) (消費 OR 刷卡 OR 交易)) OR ' +
+  '(from:bill.chb.com.tw 扣帳通知))';
 var MAX_BODY_CHARS = 20000;
 // Re-send a little before the last checkpoint: the server ignores repeats
 // (by Message-ID), and Gmail can index a message after a later one.

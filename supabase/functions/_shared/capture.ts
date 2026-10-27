@@ -94,7 +94,21 @@ export function formatTaipeiTime(value: string): string {
 }
 
 export function captureSourceName(source: unknown): string {
-  return source === 'linePay' ? 'LINE Pay' : 'Apple Pay'
+  switch (source) {
+    case 'linePay':
+      return 'LINE Pay'
+    case 'twPay':
+      return 'TWPAY'
+    case 'debitCard':
+      return '金融卡'
+    default:
+      return 'Apple Pay'
+  }
+}
+
+// TWPAY and debit-card notices name the debited bank account, not a card.
+export function captureUsesAccount(source: unknown): boolean {
+  return source === 'twPay' || source === 'debitCard'
 }
 
 // The pending-capture message: details plus one-tap category buttons.
@@ -107,7 +121,15 @@ export function captureMessage(capture: Json): LineMessage {
   lines.push(`時間：${formatTaipeiTime(String(capture.occurredAt))}`)
 
   const cardLabel = String(capture.cardLabel ?? '')
-  if (capture.cardResolution === 'card' && capture.cardName) {
+  if (captureUsesAccount(capture.source)) {
+    if (capture.cardResolution === 'account' && capture.accountName) {
+      lines.push(`帳戶：${capture.accountName}`)
+    } else if (capture.cardResolution === 'none') {
+      lines.push('帳戶：不指定')
+    } else {
+      lines.push(`帳戶：${cardLabel || '未知'}（選完分類後會請你對應帳戶）`)
+    }
+  } else if (capture.cardResolution === 'card' && capture.cardName) {
     const lastFour = capture.cardLastFour ? ` ${capture.cardLastFour}` : ''
     lines.push(`卡片：${capture.cardName}${lastFour}`)
   } else if (capture.cardResolution === 'none') {
@@ -162,6 +184,23 @@ export function cardPickerMessage(
     ? cardLabel ? `刷卡通知的「${cardLabel}」` : '這筆 LINE Pay 扣款的卡片'
     : cardLabel ? `Wallet 的「${cardLabel}」` : '這張 Wallet 卡片'
   return textMessage(`${label}對應快記帳的哪張卡？之後會自動記住。`, actions)
+}
+
+export function accountPickerMessage(
+  inboxId: string,
+  accountLabel: string,
+  accounts: Json[],
+): LineMessage {
+  const actions = accounts.slice(0, 12).map((account) =>
+    postback(
+      String(account.name).slice(0, 20),
+      `capture:acct:${inboxId}:${String(account.id)}`,
+      `${account.name}`,
+    )
+  )
+  actions.push(postback('不指定帳戶', `capture:acct:${inboxId}:${NO_CARD}`, '不指定帳戶'))
+  const label = accountLabel ? `扣帳通知的「${accountLabel}」` : '這筆扣款的帳戶'
+  return textMessage(`${label}是快記帳的哪個帳戶？之後會自動記住。`, actions)
 }
 
 // "capture:cat:<uuid>:<rest>" → { id, rest }
