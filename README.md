@@ -184,6 +184,30 @@ npx supabase functions deploy line-webhook --no-verify-jwt
 刷卡通知，這條路抓不到。各銀行信件格式未逐一驗證，解析不到時回應
 `ignored` 並附原因，可在 Apps Script 執行記錄看到。
 
+### LINE Pay 截圖記帳（付款訊息截圖 → 捷徑擷取文字 → LINE 確認）
+
+有些發卡銀行（例如國泰世華、台新）只有 App 推播或 LINE 官方帳號通知，不寄信，
+iPhone 也不讓捷徑讀別的 App 的推播。LINE Pay 官方帳號聊天室裡的每則付款訊息都有
+金額、`2026.10.24 20:30 (GMT+0800)` 時間與商店名稱，所以改由截圖擷取：
+
+1. 在「捷徑」新增「LINE Pay 截圖記帳」：「拍攝螢幕快照」（或「取得最新的螢幕快照」）→「從影像擷取文字」→
+   「取得 URL 內容」（POST 到 `line-pay-screenshot-ingest`，標頭 `x-capture-token`，
+   JSON 本文 `text` ＝ 擷取的文字）→「取得字典值」`message` →「顯示通知」。
+2. 可在「設定 → 輔助使用 → 觸控 → 背面輕點」指定這個捷徑。
+3. 付款後（或累積幾筆後）在 LINE Pay 聊天室截圖，執行捷徑。
+
+文字辨識在手機上完成，截圖不會上傳。一張截圖可含多筆；標「LINE Pay money」的是
+`linePayMoney`（對應資產帳戶，第一次會問是哪個帳戶），只標「LINE Pay」的是綁定的信用卡
+`linePay`（第一次會問是哪張卡並記住，所以綁多張卡輪流用時要改成「不指定」或手動修正）。
+同一筆付款以「時間到分鐘＋金額」辨識，重複截圖不會重複建立；超過 30 天的付款與退款會略過。
+多筆同時進來時，LINE 先推最新一筆；每處理（入帳或略過）一筆，bot 會接著送出下一筆待確認。
+
+```powershell
+npx supabase db push
+npx supabase functions deploy line-pay-screenshot-ingest --no-verify-jwt
+npx supabase functions deploy line-webhook --no-verify-jwt
+```
+
 ### PWA
 
 網站 manifest、Apple Touch Icon、favicon 與 maskable icon 使用深炭灰、

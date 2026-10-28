@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.card-email-ingest]
 verify_jwt = false
+
+[functions.line-pay-screenshot-ingest]
+verify_jwt = false

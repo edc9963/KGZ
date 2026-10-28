@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(48);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -256,7 +256,7 @@ select is(
 select is(
   (select payment_method || ':' || card_id || ':' || note from public.expenses
    where user_id = '44444444-4444-4444-8444-444444444444' and amount_minor = 4321),
-  'creditCard:cube:LINE Pay 刷卡通知建立', 'LINE Pay charge is booked on the card'
+  'creditCard:cube:LINE Pay 自動記帳建立', 'LINE Pay charge is booked on the card'
 );
 select is(
   public.line_capture_confirm(
@@ -329,6 +329,39 @@ select is(
     'legacy-food', null
   )->>'status',
   'saved', 'a capture already waiting with the same label uses the answer'
+);
+
+-- LINE Pay Money payments read off a chat screenshot resolve to an account.
+create temporary table money_capture as
+select public.capture_ingest(
+  repeat('a', 64), 69200, 'TWD', '麥當勞', 'LINE Pay Money', now(),
+  'linePayMoney', 'ocr:2026-10-24T12:30:69200'
+) as result;
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 69200, 'TWD', '麥営勞', 'LINE Pay Money', now(),
+    'linePayMoney', 'ocr:2026-10-24T12:30:69200'
+  )->>'status',
+  'duplicate', 'the same payment in a second screenshot is captured once'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from money_capture),
+    'legacy-food', null
+  )->>'status',
+  'needs_account', 'LINE Pay Money asks which account holds the wallet'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from money_capture),
+    null, null, 'bank'
+  )->>'status',
+  'saved', 'the chosen account books the LINE Pay Money payment'
+);
+select is(
+  (select payment_method || ':' || account_id || ':' || note from public.expenses
+   where user_id = '44444444-4444-4444-8444-444444444444' and amount_minor = 69200),
+  'transfer:bank:LINE Pay Money 自動記帳建立', 'LINE Pay Money is a transfer out of the wallet account'
 );
 
 select ok(

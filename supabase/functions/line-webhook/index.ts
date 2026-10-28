@@ -365,6 +365,9 @@ const functionsBaseUrl = supabaseUrl
   : ''
 const captureIngestUrl = functionsBaseUrl ? `${functionsBaseUrl}/apple-pay-ingest` : ''
 const cardEmailIngestUrl = functionsBaseUrl ? `${functionsBaseUrl}/card-email-ingest` : ''
+const lineScreenshotIngestUrl = functionsBaseUrl
+  ? `${functionsBaseUrl}/line-pay-screenshot-ingest`
+  : ''
 
 async function captureSetupMessages(
   db: SupabaseClient,
@@ -378,7 +381,8 @@ async function captureSetupMessages(
     [
       'Apple Pay／LINE Pay 自動記帳',
       '在 iPhone「捷徑」建立「交易」自動化後，每次感應 Apple Pay，這裡就會跳出一則待確認訊息，點分類即入帳。',
-      'LINE Pay 綁信用卡付款、TWPAY 掃碼或金融卡消費時，用 Gmail 的 Apps Script 轉送銀行通知信，也會跳出待確認訊息。',
+      'LINE Pay 付款後，對 LINE Pay 官方帳號的付款訊息截圖，再執行「LINE Pay 截圖記帳」捷徑，就會跳出待確認訊息（一張截圖可含多筆）。',
+      'TWPAY 掃碼或金融卡消費時，用 Gmail 的 Apps Script 轉送銀行通知信，也會跳出待確認訊息。',
       '',
       '按「產生金鑰」取得要用的網址與金鑰（兩者共用同一把）。重新產生後，舊金鑰會立即失效。',
     ].join('\n'),
@@ -406,6 +410,10 @@ async function issueCaptureToken(
       '方法：POST',
       '標頭：x-capture-token ＝ 下一則訊息的金鑰',
       '要求本文：JSON，欄位 amount（金額）、merchant（商家）、card（卡片或票卡）',
+      '',
+      'LINE Pay 截圖捷徑（同一把金鑰）：',
+      `網址：${lineScreenshotIngestUrl}`,
+      '要求本文：JSON，欄位 text ＝「從影像擷取文字」的結果',
       '',
       '銀行通知信（Gmail Apps Script 的指令碼屬性）：',
       `KGZ_URL ＝ ${cardEmailIngestUrl}`,
@@ -473,7 +481,9 @@ async function capturePostback(
       p_line_user_id: lineUserId,
       p_inbox_id: skip.id,
     })
-    if (result.status === 'dismissed') return [textMessage('已略過這筆，不會記帳。')]
+    if (result.status === 'dismissed') {
+      return withNextCapture(db, lineUserId, skip.id, [textMessage('已略過這筆，不會記帳。')])
+    }
     return captureStatusMessages(db, lineUserId, result)
   }
 
@@ -516,11 +526,11 @@ async function confirmCapture(
       ? '／不指定帳戶'
       : ''
     const amount = formatCaptureMoney(Number(result.amountMinor))
-    return [textMessage(
+    return withNextCapture(db, lineUserId, inboxId, [textMessage(
       result.duplicate
         ? '這筆先前已經入帳。'
         : `已入帳：${result.merchant} ${amount}（${result.category}${card}）`,
-    )]
+    )])
   }
   if (result.status === 'needs_card') {
     return [cardPickerMessage(
@@ -535,6 +545,7 @@ async function confirmCapture(
       inboxId,
       String(result.cardLabel ?? ''),
       (result.accounts ?? []) as Json[],
+      result.source,
     )]
   }
   if (result.status === 'invalid_category') {
@@ -557,6 +568,34 @@ async function confirmCapture(
     return [textMessage('這個帳戶已停用或刪除，請輸入「待確認」重新選擇。')]
   }
   return captureStatusMessages(db, lineUserId, result)
+}
+
+// Quick reply buttons only stay on the newest message, so when several
+// captures arrive together only the last push can be answered. After one is
+// handled, offer the next waiting capture right away.
+async function withNextCapture(
+  db: SupabaseClient,
+  lineUserId: string,
+  handledId: string,
+  messages: LineMessage[],
+): Promise<LineMessage[]> {
+  const pending = await rpc(db, 'line_capture_list_pending', {
+    p_line_user_id: lineUserId,
+  })
+  const items = ((pending.items ?? []) as Json[])
+    .filter((item) => String(item.inboxId) !== handledId)
+  if (items.length === 0) return messages
+  const next = await rpc(db, 'line_capture_open', {
+    p_line_user_id: lineUserId,
+    p_inbox_id: String(items[0].inboxId),
+  })
+  if (next.status !== 'ok') return messages
+  const total = Number(pending.total ?? items.length)
+  return [
+    ...messages,
+    textMessage(`還有 ${total} 筆待確認，下一筆：`),
+    captureMessage(next.capture as Json),
+  ]
 }
 
 async function captureStatusMessages(

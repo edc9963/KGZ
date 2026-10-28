@@ -97,6 +97,8 @@ export function captureSourceName(source: unknown): string {
   switch (source) {
     case 'linePay':
       return 'LINE Pay'
+    case 'linePayMoney':
+      return 'LINE Pay Money'
     case 'twPay':
       return 'TWPAY'
     case 'debitCard':
@@ -106,9 +108,10 @@ export function captureSourceName(source: unknown): string {
   }
 }
 
-// TWPAY and debit-card notices name the debited bank account, not a card.
+// TWPAY and debit-card notices name the debited bank account, not a card;
+// LINE Pay Money is a wallet, kept as an asset account.
 export function captureUsesAccount(source: unknown): boolean {
-  return source === 'twPay' || source === 'debitCard'
+  return source === 'linePayMoney' || source === 'twPay' || source === 'debitCard'
 }
 
 // The pending-capture message: details plus one-tap category buttons.
@@ -180,8 +183,9 @@ export function cardPickerMessage(
     )
   )
   actions.push(postback('不指定卡片', `capture:card:${inboxId}:${NO_CARD}`, '不指定卡片'))
+  // Screenshots only say "LINE Pay"; card emails name the bank and last four.
   const label = source === 'linePay'
-    ? cardLabel ? `刷卡通知的「${cardLabel}」` : '這筆 LINE Pay 扣款的卡片'
+    ? cardLabel && cardLabel !== 'LINE Pay' ? `刷卡通知的「${cardLabel}」` : 'LINE Pay 綁定的卡'
     : cardLabel ? `Wallet 的「${cardLabel}」` : '這張 Wallet 卡片'
   return textMessage(`${label}對應快記帳的哪張卡？之後會自動記住。`, actions)
 }
@@ -190,6 +194,7 @@ export function accountPickerMessage(
   inboxId: string,
   accountLabel: string,
   accounts: Json[],
+  source: unknown = 'debitCard',
 ): LineMessage {
   const actions = accounts.slice(0, 12).map((account) =>
     postback(
@@ -199,7 +204,9 @@ export function accountPickerMessage(
     )
   )
   actions.push(postback('不指定帳戶', `capture:acct:${inboxId}:${NO_CARD}`, '不指定帳戶'))
-  const label = accountLabel ? `扣帳通知的「${accountLabel}」` : '這筆扣款的帳戶'
+  const label = source === 'linePayMoney'
+    ? 'LINE Pay Money'
+    : accountLabel ? `扣帳通知的「${accountLabel}」` : '這筆扣款的帳戶'
   return textMessage(`${label}是快記帳的哪個帳戶？之後會自動記住。`, actions)
 }
 
