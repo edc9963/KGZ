@@ -1409,6 +1409,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('rejected bill reconciliation stays in the dialog, not a banner', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.now();
+    const card = CreditCard(
+      id: 'rejected-card',
+      userId: 'user',
+      name: '退件卡',
+      bank: '銀行',
+      lastFour: '1122',
+      closingDay: 15,
+      dueDay: 28,
+      autoDebitDay: 28,
+      debitAccountId: '',
+      isActive: true,
+      note: '',
+    );
+    final bill = CardBill(
+      id: 'rejected-bill',
+      userId: 'user',
+      cardId: card.id,
+      month: '${now.year}-${now.month.toString().padLeft(2, '0')}',
+      chargeIds: const [],
+      manualAdjustmentMinor: 0,
+      paidMinor: 4000,
+      dueDate: now.add(const Duration(days: 10)),
+      autoDebitDate: now.add(const Duration(days: 8)),
+      note: '',
+      statementAmountMinor: 4000,
+      reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+    );
+    final store = await _makeStore(
+      auth: _WidgetAuth()..signedIn = true,
+      finance: _WidgetFinance(
+        data: AppData(cards: const [card], bills: [bill]),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: ReconciliationPage()),
+          ),
+        ),
+      ),
+    );
+
+    final reconcile = find.widgetWithText(FilledButton, '核對').first;
+    await tester.ensureVisible(reconcile);
+    await tester.pumpAndSettle();
+    await tester.tap(reconcile);
+    await tester.pumpAndSettle();
+    // Matches the (empty) charge total, so the dialog's own checks pass and
+    // the store is what rejects it: it's below what's already been paid.
+    await enterMoneyFieldValue(tester, find.byType(TextField).first, '0');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('確認無差異'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('實際帳單總額不得低於已繳金額'), findsOneWidget);
+    expect(store.lastSyncError, isNull);
+    expect(store.data.bills.single.statementAmountMinor, 4000);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('investment reconciliation books a snapshot at 390px', (
     tester,
   ) async {

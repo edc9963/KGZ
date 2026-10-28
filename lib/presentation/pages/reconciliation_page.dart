@@ -806,8 +806,12 @@ class ReconciliationPage extends ConsumerWidget {
                     ),
                     reconciliationDate: DateTime.now(),
                   );
-                  if (store.lastSyncError != null) {
-                    setState(() => error = store.lastSyncError!);
+                  if (store.lastSyncError case final message?) {
+                    // Shown here instead; don't also leave it behind as the
+                    // app-wide banner once the dialog closes.
+                    store.lastSyncError = null;
+                    store.notify();
+                    setState(() => error = message);
                     return;
                   }
                   if (dialogContext.mounted) Navigator.pop(dialogContext);
