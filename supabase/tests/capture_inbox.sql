@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(48);
+select plan(50);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -331,7 +331,7 @@ select is(
   'saved', 'a capture already waiting with the same label uses the answer'
 );
 
--- LINE Pay Money payments read off a chat screenshot resolve to an account.
+-- LINE Pay Money payments read off a chat screenshot: card or account.
 create temporary table money_capture as
 select public.capture_ingest(
   repeat('a', 64), 69200, 'TWD', '麥當勞', 'LINE Pay Money', now(),
@@ -349,19 +349,32 @@ select is(
     'U-capture', (select (result->'capture'->>'inboxId')::uuid from money_capture),
     'legacy-food', null
   )->>'status',
-  'needs_account', 'LINE Pay Money asks which account holds the wallet'
+  'needs_card', 'LINE Pay Money asks how it was paid'
+);
+select is(
+  jsonb_typeof(public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from money_capture)
+  )->'accounts'),
+  'array', 'the LINE Pay Money question also offers accounts'
 );
 select is(
   public.line_capture_confirm(
     'U-capture', (select (result->'capture'->>'inboxId')::uuid from money_capture),
     null, null, 'bank'
   )->>'status',
-  'saved', 'the chosen account books the LINE Pay Money payment'
+  'saved', 'an account answer books the LINE Pay Money payment'
 );
 select is(
   (select payment_method || ':' || account_id || ':' || note from public.expenses
    where user_id = '44444444-4444-4444-8444-444444444444' and amount_minor = 69200),
-  'transfer:bank:LINE Pay Money 自動記帳建立', 'LINE Pay Money is a transfer out of the wallet account'
+  'transfer:bank:LINE Pay Money 自動記帳建立', 'LINE Pay Money is a transfer out of the chosen account'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 24300, 'TWD', '統康生活', 'LINE Pay Money', now(),
+    'linePayMoney', 'ocr:2026-10-24T12:57:24300'
+  )->'capture'->>'cardResolution',
+  'account', 'the next LINE Pay Money capture remembers the account'
 );
 
 select ok(

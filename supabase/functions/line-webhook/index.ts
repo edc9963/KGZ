@@ -15,6 +15,7 @@ import {
   formatTaipeiTime,
   generateCaptureToken,
   NO_CARD,
+  paymentKindMessage,
   sha256Hex,
   splitCapturePostback,
 } from '../_shared/capture.ts'
@@ -499,6 +500,10 @@ async function capturePostback(
   if (account?.rest) {
     return confirmCapture(db, lineUserId, account.id, null, null, account.rest)
   }
+  const pay = splitCapturePostback(data, 'capture:pay:')
+  if (pay?.rest === 'card' || pay?.rest === 'acct') {
+    return confirmCapture(db, lineUserId, pay.id, null, null, null, pay.rest)
+  }
   return [textMessage('按鈕已失效，請輸入「待確認」重新開啟。')]
 }
 
@@ -509,6 +514,8 @@ async function confirmCapture(
   categoryId: string | null,
   cardChoice: string | null,
   accountChoice: string | null,
+  // LINE Pay Money: the list the user asked for after「卡片／帳戶」.
+  pick: 'card' | 'acct' | null = null,
 ): Promise<LineMessage[]> {
   const result = await rpc(db, 'line_capture_confirm', {
     p_line_user_id: lineUserId,
@@ -531,6 +538,17 @@ async function confirmCapture(
         ? '這筆先前已經入帳。'
         : `已入帳：${result.merchant} ${amount}（${result.category}${card}）`,
     )])
+  }
+  if (result.status === 'needs_card' && result.source === 'linePayMoney') {
+    if (pick === 'acct') {
+      return [accountPickerMessage(
+        inboxId,
+        String(result.cardLabel ?? ''),
+        (result.accounts ?? []) as Json[],
+        result.source,
+      )]
+    }
+    if (pick !== 'card') return [paymentKindMessage(inboxId)]
   }
   if (result.status === 'needs_card') {
     return [cardPickerMessage(

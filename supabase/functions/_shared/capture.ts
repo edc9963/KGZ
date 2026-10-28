@@ -2,6 +2,8 @@
 // (re-opening a pending capture, card picker). Postback formats:
 //   capture:cat:<inboxId>:<categoryId>
 //   capture:card:<inboxId>:<cardId | __none__>
+//   capture:acct:<inboxId>:<accountId | __none__>
+//   capture:pay:<inboxId>:<card | acct>   (LINE Pay Money: which list to show)
 //   capture:skip:<inboxId>
 //   capture:open:<inboxId>
 import type { LineAction, LineMessage } from './line.ts'
@@ -108,10 +110,9 @@ export function captureSourceName(source: unknown): string {
   }
 }
 
-// TWPAY and debit-card notices name the debited bank account, not a card;
-// LINE Pay Money is a wallet, kept as an asset account.
+// TWPAY and debit-card notices name the debited bank account, not a card.
 export function captureUsesAccount(source: unknown): boolean {
-  return source === 'linePayMoney' || source === 'twPay' || source === 'debitCard'
+  return source === 'twPay' || source === 'debitCard'
 }
 
 // The pending-capture message: details plus one-tap category buttons.
@@ -124,7 +125,15 @@ export function captureMessage(capture: Json): LineMessage {
   lines.push(`時間：${formatTaipeiTime(String(capture.occurredAt))}`)
 
   const cardLabel = String(capture.cardLabel ?? '')
-  if (captureUsesAccount(capture.source)) {
+  if (capture.cardResolution === 'account' && capture.accountName) {
+    lines.push(`帳戶：${capture.accountName}`)
+  } else if (capture.source === 'linePayMoney') {
+    lines.push(capture.cardResolution === 'card' && capture.cardName
+      ? `卡片：${capture.cardName}`
+      : capture.cardResolution === 'none'
+      ? '付款來源：不指定'
+      : '付款來源：未知（選完分類後會請你選卡片或帳戶）')
+  } else if (captureUsesAccount(capture.source)) {
     if (capture.cardResolution === 'account' && capture.accountName) {
       lines.push(`帳戶：${capture.accountName}`)
     } else if (capture.cardResolution === 'none') {
@@ -186,6 +195,8 @@ export function cardPickerMessage(
   // Screenshots only say "LINE Pay"; card emails name the bank and last four.
   const label = source === 'linePay'
     ? cardLabel && cardLabel !== 'LINE Pay' ? `刷卡通知的「${cardLabel}」` : 'LINE Pay 綁定的卡'
+    : source === 'linePayMoney'
+    ? 'LINE Pay Money 的扣款'
     : cardLabel ? `Wallet 的「${cardLabel}」` : '這張 Wallet 卡片'
   return textMessage(`${label}對應快記帳的哪張卡？之後會自動記住。`, actions)
 }
@@ -205,9 +216,18 @@ export function accountPickerMessage(
   )
   actions.push(postback('不指定帳戶', `capture:acct:${inboxId}:${NO_CARD}`, '不指定帳戶'))
   const label = source === 'linePayMoney'
-    ? 'LINE Pay Money'
+    ? 'LINE Pay Money 的扣款'
     : accountLabel ? `扣帳通知的「${accountLabel}」` : '這筆扣款的帳戶'
   return textMessage(`${label}是快記帳的哪個帳戶？之後會自動記住。`, actions)
+}
+
+// LINE Pay Money may be paid from a card or an account: ask which first.
+export function paymentKindMessage(inboxId: string): LineMessage {
+  return textMessage('LINE Pay Money 這筆要記在卡片還是帳戶？之後會自動記住。', [
+    postback('卡片', `capture:pay:${inboxId}:card`, '記在卡片'),
+    postback('帳戶', `capture:pay:${inboxId}:acct`, '記在帳戶'),
+    postback('不指定', `capture:card:${inboxId}:${NO_CARD}`, '不指定'),
+  ])
 }
 
 // "capture:cat:<uuid>:<rest>" → { id, rest }

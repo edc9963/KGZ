@@ -4,6 +4,7 @@ import {
   NO_CARD,
   cardPickerMessage,
   parseCaptureAmount,
+  paymentKindMessage,
   splitCapturePostback,
 } from './capture.ts'
 
@@ -113,4 +114,27 @@ Deno.test('LINE Pay captures say LINE Pay', () => {
   assertEquals(String(message.text).startsWith('LINE Pay 消費待確認'), true)
   const picker = cardPickerMessage('0f8fad5b-d9cb-469f-a165-70867728950e', '國泰世華 *1234', [], 'linePay')
   assertEquals(String(picker.text).startsWith('刷卡通知的「國泰世華 *1234」'), true)
+})
+
+Deno.test('LINE Pay Money asks card or account before the list', () => {
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e'
+  const message = captureMessage({
+    inboxId: id,
+    source: 'linePayMoney',
+    amountMinor: 69200,
+    currency: 'TWD',
+    merchant: '麥當勞',
+    cardLabel: 'LINE Pay Money',
+    cardResolution: 'unknown',
+    occurredAt: '2026-10-24T12:30:00Z',
+    categories: [{ id: 'a', name: '餐飲' }],
+  })
+  assertEquals(String(message.text).includes('付款來源：未知'), true)
+  const kind = paymentKindMessage(id)
+  const items = (kind.quickReply as { items: { action: { data: string } }[] }).items
+  assertEquals(items.map((item) => item.action.data), [
+    `capture:pay:${id}:card`,
+    `capture:pay:${id}:acct`,
+    `capture:card:${id}:${NO_CARD}`,
+  ])
 })
