@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(50);
+select plan(54);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -375,6 +375,42 @@ select is(
     'linePayMoney', 'ocr:2026-10-24T12:57:24300'
   )->'capture'->>'cardResolution',
   'account', 'the next LINE Pay Money capture remembers the account'
+);
+
+-- Telecom bill 代收服務明細 rows: a month old, several at one price.
+create temporary table telecom_capture as
+select public.capture_ingest(
+  repeat('a', 64), 33000, 'TWD', 'Apple商店消費', '電信帳單',
+  date_trunc('second', now()) - interval '60 days',
+  'telecomBill', 'telecom:row-1'
+) as result;
+select is(
+  (select (result->'capture'->>'occurredAt')::timestamptz from telecom_capture),
+  date_trunc('second', now()) - interval '60 days',
+  'a telecom bill row keeps its date from last month'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 33000, 'TWD', 'Apple商店消費', '電信帳單',
+    date_trunc('second', now()) - interval '60 days' + interval '62 seconds',
+    'telecomBill', 'telecom:row-2'
+  )->>'status',
+  'created', 'a same-priced purchase a minute later is a second charge'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 33000, 'TWD', 'Apple商店消費', '電信帳單',
+    date_trunc('second', now()) - interval '60 days',
+    'telecomBill', 'telecom:row-1'
+  )->>'status',
+  'duplicate', 'the same row in a second screenshot is captured once'
+);
+select is(
+  public.line_capture_confirm(
+    'U-capture', (select (result->'capture'->>'inboxId')::uuid from telecom_capture),
+    'legacy-food', null
+  )->>'status',
+  'telecom_bill_not_configured', 'booking on the phone bill needs it set up first'
 );
 
 select ok(

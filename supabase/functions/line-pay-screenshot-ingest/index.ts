@@ -3,7 +3,8 @@
 // leaves it), stores every payment card found in capture_inbox (source =
 // linePay for the bound credit card, linePayMoney for the wallet) and pushes
 // the newest one to LINE for confirmation; line-webhook offers the rest one
-// after another.
+// after another. The same Shortcut also takes a screenshot of a telecom
+// bill's 代收服務明細 (source = telecomBill, booked on the phone bill).
 //
 //   POST /functions/v1/line-pay-screenshot-ingest
 //   header  x-capture-token: kgz_...   (same token as the Apple Pay shortcut)
@@ -17,6 +18,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { pushLine, textMessage } from '../_shared/line.ts'
 import { captureMessage, sha256Hex } from '../_shared/capture.ts'
 import { parseLinePayOcr } from '../_shared/line_pay_ocr.ts'
+import { parseTelecomBillOcr } from '../_shared/telecom_bill_ocr.ts'
 
 type Json = Record<string, unknown>
 
@@ -30,7 +32,9 @@ const database = createClient(supabaseUrl, serviceRoleKey, {
 
 const tokenPattern = /^kgz_[A-Za-z0-9_-]{20,64}$/
 // capture_ingest replaces older times with now(); such cards are history.
-const maxAgeMs = 30 * 24 * 60 * 60 * 1000
+// A telecom bill arrives a month after its first charges.
+const dayMs = 24 * 60 * 60 * 1000
+const maxAgeMs = { linePay: 30 * dayMs, linePayMoney: 30 * dayMs, telecomBill: 120 * dayMs }
 
 function respond(status: number, body: Json): Response {
   return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
@@ -62,15 +66,19 @@ Deno.serve(async (request) => {
   }
 
   const now = Date.now()
-  const captures = parseLinePayOcr(text).filter((capture) =>
-    now - new Date(capture.occurredAt).getTime() <= maxAgeMs
-  )
+  const captures = [...parseLinePayOcr(text), ...parseTelecomBillOcr(text)]
+    .filter((capture) =>
+      now - new Date(capture.occurredAt).getTime() <= maxAgeMs[capture.source]
+    )
   if (captures.length === 0) {
     return respond(200, {
       ok: true, created: 0, duplicate: 0,
-      message: '截圖裡沒有讀到 LINE Pay 付款',
+      message: '截圖裡沒有讀到 LINE Pay 付款或電信代收明細',
     })
   }
+  const kind = captures.every((capture) => capture.source === 'telecomBill')
+    ? '電信帳單代收'
+    : 'LINE Pay'
 
   const tokenHash = await sha256Hex(token)
   const created: Json[] = []
@@ -104,9 +112,11 @@ Deno.serve(async (request) => {
   }
 
   const message = created.length
-    ? `新增 ${created.length} 筆 LINE Pay 待確認` +
+    ? `新增 ${created.length} 筆${kind}待確認` +
       (duplicate ? `（${duplicate} 筆先前已收過）` : '')
-    : `${duplicate} 筆都已收過，沒有新的付款`
+    : duplicate
+    ? `${duplicate} 筆都已收過，沒有新的付款`
+    : '一小時內收到太多筆，請稍後再試'
   if (created.length === 0 || !lineUserId || !channelAccessToken) {
     return respond(200, {
       ok: true, created: created.length, duplicate, pushed: false, message,
@@ -116,7 +126,7 @@ Deno.serve(async (request) => {
   // Newest first, matching the 待確認 list and line-webhook's "next" order.
   created.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)))
   const messages = created.length > 1
-    ? [textMessage(`收到 ${created.length} 筆 LINE Pay 付款，逐筆確認：`), captureMessage(created[0])]
+    ? [textMessage(`收到 ${created.length} 筆${kind}消費，逐筆確認：`), captureMessage(created[0])]
     : [captureMessage(created[0])]
   try {
     await pushLine(channelAccessToken, lineUserId, messages)

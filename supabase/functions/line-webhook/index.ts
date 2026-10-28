@@ -585,6 +585,11 @@ async function confirmCapture(
   if (result.status === 'invalid_account') {
     return [textMessage('這個帳戶已停用或刪除，請輸入「待確認」重新選擇。')]
   }
+  if (result.status === 'telecom_bill_not_configured') {
+    return [textMessage(
+      '還沒設定電信帳單：請先到網頁新增付款方式為「電信帳單繳費」的定期支出（電話費），再輸入「待確認」入帳這筆。',
+    )]
+  }
   return captureStatusMessages(db, lineUserId, result)
 }
 

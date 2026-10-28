@@ -72,6 +72,25 @@ Deno.test('capture message puts the learned category first and fits LINE limits'
   if (!text.includes('NT$85') || !text.includes('10/27 09:31')) throw new Error(text)
 })
 
+Deno.test('a telecom bill capture names the phone bill, not a card', () => {
+  const message = captureMessage({
+    inboxId: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    source: 'telecomBill',
+    amountMinor: 33000,
+    currency: 'TWD',
+    merchant: 'Apple商店消費',
+    cardLabel: '電信帳單',
+    cardResolution: 'none',
+    occurredAt: '2026-09-26T02:11:53Z',
+    categories: [{ id: 'a', name: '娛樂' }],
+  })
+  const text = String(message.text)
+  if (!text.startsWith('電信帳單 消費待確認') || !text.includes('付款：電信帳單')) {
+    throw new Error(text)
+  }
+  if (text.includes('卡片')) throw new Error(text)
+})
+
 Deno.test('foreign currency only offers skip', () => {
   const message = captureMessage({
     inboxId: '0f8fad5b-d9cb-469f-a165-70867728950e',

@@ -105,6 +105,8 @@ export function captureSourceName(source: unknown): string {
       return 'TWPAY'
     case 'debitCard':
       return '金融卡'
+    case 'telecomBill':
+      return '電信帳單'
     default:
       return 'Apple Pay'
   }
@@ -125,7 +127,9 @@ export function captureMessage(capture: Json): LineMessage {
   lines.push(`時間：${formatTaipeiTime(String(capture.occurredAt))}`)
 
   const cardLabel = String(capture.cardLabel ?? '')
-  if (capture.cardResolution === 'account' && capture.accountName) {
+  if (capture.source === 'telecomBill') {
+    lines.push('付款：電信帳單（隨電話費繳）')
+  } else if (capture.cardResolution === 'account' && capture.accountName) {
     lines.push(`帳戶：${capture.accountName}`)
   } else if (capture.source === 'linePayMoney') {
     lines.push(capture.cardResolution === 'card' && capture.cardName
