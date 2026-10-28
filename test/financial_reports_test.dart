@@ -435,6 +435,58 @@ void main() {
       expect(trend.map((point) => point.valueMinor), [0, 24000, 9000, 45000]);
       expect(trend.map((point) => point.costMinor), [0, 20200, 10100, 33000]);
     });
+
+    test('expense breakdown groups the same expenses by payment method', () {
+      Expense expense(
+        String id,
+        int amount,
+        PaymentMethod method,
+        String category,
+      ) => Expense(
+        id: id,
+        userId: 'u',
+        date: DateTime(2026, 1, 12),
+        amountMinor: amount,
+        paymentMethod: method,
+        item: id,
+        category: category,
+        accountId: 'bank',
+        merchant: '',
+        note: '',
+        isNecessary: true,
+      );
+      final data = AppData(
+        accounts: [_account(opening: 100000)],
+        expenses: [
+          expense('lunch', 3000, PaymentMethod.cash, '餐飲'),
+          expense('dinner', 7000, PaymentMethod.creditCard, '餐飲'),
+          expense('bus', 1500, PaymentMethod.cash, '交通'),
+        ],
+      );
+
+      final report = FinancialReportService(data).build(
+        ReportPeriod(start: DateTime(2026, 1, 1), end: DateTime(2026, 1, 31)),
+      );
+
+      expect(
+        {
+          for (final slice in report.expenseAllocation)
+            slice.label: slice.amountMinor,
+        },
+        {'餐飲': 10000, '交通': 1500},
+      );
+      expect(
+        [
+          for (final slice in report.paymentAllocation)
+            (slice.label, slice.amountMinor),
+        ],
+        [('信用卡', 7000), ('現金', 4500)],
+      );
+      expect(
+        report.paymentDetails['現金']!.map((detail) => detail.item),
+        unorderedEquals(['lunch', 'bus']),
+      );
+    });
   });
 }
 

@@ -285,16 +285,44 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   }
 }
 
-/// Fixed series palette for pie charts whose slices carry a white label on
-/// the fill: the Figma chart hues (rose, honey, mint, violet, cyan) pushed
-/// dark enough for white text, and kept the same in both themes.
-const pieChartPalette = <Color>[
+/// Light-theme pie series: the Figma chart hues (rose, honey, mint, violet,
+/// cyan) pushed dark enough for white slice labels.
+const _lightPieChartPalette = <Color>[
   Color(0xFFC85F6B),
   Color(0xFFB0800E),
   Color(0xFF3E8C74),
   Color(0xFF7A62C4),
   Color(0xFF1A8BAD),
 ];
+
+/// Dark-theme pie series: the same hue order taken from the dark theme's
+/// neon tokens (expense, warn, income, chartB, asset), so pies sit in with
+/// the rest of the dark UI. Their slice labels come out dark (see
+/// [pieLabelColor]).
+const _darkPieChartPalette = <Color>[
+  Color(0xFFFF6685),
+  Color(0xFFFFB547),
+  Color(0xFF00E676),
+  Color(0xFFA98BFF),
+  Color(0xFF00CFFF),
+];
+
+/// Series palette for pie charts (asset allocation, payment methods,
+/// holdings) in the current light/dark theme.
+List<Color> pieChartPalette(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? _darkPieChartPalette
+    : _lightPieChartPalette;
+
+/// The percentage label drawn on a pie slice, whose fill may be a light neon
+/// (dark theme) or a user-picked category color: white while it keeps at
+/// least 3:1 contrast (true for the whole light palette, which was tuned for
+/// white labels), otherwise near-black. Checked directly rather than via
+/// [ThemeData.estimateBrightnessForColor], which calls mid-luminance neons
+/// like #FF6685 "dark" and pairs them with white at ~2.8:1.
+Color pieLabelColor(Color fill) => 1.05 / (fill.computeLuminance() + .05) >= 3
+    ? Colors.white
+    : const Color(0xFF0D0E15);
 
 /// Reads the current [AppSemanticColors] off the nearest [Theme] — the
 /// replacement for the old direct `AppColors.xxx` references. `buildAppTheme`

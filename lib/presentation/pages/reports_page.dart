@@ -11,6 +11,9 @@ import '../widgets/common.dart';
 
 enum _ReportTab { summary, balance, profitLoss, cashFlow }
 
+/// How the 期間支出分析 pie groups the period's expenses.
+enum _ExpenseGrouping { category, payment }
+
 enum _PeriodPreset {
   currentMonth,
   recentSixMonths,
@@ -33,9 +36,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   int _assetTouched = -1;
   int _expenseTouched = -1;
 
-  /// Label of the expense category whose transactions are listed under the
-  /// pie chart (null = nothing selected).
+  /// Label of the expense slice (a category or a payment method, per
+  /// [_expenseGrouping]) whose transactions are listed under the pie chart
+  /// (null = nothing selected).
   String? _expenseSelected;
+  _ExpenseGrouping _expenseGrouping = _ExpenseGrouping.category;
   late DateTime _customStart;
   late DateTime _customEnd;
 
@@ -345,19 +350,41 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ],
       ),
       const SizedBox(height: 18),
-      // 期間支出分類 (with the tap-to-expand transaction list) comes before the
+      // 期間支出分析 (with the tap-to-expand transaction list) comes before the
       // 淨資產趨勢 chart.
       LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 900;
+          final byPayment = _expenseGrouping == _ExpenseGrouping.payment;
           final charts = <Widget>[
             _pieCard(
-              '期間支出分類',
-              data.expenseAllocation,
+              '期間支出分析',
+              byPayment ? data.paymentAllocation : data.expenseAllocation,
               currency,
               mask,
               asset: false,
-              details: data.expenseDetails,
+              byPayment: byPayment,
+              headerAction: SegmentedButton<_ExpenseGrouping>(
+                segments: const [
+                  ButtonSegment(
+                    value: _ExpenseGrouping.category,
+                    label: Text('類別'),
+                  ),
+                  ButtonSegment(
+                    value: _ExpenseGrouping.payment,
+                    label: Text('支付方式'),
+                  ),
+                ],
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                selected: {_expenseGrouping},
+                onSelectionChanged: (value) => setState(() {
+                  _expenseGrouping = value.first;
+                  _expenseSelected = null;
+                  _expenseTouched = -1;
+                }),
+              ),
+              details: byPayment ? data.paymentDetails : data.expenseDetails,
               selectedLabel: _expenseSelected,
               onSelect: (label) => setState(
                 () =>
@@ -691,22 +718,23 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     String currency,
     bool mask, {
     required bool asset,
+    bool byPayment = false,
+    Widget? headerAction,
     Map<String, List<ExpenseDetail>> details = const {},
     String? selectedLabel,
     ValueChanged<String>? onSelect,
   }) {
-    // Pie slices always carry a white title label directly on the fill (see
-    // titleStyle below), so this palette is deliberately fixed — always
-    // dark/mid-saturation — rather than following the app's light/dark
-    // theme, unlike most other color usage on this page.
-    const assetColors = pieChartPalette;
+    // Asset and payment-method slices use the theme's pie palette; each
+    // slice's percentage label picks white or dark text to suit its fill
+    // (see titleStyle below).
+    final assetColors = pieChartPalette(context);
     // For expense slices, prefer the actual category's user-chosen color
     // (kept in sync with the palette picker in 設定 → 分類) so the pie chart
     // always matches what the user picked there; fall back to the
     // name-based `categoryVisual` heuristic for a label that no longer
     // matches any category (e.g. from old/imported data).
     Color sliceColor(int index) {
-      if (asset) return assetColors[index % assetColors.length];
+      if (asset || byPayment) return assetColors[index % assetColors.length];
       final label = slices[index].label;
       final category = ref
           .read(appStoreProvider)
@@ -755,8 +783,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               value: slices[i].amountMinor.toDouble(),
               radius: touched == i || selected == i ? 80 : 72,
               title: '${(slices[i].amountMinor / total * 100).round()}%',
-              titleStyle: const TextStyle(
-                color: Colors.white,
+              titleStyle: TextStyle(
+                color: pieLabelColor(sliceColor(i)),
                 fontWeight: FontWeight.w800,
                 fontSize: 12,
               ),
@@ -832,11 +860,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                ?headerAction,
+              ],
             ),
             const SizedBox(height: 16),
             if (total <= 0)
@@ -858,7 +895,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                     if (mobile) {
                       return Column(
                         children: [
-                          SizedBox(height: 210, child: chart()),
+                          // Tall enough for the enlarged (radius 80 + 44
+                          // hole) selected slice, so it doesn't spill over
+                          // the header's 類別／支付方式 toggle.
+                          SizedBox(height: 260, child: chart()),
                           const SizedBox(height: 10),
                           for (var i = 0; i < slices.length; i++)
                             legendRow(i, compact: true),

@@ -179,9 +179,8 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
     String currency,
     bool mask,
   ) {
-    // Same fixed palette as the reports page asset pie: slices carry white
-    // labels, so the colors stay dark regardless of theme.
-    const palette = pieChartPalette;
+    // Same theme-aware palette as the reports page asset pie.
+    final palette = pieChartPalette(context);
     const otherColor = Color(0xFF8C8F99);
     final sorted = positions.where((item) => item.valueMinor > 0).toList()
       ..sort((a, b) => b.valueMinor.compareTo(a.valueMinor));
@@ -218,8 +217,8 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
               value: slices[i].amountMinor.toDouble(),
               radius: (touched == i ? 80 : 72) * (_phone ? .75 : 1),
               title: '${(slices[i].amountMinor / total * 100).round()}%',
-              titleStyle: const TextStyle(
-                color: Colors.white,
+              titleStyle: TextStyle(
+                color: pieLabelColor(colorAt(i)),
                 fontWeight: FontWeight.w800,
                 fontSize: 12,
               ),

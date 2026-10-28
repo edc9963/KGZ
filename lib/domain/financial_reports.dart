@@ -111,6 +111,8 @@ class FinancialReportSnapshot {
     required this.assetAllocation,
     required this.expenseAllocation,
     this.expenseDetails = const {},
+    this.paymentAllocation = const [],
+    this.paymentDetails = const {},
     required this.monthlyTrend,
     required this.issues,
   });
@@ -132,6 +134,13 @@ class FinancialReportSnapshot {
   /// Transactions behind each [expenseAllocation] slice, keyed by the slice's
   /// label (including the merged 其他 slice), newest first.
   final Map<String, List<ExpenseDetail>> expenseDetails;
+
+  /// The same period expenses as [expenseAllocation], grouped by how they
+  /// were paid (信用卡、現金…) instead of by category.
+  final List<ChartSlice> paymentAllocation;
+
+  /// Transactions behind each [paymentAllocation] slice, newest first.
+  final Map<String, List<ExpenseDetail>> paymentDetails;
   final List<MonthlyReportPoint> monthlyTrend;
   final List<ReportDataQualityIssue> issues;
 
@@ -356,7 +365,15 @@ class FinancialReportService {
       for (final line in assets)
         if (line.amountMinor > 0) ChartSlice(line.label, line.amountMinor),
     ];
-    final grouped = _groupExpenses(period);
+    final rawCategoryDetails = <String, List<ExpenseDetail>>{};
+    final rawPaymentDetails = <String, List<ExpenseDetail>>{};
+    _profitAndLoss(
+      period,
+      details: rawCategoryDetails,
+      paymentDetails: rawPaymentDetails,
+    );
+    final grouped = _groupExpenses(rawCategoryDetails);
+    final byPayment = _groupExpenses(rawPaymentDetails);
     final expenseAllocation = grouped.slices;
     final monthlyTrend = _monthlyTrend(period.end);
 
@@ -375,6 +392,8 @@ class FinancialReportService {
       assetAllocation: assetAllocation,
       expenseAllocation: expenseAllocation,
       expenseDetails: grouped.details,
+      paymentAllocation: byPayment.slices,
+      paymentDetails: byPayment.details,
       monthlyTrend: monthlyTrend,
       issues: List.unmodifiable(_issues),
     );
@@ -636,18 +655,25 @@ class FinancialReportService {
   ({List<StatementLine> income, List<StatementLine> expenses}) _profitAndLoss(
     ReportPeriod period, {
     Map<String, List<ExpenseDetail>>? details,
+    Map<String, List<ExpenseDetail>>? paymentDetails,
   }) {
     final income = <String, int>{};
     final expenses = <String, int>{};
-    void addExpense(String category, int amount, DateTime date, String item) {
+    void addExpense(
+      String category,
+      int amount,
+      DateTime date,
+      String item, {
+      required String payment,
+    }) {
       expenses.update(
         category,
         (value) => value + amount,
         ifAbsent: () => amount,
       );
-      details
-          ?.putIfAbsent(category, () => [])
-          .add(ExpenseDetail(date: date, item: item, amountMinor: amount));
+      final detail = ExpenseDetail(date: date, item: item, amountMinor: amount);
+      details?.putIfAbsent(category, () => []).add(detail);
+      paymentDetails?.putIfAbsent(payment, () => []).add(detail);
     }
 
     for (final item in data.incomes.where(
@@ -673,6 +699,7 @@ class FinancialReportService {
         item.item.trim().isNotEmpty
             ? item.item.trim()
             : (item.merchant.trim().isNotEmpty ? item.merchant.trim() : '未命名'),
+        payment: item.paymentMethod.label,
       );
     }
     for (final order in data.orders.where(
@@ -684,6 +711,7 @@ class FinancialReportService {
           order.selfExpenseMinor,
           order.date,
           order.name.trim().isNotEmpty ? '代訂：${order.name.trim()}' : '代訂',
+          payment: _orderPaymentLabel(order),
         );
       }
       for (final participant in order.participants.where(
@@ -705,6 +733,7 @@ class FinancialReportService {
             result.abs(),
             participant.collectedAt!,
             '代收差額：${participant.name}${order.name.trim().isNotEmpty ? '（${order.name.trim()}）' : ''}',
+            payment: _nonPaymentLabel,
           );
         }
       }
@@ -766,7 +795,13 @@ class FinancialReportService {
                 ifAbsent: () => amount,
               );
             } else {
-              addExpense('已實現投資損失', amount, tx.date, '${product.name} 賣出損失');
+              addExpense(
+                '已實現投資損失',
+                amount,
+                tx.date,
+                '${product.name} 賣出損失',
+                payment: _nonPaymentLabel,
+              );
             }
           }
           final quantity = (holding.quantityMicros - tx.quantityMicros).clamp(
@@ -951,13 +986,36 @@ class FinancialReportService {
     );
   }
 
+  /// Payment-method bucket for losses that were never paid out of an
+  /// account or card (代收差額、投資損失).
+  static const _nonPaymentLabel = '帳務損益';
+
+  /// 代訂 orders are always charged to a card; a debit card counts as
+  /// 簽帳金融卡 like a debit-card expense would.
+  String _orderPaymentLabel(GroupOrder order) {
+    final card = data.cards
+        .where((card) => card.id == order.cardId)
+        .firstOrNull;
+    return card?.isDebit == true
+        ? PaymentMethod.debitCard.label
+        : PaymentMethod.creditCard.label;
+  }
+
+  /// Turns raw per-label expense details into pie slices (largest first,
+  /// folding everything past the top five into 其他) plus each slice's
+  /// transactions, newest first.
   ({List<ChartSlice> slices, Map<String, List<ExpenseDetail>> details})
-  _groupExpenses(ReportPeriod period) {
-    final rawDetails = <String, List<ExpenseDetail>>{};
-    final pnl = _profitAndLoss(period, details: rawDetails);
-    final values = [
-      for (final line in pnl.expenses) ChartSlice(line.label, line.amountMinor),
-    ]..sort((a, b) => b.amountMinor.compareTo(a.amountMinor));
+  _groupExpenses(Map<String, List<ExpenseDetail>> rawDetails) {
+    final values =
+        [
+          for (final entry in rawDetails.entries)
+            ChartSlice(
+              entry.key,
+              entry.value.fold(0, (sum, item) => sum + item.amountMinor).abs(),
+            ),
+        ].where((slice) => slice.amountMinor != 0).toList()..sort(
+          (a, b) => b.amountMinor.compareTo(a.amountMinor),
+        );
     int newestFirst(ExpenseDetail a, ExpenseDetail b) {
       final byDate = b.date.compareTo(a.date);
       return byDate != 0 ? byDate : b.amountMinor.compareTo(a.amountMinor);

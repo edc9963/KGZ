@@ -2230,12 +2230,77 @@ void main() {
     // 淨資產 is the full-width hero card; the other figures share a row below it.
     expect(incomeTop.dy, greaterThan(netWorthTop.dy));
     expect(expenseTop.dy, incomeTop.dy);
-    final reportTabs = find.byWidgetPredicate(
-      (widget) => widget is SegmentedButton,
+    final reportTabs = find.ancestor(
+      of: find.text('收支損益'),
+      matching: find.byWidgetPredicate((widget) => widget is SegmentedButton),
     );
     expect(tester.getSize(reportTabs).width, lessThanOrEqualTo(358));
+    final expenseGrouping = find.ancestor(
+      of: find.text('支付方式'),
+      matching: find.byWidgetPredicate((widget) => widget is SegmentedButton),
+    );
+    expect(tester.getSize(expenseGrouping).width, lessThanOrEqualTo(358));
+    await tester.tap(find.text('支付方式'));
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
+
+  for (final (brightness, fill, label) in [
+    (Brightness.light, const Color(0xFFC85F6B), Colors.white),
+    (Brightness.dark, const Color(0xFFFF6685), const Color(0xFF0D0E15)),
+  ]) {
+    testWidgets('payment-method pie follows the ${brightness.name} theme', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final auth = _WidgetAuth()..signedIn = true;
+      final now = DateTime.now();
+      final finance = _WidgetFinance(
+        data: AppData(
+          expenses: [
+            Expense(
+              id: 'food',
+              userId: 'user',
+              date: now,
+              amountMinor: 10000,
+              paymentMethod: PaymentMethod.cash,
+              item: '午餐',
+              category: '餐飲',
+              merchant: '',
+              note: '',
+              isNecessary: true,
+            ),
+          ],
+        ),
+      );
+      final store = await _makeStore(auth: auth, finance: finance);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appStoreProvider.overrideWith((ref) => store)],
+          child: MaterialApp(
+            theme: buildAppTheme(brightness),
+            home: const Scaffold(
+              body: SingleChildScrollView(child: ReportsPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('支付方式'));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final slice = tester
+          .widgetList<PieChart>(find.byType(PieChart))
+          .first
+          .data
+          .sections
+          .single;
+      expect(slice.color, fill);
+      expect(slice.titleStyle?.color, label);
+    });
+  }
 }
 
 ImportImage _testImportImage(String name) => ImportImage(
