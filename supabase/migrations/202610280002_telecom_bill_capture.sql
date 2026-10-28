@@ -88,8 +88,8 @@ begin
   -- Shortcuts sends the phone's clock and emails carry the bank's; refuse
   -- obviously wrong timestamps. A telecom bill lists a month or more.
   if occurred > now() + interval '10 minutes'
-    or occurred < now() - case when source_value = 'telecomBill'
-      then interval '120 days' else interval '30 days' end then
+    or occurred < now() - (case when source_value = 'telecomBill'
+      then interval '120 days' else interval '30 days' end) then
     occurred := now();
   end if;
 
