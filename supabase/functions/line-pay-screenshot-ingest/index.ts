@@ -4,11 +4,13 @@
 // linePay for the bound credit card, linePayMoney for the wallet) and pushes
 // the newest one to LINE for confirmation; line-webhook offers the rest one
 // after another. The same Shortcut also takes a screenshot of a telecom
-// bill's 代收服務明細 (source = telecomBill, booked on the phone bill).
+// bill's 代收服務明細 (source = telecomBill, booked on the phone bill), and a
+// Shortcuts「訊息」automation forwards the carrier's 代收 SMS here as it
+// arrives (same source; capture_ingest pairs it with the later bill row).
 //
 //   POST /functions/v1/line-pay-screenshot-ingest
 //   header  x-capture-token: kgz_...   (same token as the Apple Pay shortcut)
-//   body    { "text": "<OCR text>" }   (or the text itself as text/plain)
+//   body    { "text": "<OCR or SMS text>" }   (or the text itself as text/plain)
 //
 // The response's "message" is meant for the Shortcut's「顯示通知」.
 // Payments seen in an earlier screenshot come back as duplicates. Deploy with
@@ -19,6 +21,7 @@ import { pushLine, textMessage } from '../_shared/line.ts'
 import { captureMessage, sha256Hex } from '../_shared/capture.ts'
 import { parseLinePayOcr } from '../_shared/line_pay_ocr.ts'
 import { parseTelecomBillOcr } from '../_shared/telecom_bill_ocr.ts'
+import { parseTelecomSms } from '../_shared/telecom_sms.ts'
 
 type Json = Record<string, unknown>
 
@@ -66,14 +69,16 @@ Deno.serve(async (request) => {
   }
 
   const now = Date.now()
-  const captures = [...parseLinePayOcr(text), ...parseTelecomBillOcr(text)]
+  const captures = [
+    ...parseLinePayOcr(text), ...parseTelecomBillOcr(text), ...parseTelecomSms(text),
+  ]
     .filter((capture) =>
       now - new Date(capture.occurredAt).getTime() <= maxAgeMs[capture.source]
     )
   if (captures.length === 0) {
     return respond(200, {
       ok: true, created: 0, duplicate: 0,
-      message: '截圖裡沒有讀到 LINE Pay 付款或電信代收明細',
+      message: '沒有讀到 LINE Pay 付款、電信代收明細或代收簡訊',
     })
   }
   const kind = captures.every((capture) => capture.source === 'telecomBill')

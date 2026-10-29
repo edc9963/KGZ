@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(54);
+select plan(58);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -411,6 +411,42 @@ select is(
     'legacy-food', null
   )->>'status',
   'telecom_bill_not_configured', 'booking on the phone bill needs it set up first'
+);
+
+-- A 代收 SMS arrives right after the purchase; the bill lists it a month later.
+create temporary table telecom_sms_capture as
+select public.capture_ingest(
+  repeat('a', 64), 16000, 'TWD', 'Apple商店消費', '電信帳單',
+  date_trunc('second', now()) - interval '40 days',
+  'telecomBill', 'telecom-sms:MX5Y1J24QA'
+) as result;
+select is(
+  (select result->>'status' from telecom_sms_capture), 'created', 'a 代收 SMS is captured'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 16000, 'TWD', 'Apple商店消費', '電信帳單',
+    date_trunc('second', now()) - interval '40 days' - interval '20 seconds',
+    'telecomBill', 'telecom:sms-row-1'
+  )->>'inboxId',
+  (select result->'capture'->>'inboxId' from telecom_sms_capture),
+  'the bill row is the charge its SMS announced'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 16000, 'TWD', 'Apple商店消費', '電信帳單',
+    date_trunc('second', now()) - interval '40 days' - interval '20 seconds',
+    'telecomBill', 'telecom:sms-row-1'
+  )->>'status',
+  'duplicate', 'a second screenshot of the paired row is still a duplicate'
+);
+select is(
+  public.capture_ingest(
+    repeat('a', 64), 16000, 'TWD', 'Apple商店消費', '電信帳單',
+    date_trunc('second', now()) - interval '40 days' + interval '40 seconds',
+    'telecomBill', 'telecom:sms-row-2'
+  )->>'status',
+  'created', 'an SMS pairs with only one bill row'
 );
 
 select ok(
