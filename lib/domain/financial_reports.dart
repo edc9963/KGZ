@@ -47,6 +47,61 @@ class ChartSlice {
   final int amountMinor;
 }
 
+/// Expense categories that the charts show under a broader group, the way
+/// most bookkeeping apps lead with a handful of top-level categories. This is
+/// display only: each transaction keeps its own category, and any category
+/// not listed here (custom ones included) charts as itself.
+const _expenseGroupByCategory = <String, String>{
+  '房租': '居住',
+  '水電瓦斯': '居住',
+  '訂閱': '娛樂',
+  '旅遊': '娛樂',
+  '醫療': '醫療保險',
+  '保險': '醫療保險',
+  '代訂本人消費': '餐飲',
+  '代訂墊付': '其他',
+};
+
+/// For a group that isn't itself a category, the category lending it a color.
+const _expenseGroupLeads = <String, String>{'居住': '房租', '醫療保險': '醫療'};
+
+String expenseGroupOf(String category) =>
+    _expenseGroupByCategory[category] ?? category;
+
+String expenseGroupLead(String group) => _expenseGroupLeads[group] ?? group;
+
+/// Largest first, folding everything past the top five into 其他 once there
+/// are more than six slices. [sorted] must already be largest first.
+List<ChartSlice> _topSlices(List<ChartSlice> sorted) {
+  if (sorted.length <= 6) return sorted;
+  final kept = sorted.where((slice) => slice.label != '其他').take(5).toList();
+  final keptTotal = kept.fold(0, (sum, slice) => sum + slice.amountMinor);
+  final total = sorted.fold(0, (sum, slice) => sum + slice.amountMinor);
+  return [...kept, ChartSlice('其他', total - keptTotal)];
+}
+
+/// Per-category amounts as chart slices: spending only (see
+/// [isSpendingCategory]), rolled up into groups, largest first, with the tail
+/// folded into 其他. The slices add up to all of that spending, so a chart
+/// drawn from them has no gap.
+List<ChartSlice> expenseGroupSlices(Map<String, int> amountsByCategory) {
+  final groups = <String, int>{};
+  for (final entry in amountsByCategory.entries) {
+    if (!isSpendingCategory(entry.key)) continue;
+    groups.update(
+      expenseGroupOf(entry.key),
+      (value) => value + entry.value,
+      ifAbsent: () => entry.value,
+    );
+  }
+  return _topSlices(
+    [
+      for (final entry in groups.entries)
+        if (entry.value > 0) ChartSlice(entry.key, entry.value),
+    ]..sort((a, b) => b.amountMinor.compareTo(a.amountMinor)),
+  );
+}
+
 /// One line of the per-category expense breakdown shown under the expense pie
 /// chart (date / item / amount). [amountMinor] is already converted to the
 /// default currency, so the lines of a category add up to its pie slice.
@@ -372,7 +427,7 @@ class FinancialReportService {
       details: rawCategoryDetails,
       paymentDetails: rawPaymentDetails,
     );
-    final grouped = _groupExpenses(rawCategoryDetails);
+    final grouped = _groupExpenses(_byExpenseGroup(rawCategoryDetails));
     final byPayment = _groupExpenses(rawPaymentDetails);
     final expenseAllocation = grouped.slices;
     final monthlyTrend = _monthlyTrend(period.end);
@@ -690,7 +745,7 @@ class FinancialReportService {
       );
     }
     for (final item in data.expenses.where(
-      (item) => period.contains(item.date),
+      (item) => period.contains(item.date) && isSpendingCategory(item.category),
     )) {
       addExpense(
         item.category,
@@ -1001,6 +1056,35 @@ class FinancialReportService {
         : PaymentMethod.creditCard.label;
   }
 
+  /// Re-keys per-category details by [expenseGroupOf], with the original
+  /// category shown in the item text of anything that moved into a group.
+  Map<String, List<ExpenseDetail>> _byExpenseGroup(
+    Map<String, List<ExpenseDetail>> rawDetails,
+  ) {
+    final grouped = <String, List<ExpenseDetail>>{};
+    for (final entry in rawDetails.entries) {
+      final group = expenseGroupOf(entry.key);
+      grouped
+          .putIfAbsent(group, () => [])
+          .addAll(
+            group == entry.key
+                ? entry.value
+                : [
+                    for (final detail in entry.value)
+                      _taggedDetail(detail, entry.key),
+                  ],
+          );
+    }
+    return grouped;
+  }
+
+  ExpenseDetail _taggedDetail(ExpenseDetail detail, String label) =>
+      ExpenseDetail(
+        date: detail.date,
+        item: '${detail.item}（$label）',
+        amountMinor: detail.amountMinor,
+      );
+
   /// Turns raw per-label expense details into pie slices (largest first,
   /// folding everything past the top five into 其他) plus each slice's
   /// transactions, newest first.
@@ -1030,11 +1114,11 @@ class FinancialReportService {
         },
       );
     }
-    final kept = values.take(5).toList();
-    final rest = values.skip(5).toList();
-    kept.add(
-      ChartSlice('其他', rest.fold(0, (sum, item) => sum + item.amountMinor)),
-    );
+    final kept = _topSlices(values);
+    final keptLabels = {for (final slice in kept.take(5)) slice.label};
+    final rest = values
+        .where((slice) => !keptLabels.contains(slice.label))
+        .toList();
     final details = <String, List<ExpenseDetail>>{
       for (final slice in kept.take(5))
         slice.label: [...?rawDetails[slice.label]],
@@ -1044,11 +1128,7 @@ class FinancialReportService {
     details.putIfAbsent('其他', () => []).addAll([
       for (final slice in rest)
         for (final detail in rawDetails[slice.label] ?? const <ExpenseDetail>[])
-          ExpenseDetail(
-            date: detail.date,
-            item: '${detail.item}（${slice.label}）',
-            amountMinor: detail.amountMinor,
-          ),
+          _taggedDetail(detail, slice.label),
     ]);
     for (final list in details.values) {
       list.sort(newestFirst);

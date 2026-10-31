@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:quick_ledger/application/app_store.dart';
 import 'package:quick_ledger/application/providers.dart';
 import 'package:quick_ledger/application/theme_mode_controller.dart';
@@ -13,6 +14,7 @@ import 'package:quick_ledger/data/ocr_models.dart';
 import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/main.dart';
+import 'package:quick_ledger/presentation/design_tokens.dart';
 import 'package:quick_ledger/presentation/pages/dashboard_page.dart';
 import 'package:quick_ledger/presentation/pages/accounts_page.dart';
 import 'package:quick_ledger/presentation/pages/cards_page.dart';
@@ -1731,6 +1733,86 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('dashboard spending uses the groups and colors of the report', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await initializeDateFormatting('zh_TW');
+    final auth = _WidgetAuth()..signedIn = true;
+    final now = DateTime.now();
+    Expense expense(String category, int amount) => Expense(
+      id: category,
+      userId: 'user',
+      date: now,
+      amountMinor: amount,
+      paymentMethod: PaymentMethod.cash,
+      item: category,
+      category: category,
+      accountId: 'bank',
+      merchant: '',
+      note: '',
+      isNecessary: true,
+    );
+    final finance = _WidgetFinance(
+      data: AppData(
+        categories: defaultBookkeepingCategories('user'),
+        expenses: [
+          expense('投資', 3800),
+          expense('餐飲', 2400),
+          expense('娛樂', 1500),
+          expense('購物', 1100),
+          expense('其他', 500),
+          expense('醫療', 400),
+          expense('房租', 300),
+          expense('交通', 200),
+        ],
+      ),
+    );
+    final store = await _makeStore(auth: auth, finance: finance);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appStoreProvider.overrideWith((ref) => store)],
+        child: MaterialApp(
+          theme: buildAppTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              padding: EdgeInsets.all(16),
+              child: DashboardPage(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Every group gets a bar in the color picked in 設定 → 分類, with the tail
+    // (其他 500 + 交通 200) folded into a last 其他 bar so nothing goes missing,
+    // and 投資 left out of spending altogether.
+    // The first bar on the page is the 本月結餘 meter, not a spending bar.
+    expect(store.currentMonthExpenseMinor, 6400);
+    expect(
+      tester
+          .widgetList<LinearProgressIndicator>(
+            find.byType(LinearProgressIndicator),
+          )
+          .skip(1)
+          .map((bar) => bar.color),
+      [
+        categoryColorOptions['coral'],
+        categoryColorOptions['amber'],
+        categoryColorOptions['purple'],
+        categoryColorOptions['rose'],
+        categoryColorOptions['green'],
+        categoryColorOptions['slate'],
+      ],
+    );
+    expect(find.text('11%'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('dashboard summary cards navigate to their destination pages', (
     tester,

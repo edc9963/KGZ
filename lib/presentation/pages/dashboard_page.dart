@@ -1,11 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../application/app_store.dart';
 import '../../application/providers.dart';
+import '../../domain/financial_reports.dart';
 import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../transaction_display.dart';
@@ -239,7 +242,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ],
         ),
         const SizedBox(height: 12),
-        _SpendingCard(spending: monthSpending, currency: currency, mask: mask),
+        _SpendingCard(store: store, spending: monthSpending, mask: mask),
         const SizedBox(height: 12),
         Card(
           child: ExpansionTile(
@@ -566,26 +569,28 @@ class _HeroFigure extends StatelessWidget {
   );
 }
 
-/// Figma "支出分析": a donut of this month's spending by category beside a
-/// bar per category, both in each category's own color.
+/// Figma "支出分析": a donut of this month's spending by category group
+/// beside a bar per group, in the same groups and colors as the 報表 pie.
 class _SpendingCard extends StatelessWidget {
   const _SpendingCard({
+    required this.store,
     required this.spending,
-    required this.currency,
     required this.mask,
   });
 
+  final AppStore store;
   final Map<String, int> spending;
-  final String currency;
   final bool mask;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final entries = spending.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final top = entries.take(5).toList();
-    final total = entries.fold<int>(0, (sum, entry) => sum + entry.value);
+    final slices = expenseGroupSlices(spending);
+    final total = slices.fold<int>(0, (sum, item) => sum + item.amountMinor);
+    final largest = slices.fold<int>(
+      0,
+      (most, item) => math.max(most, item.amountMinor),
+    );
     return SectionCard(
       title: '支出分析',
       actionLabel: '本月',
@@ -606,25 +611,25 @@ class _SpendingCard extends StatelessWidget {
                   dimension: 120,
                   child: CustomPaint(
                     painter: _DonutPainter([
-                      for (final entry in top)
+                      for (final slice in slices)
                         (
-                          entry.value / total,
-                          categoryVisual(entry.key, colors).color,
+                          slice.amountMinor / total,
+                          expenseSliceColor(store, slice.label, colors),
                         ),
-                    ], colors.subtle),
+                    ]),
                     child: Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            top.first.key,
+                            slices.first.label,
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 13,
                             ),
                           ),
                           Text(
-                            '${(top.first.value * 100 / total).round()}%',
+                            '${(slices.first.amountMinor * 100 / total).round()}%',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 15,
@@ -639,7 +644,7 @@ class _SpendingCard extends StatelessWidget {
                 Expanded(
                   child: Column(
                     children: [
-                      for (final entry in top)
+                      for (final slice in slices)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
@@ -647,7 +652,7 @@ class _SpendingCard extends StatelessWidget {
                               SizedBox(
                                 width: 56,
                                 child: Text(
-                                  entry.key,
+                                  slice.label,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12.5),
@@ -657,12 +662,13 @@ class _SpendingCard extends StatelessWidget {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
-                                    value: entry.value / top.first.value,
+                                    value: slice.amountMinor / largest,
                                     minHeight: 8,
-                                    color: categoryVisual(
-                                      entry.key,
+                                    color: expenseSliceColor(
+                                      store,
+                                      slice.label,
                                       colors,
-                                    ).color,
+                                    ),
                                     backgroundColor: colors.subtle,
                                   ),
                                 ),
@@ -671,7 +677,7 @@ class _SpendingCard extends StatelessWidget {
                               Text(
                                 mask
                                     ? '••••'
-                                    : '${(entry.value * 100 / total).round()}%',
+                                    : '${(slice.amountMinor * 100 / total).round()}%',
                                 style: const TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w800,
@@ -690,10 +696,11 @@ class _SpendingCard extends StatelessWidget {
 }
 
 class _DonutPainter extends CustomPainter {
-  _DonutPainter(this.parts, this.track);
+  _DonutPainter(this.parts);
 
+  /// Each slice's share of the whole ring and its color; the shares add up to
+  /// 1, so the ring is always closed.
   final List<(double, Color)> parts;
-  final Color track;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -702,14 +709,15 @@ class _DonutPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke;
-    canvas.drawArc(rect, 0, math.pi * 2, false, paint..color = track);
+    // A hairline between slices; a lone slice has no neighbour to part from.
+    final gap = parts.length > 1 ? .04 : 0.0;
     var start = -math.pi / 2;
     for (final (fraction, color) in parts) {
       final sweep = fraction * math.pi * 2;
       canvas.drawArc(
         rect,
         start,
-        math.max(sweep - .04, .01),
+        math.max(sweep - gap, .01),
         false,
         paint..color = color,
       );
@@ -719,5 +727,5 @@ class _DonutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DonutPainter oldDelegate) =>
-      oldDelegate.parts != parts || oldDelegate.track != track;
+      !listEquals(oldDelegate.parts, parts);
 }

@@ -5,8 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../application/providers.dart';
 import '../../domain/financial_reports.dart';
-import '../../domain/models.dart';
 import '../design_tokens.dart';
+import '../transaction_display.dart';
 import '../widgets/common.dart';
 
 enum _ReportTab { summary, balance, profitLoss, cashFlow }
@@ -728,21 +728,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     // slice's percentage label picks white or dark text to suit its fill
     // (see titleStyle below).
     final assetColors = pieChartPalette(context);
-    // For expense slices, prefer the actual category's user-chosen color
-    // (kept in sync with the palette picker in 設定 → 分類) so the pie chart
-    // always matches what the user picked there; fall back to the
-    // name-based `categoryVisual` heuristic for a label that no longer
-    // matches any category (e.g. from old/imported data).
     Color sliceColor(int index) {
       if (asset || byPayment) return assetColors[index % assetColors.length];
-      final label = slices[index].label;
-      final category = ref
-          .read(appStoreProvider)
-          .categoryByName(label, BookkeepingCategoryKind.expense);
-      if (category != null) {
-        return bookkeepingCategoryVisual(category, context.colors).color;
-      }
-      return categoryVisual(label, context.colors).color;
+      return expenseSliceColor(
+        ref.read(appStoreProvider),
+        slices[index].label,
+        context.colors,
+      );
     }
 
     final total = slices.fold(0, (sum, item) => sum + item.amountMinor);

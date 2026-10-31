@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../application/app_store.dart';
 import '../../application/providers.dart';
+import '../../domain/financial_reports.dart';
 import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../transaction_display.dart';
@@ -619,9 +620,8 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
         );
       }
     }
-    final entries = grouped.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final total = entries.fold(0, (sum, entry) => sum + entry.value);
+    final slices = expenseGroupSlices(grouped);
+    final total = slices.fold(0, (sum, slice) => sum + slice.amountMinor);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -657,7 +657,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
             else ...[
               Semantics(
                 label:
-                    '本月支出分類：${entries.map((e) => '${e.key} ${e.value}').join('，')}',
+                    '本月支出分類：${slices.map((e) => '${e.label} ${e.amountMinor}').join('，')}',
                 child: SizedBox(
                   height: 210,
                   child: PieChart(
@@ -665,17 +665,25 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                       centerSpaceRadius: 48,
                       sectionsSpace: 2,
                       sections: [
-                        for (final entry in entries)
+                        for (final slice in slices)
                           PieChartSectionData(
-                            color: categoryVisual(
-                              entry.key,
+                            color: expenseSliceColor(
+                              store,
+                              slice.label,
                               context.colors,
-                            ).color,
-                            value: entry.value.toDouble(),
+                            ),
+                            value: slice.amountMinor.toDouble(),
                             radius: 62,
-                            title: '${(entry.value / total * 100).round()}%',
-                            titleStyle: const TextStyle(
-                              color: Colors.white,
+                            title:
+                                '${(slice.amountMinor / total * 100).round()}%',
+                            titleStyle: TextStyle(
+                              color: pieLabelColor(
+                                expenseSliceColor(
+                                  store,
+                                  slice.label,
+                                  context.colors,
+                                ),
+                              ),
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                             ),
@@ -686,7 +694,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              for (final entry in entries.take(6))
+              for (final slice in slices)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
@@ -695,16 +703,17 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: categoryVisual(
-                            entry.key,
+                          color: expenseSliceColor(
+                            store,
+                            slice.label,
                             context.colors,
-                          ).color,
+                          ),
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(entry.key)),
-                      Text('${(entry.value / total * 100).round()}%'),
+                      Expanded(child: Text(slice.label)),
+                      Text('${(slice.amountMinor / total * 100).round()}%'),
                     ],
                   ),
                 ),
