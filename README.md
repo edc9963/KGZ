@@ -151,9 +151,12 @@ npx supabase functions deploy apple-pay-ingest --no-verify-jwt
 npx supabase functions deploy line-webhook --no-verify-jwt
 ```
 
-不需要新的 Secret（沿用 `LINE_CHANNEL_ACCESS_TOKEN`）。在官方帳號輸入
+不需要新的 Secret（沿用 `LINE_CHANNEL_ACCESS_TOKEN`）。在網頁「設定 → 同步 →
+自動記帳」（`capture_web_status`／`capture_web_issue_token`）或官方帳號輸入
 「捷徑設定」→「產生金鑰」取得網址與金鑰；金鑰只存 SHA-256，重新產生後舊金鑰
-立即失效。「待確認」可重新開啟沒處理到的消費。每筆 Apple Pay 會用掉 1 則
+立即失效。網頁版會列出各種來源的設定步驟與複製按鈕，並可複製已填好網址與金鑰的
+Gmail Apps Script（執行一次 `kgzSetup` 即完成）；iOS 的「交易」「訊息」自動化
+本身仍須在「捷徑」App 手動新增。「待確認」可重新開啟沒處理到的消費。每筆 Apple Pay 會用掉 1 則
 LINE push 訊息額度。
 
 ### LINE Pay 自動記帳（刷卡通知信 → 待確認收件匣 → LINE 確認）

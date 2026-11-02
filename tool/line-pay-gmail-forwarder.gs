@@ -6,7 +6,10 @@
  * 掃一次 Gmail，把這些通知送到 Supabase 的 card-email-ingest；伺服器解析後
  * 存進待確認收件匣，再由 LINE 推播確認。轉帳、提款等非消費扣帳會被略過。
  *
- * 設定方式：
+ * 最簡單的設定：在快記帳網頁「設定 → 同步 → 自動記帳」產生金鑰後按
+ * 「複製 Apps Script」，貼到新專案，執行一次檔案最後的 kgzSetup 即可。
+ *
+ * 手動設定方式：
  *   1. https://script.google.com 新增專案，貼上這個檔案。
  *   2. 專案設定 →「指令碼屬性」新增：
  *        KGZ_URL    LINE 官方帳號「捷徑設定」→「產生金鑰」訊息中的銀行通知信網址
@@ -83,7 +86,7 @@ function send(url, token, message) {
   console.log(code + ' ' + (result.status || result.message || '') +
     (result.reason ? ' (' + result.reason + ')' : ''));
   if (code === 401) {
-    throw new Error('金鑰無效：請到 LINE「捷徑設定」重新產生，並更新 KGZ_TOKEN');
+    throw new Error('金鑰無效：請到網頁「設定 → 同步 → 自動記帳」或 LINE「捷徑設定」重新產生，並更新 KGZ_TOKEN');
   }
   if (code === 429 || code >= 500) return 'retry';
   return 'done';

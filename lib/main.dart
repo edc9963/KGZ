@@ -14,6 +14,7 @@ import 'data/download_service.dart';
 import 'data/local_repositories.dart';
 import 'data/local_ocr_import_repository.dart';
 import 'data/oauth_navigation.dart';
+import 'data/supabase_capture_setup_repository.dart';
 import 'data/supabase_finance_repository.dart';
 import 'data/supabase_market_data_repository.dart';
 import 'data/supabase_public_collection_repository.dart';
@@ -192,6 +193,9 @@ Future<_BootstrapResult> _bootstrapApp(SharedPreferences preferences) async {
         : null,
     marketDataRepository: supabaseConfigured
         ? SupabaseMarketDataRepository(Supabase.instance.client, preferences)
+        : null,
+    captureSetupRepository: supabaseConfigured
+        ? SupabaseCaptureSetupRepository(Supabase.instance.client, supabaseUrl)
         : null,
   );
   await store.initialize();

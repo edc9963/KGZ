@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/app_store.dart';
 import '../../application/providers.dart';
+import '../../data/repositories.dart';
 import '../../domain/models.dart';
 import '../design_tokens.dart';
 import '../widgets/common.dart';
@@ -171,6 +173,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ],
           ),
+        if (_tab == _SettingsTab.sync) const SizedBox(height: 16),
+        if (_tab == _SettingsTab.sync) _CaptureSetup(store.captureSetup),
         if (_tab == _SettingsTab.sync) const SizedBox(height: 16),
         if (_tab == _SettingsTab.data)
           _Section(
@@ -827,6 +831,310 @@ class _CategoryManagerState extends ConsumerState<_CategoryManager> {
       ),
     );
   }
+}
+
+String _dateTimeText(DateTime value) {
+  final local = value.toLocal();
+  return '${dateText(local)} '
+      '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
+
+Future<void> _copy(BuildContext context, String text, String label) async {
+  await Clipboard.setData(ClipboardData(text: text));
+  if (context.mounted) showSaved(context, '已複製$label');
+}
+
+/// 自動記帳: issue the shared capture token and copy what each shortcut or
+/// the Gmail Apps Script needs. iOS does not let a web page create the
+/// Transaction/Message automations themselves, so those stay as short steps.
+class _CaptureSetup extends StatefulWidget {
+  const _CaptureSetup(this.repository);
+
+  final CaptureSetupRepository? repository;
+
+  @override
+  State<_CaptureSetup> createState() => _CaptureSetupState();
+}
+
+class _CaptureSetupState extends State<_CaptureSetup> {
+  CaptureSetupStatus? _status;
+  Object? _error;
+  bool _issuing = false;
+
+  /// The plaintext token from this visit, if one was issued. The server only
+  /// keeps its hash, so it is gone once the page is left.
+  String? _token;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final repository = widget.repository;
+    if (repository == null) return;
+    try {
+      final status = await repository.loadStatus();
+      if (mounted) {
+        setState(() {
+          _status = status;
+          _error = null;
+        });
+      }
+    } on Object catch (error) {
+      if (mounted) setState(() => _error = error);
+    }
+  }
+
+  Future<void> _issue() async {
+    final repository = widget.repository!;
+    if (_status?.hasToken ?? false) {
+      final confirmed =
+          await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => KgzDialog(
+              title: const Text('重新產生金鑰？'),
+              content: const Text('舊金鑰會立即失效，已設定的捷徑與 Apps Script 都要換成新金鑰。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('重新產生'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed) return;
+    }
+    setState(() => _issuing = true);
+    try {
+      final token = await repository.issueToken();
+      if (!mounted) return;
+      setState(() => _token = token);
+      await _load();
+    } on Object catch (error) {
+      if (mounted) showSaved(context, '產生金鑰失敗：$error');
+    } finally {
+      if (mounted) setState(() => _issuing = false);
+    }
+  }
+
+  Future<void> _copyAppsScript() async {
+    final endpoints = widget.repository!.endpoints;
+    final script = await rootBundle.loadString(
+      'tool/line-pay-gmail-forwarder.gs',
+    );
+    if (!mounted) return;
+    await _copy(
+      context,
+      '$script\n'
+          '// 由快記帳網頁產生：選取 kgzSetup 執行一次即完成設定（會要求 Gmail 授權）。\n'
+          'function kgzSetup() {\n'
+          '  PropertiesService.getScriptProperties().setProperties({\n'
+          "    KGZ_URL: '${endpoints.cardEmail}',\n"
+          "    KGZ_TOKEN: '$_token'\n"
+          '  });\n'
+          '  runOnce();\n'
+          '  install();\n'
+          '}\n',
+      ' Apps Script',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repository = widget.repository;
+    final status = _status;
+    final token = _token;
+    final muted = TextStyle(color: context.colors.textMuted);
+    return _Section(
+      title: '自動記帳',
+      icon: Icons.bolt_outlined,
+      children: [
+        if (repository == null)
+          const ListTile(
+            title: Text('需要雲端帳號'),
+            subtitle: Text('登入 LINE 帳號後才能使用 Apple Pay／LINE Pay 自動記帳'),
+          )
+        else if (_error != null)
+          ListTile(
+            title: const Text('無法讀取自動記帳狀態'),
+            subtitle: Text('$_error'),
+            trailing: TextButton(onPressed: _load, child: const Text('重試')),
+          )
+        else if (status == null)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else ...[
+          ListTile(
+            title: const Text('捷徑金鑰'),
+            subtitle: Text(
+              !status.hasToken
+                  ? '尚未產生；捷徑與 Apps Script 共用同一把金鑰'
+                  : '產生於 ${_dateTimeText(status.tokenCreatedAt!)}・'
+                        '${status.tokenLastUsedAt == null ? '尚未收到資料' : '最近收到 ${_dateTimeText(status.tokenLastUsedAt!)}'}',
+            ),
+            trailing: FilledButton.tonal(
+              onPressed: _issuing ? null : _issue,
+              child: Text(status.hasToken ? '重新產生' : '產生金鑰'),
+            ),
+          ),
+          if (token != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SelectableText(
+                    token,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('金鑰只會在這次顯示，離開頁面後請重新產生。', style: muted),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _copy(context, token, '金鑰'),
+                    icon: const Icon(Icons.copy),
+                    label: const Text('複製金鑰'),
+                  ),
+                ],
+              ),
+            ),
+          if (!status.lineLinked)
+            ListTile(
+              leading: Icon(Icons.info_outline, color: context.colors.warn),
+              title: const Text('尚未連結 LINE 官方帳號'),
+              subtitle: const Text('收到的消費要在 LINE 點分類入帳，請先加入官方帳號完成連結'),
+            ),
+          if (status.pendingCount > 0)
+            ListTile(
+              leading: const Icon(Icons.inbox_outlined),
+              title: Text('${status.pendingCount} 筆待確認'),
+              subtitle: const Text('在 LINE 官方帳號輸入「待確認」處理'),
+            ),
+          const Divider(height: 1),
+          _CaptureGuide(
+            title: 'Apple Pay',
+            subtitle: '每次感應後自動送出',
+            url: repository.endpoints.applePay,
+            steps: const [
+              '「捷徑」→「自動化」→「＋」→「交易」，選要記錄的卡片，勾「立即執行」。',
+              '動作「取得 URL 內容」：方法 POST，標頭 x-capture-token ＝ 金鑰。',
+              '要求本文 JSON：amount ＝ 金額、merchant ＝ 商家、card ＝ 卡片或票卡。',
+            ],
+            token: token,
+          ),
+          _CaptureGuide(
+            title: 'LINE Pay／電信帳單截圖',
+            subtitle: '截圖後執行捷徑，文字在手機上辨識',
+            url: repository.endpoints.screenshot,
+            steps: const [
+              '新增捷徑：「取得最新的螢幕快照」→「從影像擷取文字」。',
+              '「取得 URL 內容」：POST，標頭 x-capture-token ＝ 金鑰，JSON 本文 text ＝ 擷取的文字。',
+              '「取得字典值」message →「顯示通知」。可在「輔助使用 → 觸控 → 背面輕點」指定這個捷徑。',
+            ],
+            token: token,
+          ),
+          _CaptureGuide(
+            title: '電信代收簡訊',
+            subtitle: '收到遠傳「交易成功通知」就記錄',
+            url: repository.endpoints.screenshot,
+            steps: const [
+              '「捷徑」→「自動化」→「＋」→「訊息」：「訊息包含」填「交易成功通知」，勾「立即執行」。',
+              '動作「取得 URL 內容」：POST，標頭 x-capture-token ＝ 金鑰，JSON 本文 text ＝「捷徑輸入」。',
+            ],
+            token: token,
+          ),
+          _CaptureGuide(
+            title: '銀行通知信（Gmail）',
+            subtitle: 'LINE Pay 刷卡、彰銀 TWPAY／金融卡扣帳',
+            url: repository.endpoints.cardEmail,
+            steps: const [
+              '到 script.google.com 新增專案，刪掉預設內容後貼上複製的腳本。',
+              '上方選 kgzSetup 按「執行」並允許 Gmail 授權，之後每 10 分鐘自動轉送。',
+            ],
+            token: token,
+            extra: token == null
+                ? Text('先產生金鑰，就能複製已填好網址與金鑰的腳本。', style: muted)
+                : FilledButton.tonalIcon(
+                    onPressed: _copyAppsScript,
+                    icon: const Icon(Icons.code),
+                    label: const Text('複製 Apps Script'),
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CaptureGuide extends StatelessWidget {
+  const _CaptureGuide({
+    required this.title,
+    required this.subtitle,
+    required this.url,
+    required this.steps,
+    required this.token,
+    this.extra,
+  });
+
+  final String title;
+  final String subtitle;
+  final String url;
+  final List<String> steps;
+  final String? token;
+  final Widget? extra;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    title: Text(title),
+    subtitle: Text(subtitle),
+    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    expandedCrossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (final (index, step) in steps.indexed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text('${index + 1}. $step'),
+        ),
+      const SizedBox(height: 4),
+      SelectableText(
+        url,
+        style: TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 12,
+          color: context.colors.textMuted,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: () => _copy(context, url, '網址'),
+            icon: const Icon(Icons.link),
+            label: const Text('複製網址'),
+          ),
+          if (token != null)
+            OutlinedButton.icon(
+              onPressed: () => _copy(context, token!, '金鑰'),
+              icon: const Icon(Icons.key_outlined),
+              label: const Text('複製金鑰'),
+            ),
+          ?extra,
+        ],
+      ),
+    ],
+  );
 }
 
 class _Section extends StatelessWidget {

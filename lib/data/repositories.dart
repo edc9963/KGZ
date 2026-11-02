@@ -126,6 +126,57 @@ abstract interface class PublicCollectionRepository {
   Future<void> markPending(String token);
 }
 
+class CaptureSetupStatus {
+  const CaptureSetupStatus({
+    required this.hasToken,
+    required this.lineLinked,
+    required this.pendingCount,
+    this.tokenCreatedAt,
+    this.tokenLastUsedAt,
+    this.lastCapturedAt,
+  });
+
+  final bool hasToken;
+  final bool lineLinked;
+  final int pendingCount;
+  final DateTime? tokenCreatedAt;
+  final DateTime? tokenLastUsedAt;
+  final DateTime? lastCapturedAt;
+
+  factory CaptureSetupStatus.fromJson(Json json) => CaptureSetupStatus(
+    hasToken: json['hasToken'] == true,
+    lineLinked: json['lineLinked'] == true,
+    pendingCount: (json['pendingCount'] as num? ?? 0).toInt(),
+    tokenCreatedAt: _optionalDate(json['tokenCreatedAt']),
+    tokenLastUsedAt: _optionalDate(json['tokenLastUsedAt']),
+    lastCapturedAt: _optionalDate(json['lastCapturedAt']),
+  );
+
+  static DateTime? _optionalDate(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
+}
+
+/// Endpoints the 自動記帳 shortcuts and Apps Script post to. All of them
+/// share the one capture token.
+class CaptureEndpoints {
+  const CaptureEndpoints(this.functionsBaseUrl);
+
+  final String functionsBaseUrl;
+
+  String get applePay => '$functionsBaseUrl/apple-pay-ingest';
+  String get screenshot => '$functionsBaseUrl/line-pay-screenshot-ingest';
+  String get cardEmail => '$functionsBaseUrl/card-email-ingest';
+}
+
+abstract interface class CaptureSetupRepository {
+  CaptureEndpoints get endpoints;
+  Future<CaptureSetupStatus> loadStatus();
+
+  /// Issues a new token (the old one stops working) and returns it. The
+  /// server keeps only its hash, so this is the only time it is readable.
+  Future<String> issueToken();
+}
+
 enum InitialMigrationAction { uploadLocal, merge, useCloud, replaceCloud }
 
 class FinanceSnapshot {

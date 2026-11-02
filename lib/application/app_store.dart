@@ -42,11 +42,13 @@ class AppStore extends ChangeNotifier {
     OrderImportRepository? orderImportRepository,
     PublicCollectionRepository? publicCollectionRepository,
     MarketDataRepository? marketDataRepository,
+    CaptureSetupRepository? captureSetupRepository,
     Uuid uuid = const Uuid(),
   }) : _auth = authRepository,
        _finance = financeRepository,
        _orderImport = orderImportRepository,
        _publicCollection = publicCollectionRepository,
+       captureSetup = captureSetupRepository,
        _uuid = uuid {
     ledger = LedgerQueries(() => data);
     marketData = MarketDataManager(this, marketDataRepository);
@@ -64,6 +66,9 @@ class AppStore extends ChangeNotifier {
   final FinanceRepository _finance;
   final OrderImportRepository? _orderImport;
   final PublicCollectionRepository? _publicCollection;
+
+  /// 自動記帳 token and status for Settings; null without a cloud backend.
+  final CaptureSetupRepository? captureSetup;
   final Uuid _uuid;
   StreamSubscription<bool>? _authSubscription;
 
