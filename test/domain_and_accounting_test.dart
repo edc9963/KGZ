@@ -1383,6 +1383,27 @@ void main() {
       expect(bill.chargeIds, ['expense:first']);
       expect(store.billAmount(bill), 1000);
     });
+
+    test('a rejected background fold does not raise the sync banner', () async {
+      final seeded = await _store(
+        AppData(cards: const [card], expenses: [charge('first', 2, 1000)]),
+      );
+      // An untouched bill still carrying a stray manual adjustment: folding
+      // a late charge into it leaves a difference with no reason to book it.
+      final stray = seeded.data.bills.single.copyWith(
+        manualAdjustmentMinor: 500,
+      );
+      final store = await _store(
+        AppData(
+          cards: const [card],
+          expenses: [charge('first', 2, 1000), charge('late', 2, 500, day: 16)],
+          bills: [stray],
+        ),
+      );
+
+      expect(store.lastSyncError, isNull);
+      expect(store.data.bills.single.chargeIds, ['expense:first']);
+    });
   });
 
   group('credit card charge ownership', () {
