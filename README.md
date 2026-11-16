@@ -88,6 +88,22 @@ select vault.create_secret(
 排程會在週一至週五台北時間 18:30 更新；登入後開啟 App 時，若共用
 報價超過 24 小時未成功更新也會補抓。密鑰不可提交到 Git 或放進 Flutter。
 
+### 信用卡帳單 LINE 提醒
+
+`202611160001_cron_http_timeouts.sql` 建立 `quick-ledger-card-bill-reminders`
+排程，每日台北時間 08:00 呼叫 `card-bill-reminders`（兩個 HTTP 排程都等候
+30 秒，避免冷啟動逾時）。沿用上方的 `project_url`，另設一組密鑰：
+
+```powershell
+$reminderCronSecret = '<產生一組高熵隨機字串>'
+npx supabase secrets set CARD_REMINDER_CRON_SECRET=$reminderCronSecret
+npx supabase functions deploy card-bill-reminders --no-verify-jwt
+```
+
+```sql
+select vault.create_secret('<同一組高熵隨機字串>', 'card_reminder_cron_secret');
+```
+
 截圖辨識不需要 `OPENAI_API_KEY`。固定版本的 Tesseract.js、WASM、
 繁體中文與英文模型都鎖定在 `web` 並隨網站部署；截圖只在瀏覽器內
 分區辨識，不會上傳到 OCR API 或外部 CDN。
