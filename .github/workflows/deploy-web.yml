@@ -1,0 +1,55 @@
+# Build the Flutter web app and publish it to Firebase Hosting.
+# - Pull requests: run tests and deploy a temporary preview channel, so a
+#   change made from a phone can be checked on the phone before merging.
+# - Push to main: run tests and deploy to the live site.
+# Requires the repository secret FIREBASE_SERVICE_ACCOUNT_KGZ_PROJECT
+# (JSON key of a service account with the Firebase Hosting Admin role).
+name: Deploy web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.8
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build web --release
+
+      - name: Deploy preview channel
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KGZ_PROJECT }}
+          projectId: kgz-project
+          expires: 7d
+
+      - name: Deploy live site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KGZ_PROJECT }}
+          projectId: kgz-project
+          channelId: live
