@@ -6,6 +6,18 @@
       "runtimeExecutable": "C:\\sdk\\flutter\\bin\\flutter.bat",
       "runtimeArgs": ["run", "-d", "web-server", "--release", "--web-hostname", "127.0.0.1", "--web-port", "7358", "--dart-define=SUPABASE_URL=", "--dart-define=SUPABASE_PUBLISHABLE_KEY="],
       "port": 7358
+    },
+    {
+      "name": "ui-lab",
+      "runtimeExecutable": "C:\\sdk\\flutter\\bin\\flutter.bat",
+      "runtimeArgs": ["run", "-d", "web-server", "--release", "-t", "lib/ui_lab/main_ui_lab.dart", "--web-hostname", "127.0.0.1", "--web-port", "7360"],
+      "port": 7360
+    },
+    {
+      "name": "ui-lab-debug",
+      "runtimeExecutable": "C:\\sdk\\flutter\\bin\\flutter.bat",
+      "runtimeArgs": ["run", "-d", "web-server", "-t", "lib/ui_lab/main_ui_lab.dart", "--web-hostname", "127.0.0.1", "--web-port", "7361"],
+      "port": 7361
     }
   ]
 }
