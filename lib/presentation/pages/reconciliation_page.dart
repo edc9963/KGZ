@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/app_store.dart';
@@ -142,7 +143,7 @@ class ReconciliationPage extends ConsumerWidget {
             message: '先到「帳戶」新增帳戶，再回來對帳。',
           )
         else
-          Card(
+          KgzCard(
             child: Column(
               children: [
                 for (var index = 0; index < accounts.length; index++) ...[
@@ -154,7 +155,7 @@ class ReconciliationPage extends ConsumerWidget {
                     onReconcile: () =>
                         _showAccountDialog(context, ref, accounts[index]),
                   ),
-                  if (index < accounts.length - 1) const Divider(height: 1),
+                  if (index < accounts.length - 1) FDivider(),
                 ],
               ],
             ),
@@ -169,7 +170,7 @@ class ReconciliationPage extends ConsumerWidget {
             message: '在「投資」新增持倉後，就能在這裡和券商對帳。',
           )
         else
-          Card(
+          KgzCard(
             child: Column(
               children: [
                 for (var index = 0; index < products.length; index++) ...[
@@ -181,7 +182,7 @@ class ReconciliationPage extends ConsumerWidget {
                     onReconcile: () =>
                         _showInvestmentDialog(context, ref, products[index]),
                   ),
-                  if (index < products.length - 1) const Divider(height: 1),
+                  if (index < products.length - 1) FDivider(),
                 ],
               ],
             ),
@@ -208,7 +209,7 @@ class ReconciliationPage extends ConsumerWidget {
             message: '完成第一次對帳後，帳面與實際金額的差異會記錄在這裡。',
           )
         else
-          Card(
+          KgzCard(
             child: Column(
               children: [
                 for (var index = 0; index < history.length; index++) ...[
@@ -227,7 +228,7 @@ class ReconciliationPage extends ConsumerWidget {
                       }
                     },
                   ),
-                  if (index < history.length - 1) const Divider(height: 1),
+                  if (index < history.length - 1) FDivider(),
                 ],
               ],
             ),
@@ -276,9 +277,10 @@ class ReconciliationPage extends ConsumerWidget {
     final note = TextEditingController();
     var date = DateTime.now();
     var error = '';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final book = store.holdingAt(product.id, date);
           final quantityText = quantity.text.trim().replaceAll(',', '');
@@ -306,9 +308,12 @@ class ReconciliationPage extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
+                    KgzValueField(
+                      label: '對帳日期',
+                      value: dateText(date),
+                      description: '以該日收盤後的帳面持倉比較',
                       onTap: () async {
-                        final picked = await showDatePicker(
+                        final picked = await showKgzDatePicker(
                           context: context,
                           initialDate: date,
                           firstDate: DateTime(2000),
@@ -316,13 +321,6 @@ class ReconciliationPage extends ConsumerWidget {
                         );
                         if (picked != null) setState(() => date = picked);
                       },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: '對帳日期',
-                          helperText: '以該日收盤後的帳面持倉比較',
-                        ),
-                        child: Text(dateText(date)),
-                      ),
                     ),
                     const SizedBox(height: 16),
                     _AmountLine(
@@ -338,22 +336,22 @@ class ReconciliationPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: quantity,
+                    FTextField(
+                      control: FTextFieldControl.managed(
+                        controller: quantity,
+                        onChange: (_) => setState(() => error = ''),
+                      ),
+                      label: Text('實際持有數量'),
                       autofocus: true,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(labelText: '實際持有數量'),
-                      onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
                     MoneyField(
                       controller: averageCost,
-                      decoration: InputDecoration(
-                        labelText: '實際平均成本（${product.currency}，選填）',
-                        helperText: '留空則沿用帳面平均成本',
-                      ),
+                      label: Text('實際平均成本（${product.currency}，選填）'),
+                      description: Text('留空則沿用帳面平均成本'),
                       onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
@@ -367,12 +365,10 @@ class ReconciliationPage extends ConsumerWidget {
                         currency: product.currency,
                       ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(
-                        labelText: '差異說明',
-                        helperText: '選填：股利、零股或漏記交易',
-                      ),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('差異說明'),
+                      description: Text('選填：股利、零股或漏記交易'),
                     ),
                     if (error.isNotEmpty)
                       Padding(
@@ -389,12 +385,15 @@ class ReconciliationPage extends ConsumerWidget {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: () async {
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () async {
                   if (enteredMicros == null || enteredMicros < 0) {
                     setState(() => error = '請輸入實際持有數量');
                     return;
@@ -444,9 +443,10 @@ class ReconciliationPage extends ConsumerWidget {
     final actual = TextEditingController();
     final note = TextEditingController();
     var error = '';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final text = actual.text.trim();
           final entered = text.isEmpty ? null : parseMoney(text);
@@ -472,10 +472,8 @@ class ReconciliationPage extends ConsumerWidget {
                     MoneyField(
                       controller: actual,
                       autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: '電信帳單應繳總額',
-                        helperText: '依電信公司寄來的帳單填寫',
-                      ),
+                      label: Text('電信帳單應繳總額'),
+                      description: Text('依電信公司寄來的帳單填寫'),
                       onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
@@ -487,12 +485,10 @@ class ReconciliationPage extends ConsumerWidget {
                         nonZeroText: '差額會調整扣款帳戶的餘額',
                       ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(
-                        labelText: '差異說明',
-                        helperText: '選填：漏記付款或月租調整',
-                      ),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('差異說明'),
+                      description: Text('選填：漏記付款或月租調整'),
                     ),
                     if (error.isNotEmpty)
                       Padding(
@@ -509,12 +505,15 @@ class ReconciliationPage extends ConsumerWidget {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: () async {
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () async {
                   if (entered == null || entered < 0) {
                     setState(() => error = '請輸入電信帳單應繳總額');
                     return;
@@ -551,9 +550,10 @@ class ReconciliationPage extends ConsumerWidget {
     final note = TextEditingController();
     var date = DateTime.now();
     var error = '';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final book = store.accountBalanceAt(account.id, date);
           final entered = actual.text.trim().isEmpty
@@ -569,9 +569,12 @@ class ReconciliationPage extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
+                    KgzValueField(
+                      label: '對帳日期',
+                      value: dateText(date),
+                      description: '以該日結束時的帳面餘額比較',
                       onTap: () async {
-                        final picked = await showDatePicker(
+                        final picked = await showKgzDatePicker(
                           context: context,
                           initialDate: date,
                           firstDate: DateTime(2000),
@@ -579,13 +582,6 @@ class ReconciliationPage extends ConsumerWidget {
                         );
                         if (picked != null) setState(() => date = picked);
                       },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: '對帳日期',
-                          helperText: '以該日結束時的帳面餘額比較',
-                        ),
-                        child: Text(dateText(date)),
-                      ),
                     ),
                     const SizedBox(height: 16),
                     _AmountLine(
@@ -596,9 +592,7 @@ class ReconciliationPage extends ConsumerWidget {
                     MoneyField(
                       controller: actual,
                       autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: '實際餘額（${account.currency}）',
-                      ),
+                      label: Text('實際餘額（${account.currency}）'),
                       onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
@@ -610,12 +604,10 @@ class ReconciliationPage extends ConsumerWidget {
                         nonZeroText: '確認後會新增一筆餘額調整',
                       ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(
-                        labelText: '差異說明',
-                        helperText: '選填：利息、手續費或漏記消費',
-                      ),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('差異說明'),
+                      description: Text('選填：利息、手續費或漏記消費'),
                     ),
                     if (error.isNotEmpty)
                       Padding(
@@ -632,12 +624,15 @@ class ReconciliationPage extends ConsumerWidget {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: () async {
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () async {
                   final value = actual.text.trim().replaceAll(',', '');
                   if (double.tryParse(value) == null) {
                     setState(() => error = '請輸入實際餘額');
@@ -681,9 +676,10 @@ class ReconciliationPage extends ConsumerWidget {
     var reason = bill.reconciliationReason;
     var error = '';
     final cardName = store.cardById(bill.cardId)?.name ?? '信用卡';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final text = actual.text.trim();
           final entered = text.isEmpty ? null : parseMoney(text);
@@ -704,10 +700,8 @@ class ReconciliationPage extends ConsumerWidget {
                     MoneyField(
                       controller: actual,
                       autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: '銀行帳單應繳總額',
-                        helperText: '依銀行寄來的帳單填寫',
-                      ),
+                      label: Text('銀行帳單應繳總額'),
+                      description: Text('依銀行寄來的帳單填寫'),
                       onChanged: (_) => setState(() => error = ''),
                     ),
                     const SizedBox(height: 12),
@@ -720,12 +714,11 @@ class ReconciliationPage extends ConsumerWidget {
                       ),
                     if (difference != null && difference != 0) ...[
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<CardBillReconciliationReason>(
-                        initialValue:
-                            reason == CardBillReconciliationReason.none
+                      KgzSelect<CardBillReconciliationReason>(
+                        value: reason == CardBillReconciliationReason.none
                             ? null
                             : reason,
-                        decoration: const InputDecoration(labelText: '差異原因'),
+                        label: Text('差異原因'),
                         items: [
                           for (final item
                               in CardBillReconciliationReason.values)
@@ -733,10 +726,7 @@ class ReconciliationPage extends ConsumerWidget {
                                 item !=
                                     CardBillReconciliationReason
                                         .legacyAdjustment)
-                              DropdownMenuItem(
-                                value: item,
-                                child: Text(item.label),
-                              ),
+                              KgzSelectItem(item, item.label),
                         ],
                         onChanged: (value) => setState(() {
                           reason = value!;
@@ -744,13 +734,11 @@ class ReconciliationPage extends ConsumerWidget {
                         }),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: note,
-                        decoration: InputDecoration(
-                          labelText: '差異說明',
-                          helperText:
-                              reason ==
-                                  CardBillReconciliationReason.missingOrOther
+                      FTextField(
+                        control: FTextFieldControl.managed(controller: note),
+                        label: Text('差異說明'),
+                        description: Text(
+                          reason == CardBillReconciliationReason.missingOrOther
                               ? '漏登／其他時必填'
                               : '選填',
                         ),
@@ -771,12 +759,15 @@ class ReconciliationPage extends ConsumerWidget {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: () async {
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () async {
                   if (entered == null || entered < 0 || difference == null) {
                     setState(() => error = '請輸入銀行帳單應繳總額');
                     return;
@@ -944,9 +935,8 @@ class _InvestmentReconcileRow extends StatelessWidget {
                   : last.quantityDifferenceMicros != 0
                   ? '・調整 ${_signedQuantity(last.quantityDifferenceMicros)} 單位'
                   : '・調整平均成本'}';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Icon(
+    return FItem(
+      prefix: Icon(
         stale ? Icons.schedule : Icons.verified_outlined,
         color: stale ? context.colors.liability : context.colors.asset,
       ),
@@ -960,9 +950,10 @@ class _InvestmentReconcileRow extends StatelessWidget {
         '・市值 ${moneyText(value, currency: product.currency, mask: mask)}'
         '\n$lastText',
       ),
-      isThreeLine: true,
-      trailing: FilledButton.tonal(
-        onPressed: onReconcile,
+      suffix: FButton(
+        variant: FButtonVariant.secondary,
+        mainAxisSize: MainAxisSize.min,
+        onPress: onReconcile,
         child: const Text('對帳'),
       ),
     );
@@ -1087,9 +1078,8 @@ class _AccountReconcileRow extends StatelessWidget {
         ? '尚未對帳'
         : '上次對帳 ${dateText(last.date)}'
               '${last.isBalanced ? '・相符' : '・調整 ${_signedMoney(last.differenceMinor, currency: last.currency, mask: mask)}'}';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Icon(
+    return FItem(
+      prefix: Icon(
         stale ? Icons.schedule : Icons.verified_outlined,
         color: stale ? context.colors.liability : context.colors.asset,
       ),
@@ -1097,9 +1087,10 @@ class _AccountReconcileRow extends StatelessWidget {
       subtitle: Text(
         '帳面 ${moneyText(store.accountBalance(account.id), currency: account.currency, mask: mask)}\n$lastText',
       ),
-      isThreeLine: true,
-      trailing: FilledButton.tonal(
-        onPressed: onReconcile,
+      suffix: FButton(
+        variant: FButtonVariant.secondary,
+        mainAxisSize: MainAxisSize.min,
+        onPress: onReconcile,
         child: const Text('對帳'),
       ),
     );
@@ -1130,9 +1121,8 @@ class _BillReconcileRow extends StatelessWidget {
         ? '尚未核對'
         : '已核對 ${dateText(last.date)}'
               '${difference == 0 ? '・相符' : '・差額 ${_signedMoney(difference, mask: mask)}'}';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Icon(
+    return FItem(
+      prefix: Icon(
         last == null ? Icons.pending_outlined : Icons.verified_outlined,
         color: last == null ? context.colors.liability : context.colors.asset,
       ),
@@ -1144,9 +1134,10 @@ class _BillReconcileRow extends StatelessWidget {
         '・帳單 ${moneyText(store.billAmount(bill), mask: mask)}'
         '・${store.billStatus(bill).label}\n$checkedText',
       ),
-      isThreeLine: true,
-      trailing: FilledButton.tonal(
-        onPressed: onReconcile,
+      suffix: FButton(
+        variant: FButtonVariant.secondary,
+        mainAxisSize: MainAxisSize.min,
+        onPress: onReconcile,
         child: const Text('核對'),
       ),
     );
@@ -1221,15 +1212,10 @@ class _BillsSectionState extends State<_BillsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SegmentedButton<bool>(
-          showSelectedIcon: false,
-          segments: const [
-            ButtonSegment(value: true, label: Text('待核對')),
-            ButtonSegment(value: false, label: Text('全部')),
-          ],
-          selected: {_pendingOnly},
-          onSelectionChanged: (value) =>
-              setState(() => _pendingOnly = value.first),
+        KgzTabBar<bool>(
+          tabs: const [(true, '待核對', null), (false, '全部', null)],
+          selected: _pendingOnly,
+          onSelected: (value) => setState(() => _pendingOnly = value),
         ),
         const SizedBox(height: 12),
         if (entries.isEmpty)
@@ -1239,12 +1225,12 @@ class _BillsSectionState extends State<_BillsSection> {
             message: '信用卡結帳後、電信帳單扣款後，自動產生的帳單會出現在這裡。',
           )
         else
-          Card(
+          KgzCard(
             child: Column(
               children: [
                 for (var index = 0; index < entries.length; index++) ...[
                   entries[index].$2,
-                  if (index < entries.length - 1) const Divider(height: 1),
+                  if (index < entries.length - 1) FDivider(),
                 ],
               ],
             ),
@@ -1279,9 +1265,8 @@ class _TelecomReconcileRow extends StatelessWidget {
         ? '尚未核對'
         : '已核對 ${dateText(last.date)}'
               '${last.isBalanced ? '・相符' : '・差額 ${_signedMoney(last.differenceMinor, currency: last.currency, mask: mask)}'}';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Icon(
+    return FItem(
+      prefix: Icon(
         last == null ? Icons.pending_outlined : Icons.verified_outlined,
         color: last == null ? context.colors.liability : context.colors.asset,
       ),
@@ -1291,9 +1276,10 @@ class _TelecomReconcileRow extends StatelessWidget {
         '・${account?.name ?? '指定帳戶'} 扣款 ${dateText(payment.paidAt)}'
         '\n$checkedText',
       ),
-      isThreeLine: true,
-      trailing: FilledButton.tonal(
-        onPressed: onReconcile,
+      suffix: FButton(
+        variant: FButtonVariant.secondary,
+        mainAxisSize: MainAxisSize.min,
+        onPress: onReconcile,
         child: const Text('核對'),
       ),
     );
@@ -1338,26 +1324,33 @@ class _HistoryRow extends StatelessWidget {
             currency: record.currency,
             mask: mask,
           );
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    return FItem(
       title: Text(store.reconciliationTargetName(record)),
       subtitle: Text(
         record.note.isEmpty ? summary : '$summary\n${record.note}',
       ),
-      isThreeLine: record.note.isNotEmpty,
-      trailing: Row(
+      suffix: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             differenceText,
             style: TextStyle(color: color, fontWeight: FontWeight.w800),
           ),
-          IconButton(
-            tooltip: record.targetType == ReconciliationTargetType.cardBill
-                ? '刪除紀錄'
-                : '撤銷對帳',
-            onPressed: onDelete,
-            icon: const Icon(Icons.undo),
+          FTooltip(
+            tipBuilder: (context, _) => Text(
+              record.targetType == ReconciliationTargetType.cardBill
+                  ? '刪除紀錄'
+                  : '撤銷對帳',
+            ),
+            child: FButton.icon(
+              variant: FButtonVariant.ghost,
+              onPress: onDelete,
+              semanticsLabel:
+                  record.targetType == ReconciliationTargetType.cardBill
+                  ? '刪除紀錄'
+                  : '撤銷對帳',
+              child: const Icon(Icons.undo),
+            ),
           ),
         ],
       ),

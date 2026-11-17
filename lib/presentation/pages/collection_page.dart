@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -53,31 +54,35 @@ class _CollectionPageState extends ConsumerState<CollectionPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          BrandIcon(size: 28, borderRadius: 7),
-          SizedBox(width: 8),
-          Text('快記帳收款'),
-        ],
+  Widget build(BuildContext context) => FScaffold(
+    childPad: false,
+    header: const SafeArea(
+      bottom: false,
+      child: FHeader.nested(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BrandIcon(size: 28, borderRadius: 7),
+            SizedBox(width: 8),
+            Text('快記帳收款'),
+          ],
+        ),
       ),
-      centerTitle: true,
     ),
-    body: FutureBuilder<PublicCollectionDetails?>(
+    child: FutureBuilder<PublicCollectionDetails?>(
       future: _details,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: FCircularProgress());
         }
         if (snapshot.hasError) {
           return EmptyState(
             icon: Icons.cloud_off_outlined,
             title: '暫時無法載入收款資料',
             message: '請確認網路連線後再試一次。',
-            action: FilledButton(
-              onPressed: () => setState(_reload),
+            action: FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => setState(_reload),
               child: const Text('重新載入'),
             ),
           );
@@ -123,7 +128,7 @@ class _CollectionDetailsCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
+          child: KgzCard(
             child: Padding(
               padding: const EdgeInsets.all(28),
               child: Column(
@@ -157,7 +162,7 @@ class _CollectionDetailsCard extends StatelessWidget {
                     label: '折扣分攤',
                     value: '-${moneyText(details.discountMinor)}',
                   ),
-                  const Divider(height: 32),
+                  FDivider(),
                   Text(
                     '應付 ${moneyText(details.dueMinor)}',
                     textAlign: TextAlign.center,
@@ -213,8 +218,9 @@ class _CollectionDetailsCard extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed:
+                  FButton(
+                    mainAxisSize: MainAxisSize.min,
+                    onPress:
                         details.status == CollectionStatus.unpaid && !submitting
                         ? onMarkPending
                         : null,
@@ -223,7 +229,7 @@ class _CollectionDetailsCard extends StatelessWidget {
                       child: submitting
                           ? const SizedBox.square(
                               dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: FCircularProgress(),
                             )
                           : Text(switch (details.status) {
                               CollectionStatus.unpaid => '我已付款',

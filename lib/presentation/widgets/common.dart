@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -337,12 +338,7 @@ class SummaryCard extends StatelessWidget {
           label:
               '${onTap == null ? '' : '查看'}$label，$value${caption == null ? '' : '，$caption'}',
           excludeSemantics: true,
-          child: Card(
-            clipBehavior: Clip.antiAlias,
-            child: onTap == null
-                ? content
-                : InkWell(onTap: onTap, child: content),
-          ),
+          child: KgzCard(onTap: onTap, child: content),
         );
       },
     );
@@ -382,10 +378,9 @@ class CategoryAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final visual = categoryVisual(category, context.colors);
-    return CircleAvatar(
-      backgroundColor: visual.pale,
-      foregroundColor: visual.color,
-      child: Icon(visual.icon),
+    return FAvatar.raw(
+      style: FAvatarStyleDelta.delta(backgroundColor: visual.pale),
+      child: Icon(visual.icon, color: visual.color, size: 20),
     );
   }
 }
@@ -428,9 +423,10 @@ class CategoryColorPicker extends StatelessWidget {
           selected: customColor != null,
           isCustom: true,
           onTap: () async {
-            final picked = await showDialog<Color>(
+            final picked = await showFDialog<Color>(
+              useRootNavigator: true,
               context: context,
-              builder: (_) => _CustomColorDialog(
+              builder: (_, _, _) => _CustomColorDialog(
                 initial: customColor ?? categoryColorOptions.values.first,
               ),
             );
@@ -461,9 +457,10 @@ class _ColorSwatch extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    customBorder: const CircleBorder(),
+  Widget build(BuildContext context) => FTappable(
+    onPress: onTap,
+    selected: selected,
+    semanticsLabel: isCustom ? '自訂顏色' : null,
     child: Container(
       width: 36,
       height: 36,
@@ -580,16 +577,26 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: TextField(
-                  controller: _hexController,
+                child: FTextField(
+                  control: FTextFieldControl.managed(
+                    controller: _hexController,
+                    onChange: (value) => _updateFromHex(value.text),
+                  ),
+                  label: Text('色碼'),
+                  prefixBuilder: (context, style, variants) => Padding(
+                    padding: const EdgeInsetsDirectional.only(
+                      start: 12,
+                      end: 4,
+                    ),
+                    child: Text(
+                      '#',
+                      style: TextStyle(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
                   maxLength: 6,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    labelText: '色碼',
-                    prefixText: '#',
-                    counterText: '',
-                  ),
-                  onChanged: _updateFromHex,
                 ),
               ),
             ],
@@ -598,12 +605,15 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
       ),
     ),
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
+      FButton(
+        variant: FButtonVariant.ghost,
+        mainAxisSize: MainAxisSize.min,
+        onPress: () => Navigator.pop(context),
         child: const Text('取消'),
       ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, _color),
+      FButton(
+        mainAxisSize: MainAxisSize.min,
+        onPress: () => Navigator.pop(context, _color),
         child: const Text('選擇'),
       ),
     ],
@@ -815,18 +825,23 @@ class ResponsiveGrid extends StatelessWidget {
 }
 
 Future<bool> confirmDelete(BuildContext context, String label) async =>
-    await showDialog<bool>(
+    await showFDialog<bool>(
+      useRootNavigator: true,
       context: context,
-      builder: (context) => KgzDialog(
+      builder: (context, _, _) => KgzDialog(
         title: Text('刪除$label？'),
         content: const Text('相關金額將立即重新計算，此動作無法復原。'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          FButton(
+            variant: FButtonVariant.ghost,
+            mainAxisSize: MainAxisSize.min,
+            onPress: () => Navigator.pop(context, false),
             child: const Text('取消'),
           ),
-          FilledButton(
-            onPressed: () {
+          FButton(
+            variant: FButtonVariant.destructive,
+            mainAxisSize: MainAxisSize.min,
+            onPress: () {
               HapticFeedback.mediumImpact();
               Navigator.pop(context, true);
             },
@@ -837,31 +852,52 @@ Future<bool> confirmDelete(BuildContext context, String label) async =>
     ) ??
     false;
 
+/// Short confirmation toast (forui [showFToast]) after a successful save.
 void showSaved(BuildContext context, [String message = '已儲存']) {
   HapticFeedback.lightImpact();
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  showNotice(context, message, icon: FLucideIcons.circleCheck);
 }
+
+/// App-wide toast for brief feedback; replaces Material snack bars.
+void showNotice(
+  BuildContext context,
+  String message, {
+  IconData icon = FLucideIcons.info,
+  bool error = false,
+}) {
+  showFToast(
+    context: context,
+    icon: Icon(error ? FLucideIcons.circleAlert : icon),
+    variant: error ? FToastVariant.destructive : FToastVariant.primary,
+    title: Text(message),
+  );
+}
+
+/// forui field prefix showing a short muted text such as a currency symbol.
+Widget Function(BuildContext, FTextFieldStyle, Set<FTextFieldVariant>)
+fieldPrefixText(String text) =>
+    (context, style, variants) => Padding(
+      padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+      child: Text(
+        text,
+        style: TextStyle(color: context.theme.colors.mutedForeground),
+      ),
+    );
 
 String accountName(AppStore store, String? id) =>
     store.accountById(id)?.name ?? '未指定';
 
-/// A drop-in replacement for [TextFormField] used on every money-amount
-/// input across the app. Tapping the field (or its calculator icon) opens
-/// a small pop-up calculator so the user can add/subtract/multiply/divide
-/// their way to the amount instead of typing it digit by digit.
-///
-/// It accepts (and ignores) [keyboardType]/[inputFormatters]/
-/// [textInputAction] so it can be swapped in for an existing
-/// `TextField`/`TextFormField` without touching those call sites.
-/// Free-text item name field with a dropdown of [suggestions] — the names
-/// previously used under the selected category — so repeat entries can be
-/// picked instead of retyped.
+/// Free-text item name field (forui [FTextFormField]) with a menu of
+/// [suggestions] — the names previously used under the selected category —
+/// so repeat entries can be picked instead of retyped.
 class ItemNameField extends StatelessWidget {
   const ItemNameField({
     super.key,
     required this.controller,
     required this.suggestions,
-    this.decoration = const InputDecoration(),
+    this.label,
+    this.description,
+    this.hint,
     this.autofocus = false,
     this.textInputAction,
     this.validator,
@@ -869,45 +905,53 @@ class ItemNameField extends StatelessWidget {
 
   final TextEditingController controller;
   final List<String> suggestions;
-  final InputDecoration decoration;
+  final Widget? label;
+  final Widget? description;
+  final String? hint;
   final bool autofocus;
   final TextInputAction? textInputAction;
   final FormFieldValidator<String>? validator;
 
   @override
-  Widget build(BuildContext context) => TextFormField(
-    controller: controller,
+  Widget build(BuildContext context) => FTextFormField(
+    control: FTextFieldControl.managed(controller: controller),
+    label: label,
+    description: description,
+    hint: hint,
     autofocus: autofocus,
     textInputAction: textInputAction,
-    validator: validator,
-    decoration: decoration.copyWith(
-      suffixIcon: suggestions.isEmpty
-          ? null
-          : PopupMenuButton<String>(
-              tooltip: '選擇常用項目',
-              icon: const Icon(Icons.arrow_drop_down),
-              constraints: const BoxConstraints(maxHeight: 320),
-              onSelected: (value) {
-                HapticFeedback.selectionClick();
-                controller.value = TextEditingValue(
-                  text: value,
-                  selection: TextSelection.collapsed(offset: value.length),
-                );
-              },
-              itemBuilder: (_) => [
-                for (final name in suggestions)
-                  PopupMenuItem(value: name, child: Text(name)),
-              ],
-            ),
-    ),
+    validator: validator ?? (_) => null,
+    suffixBuilder: suggestions.isEmpty
+        ? null
+        : (context, style, variants) => KgzPopoverMenu<String>(
+            semanticsLabel: '選擇常用項目',
+            icon: const Icon(FLucideIcons.chevronDown),
+            maxHeight: 320,
+            entries: [for (final name in suggestions) KgzMenuEntry(name, name)],
+            onSelected: (value) {
+              HapticFeedback.selectionClick();
+              controller.value = TextEditingValue(
+                text: value,
+                selection: TextSelection.collapsed(offset: value.length),
+              );
+            },
+          ),
   );
 }
 
+/// The money-amount input used across the app, on forui's
+/// [FTextFormField]. Tapping the field (or its calculator icon) opens a
+/// small calculator so the user can add/subtract/multiply/divide their way
+/// to the amount instead of typing it digit by digit.
 class MoneyField extends StatelessWidget {
   const MoneyField({
     required this.controller,
-    this.decoration,
-    this.style,
+    this.label,
+    this.description,
+    this.hint,
+    this.prefixText,
+    this.suffix,
+    this.contentTextStyle,
     this.validator,
     this.onChanged,
     this.autofocus = false,
@@ -921,8 +965,19 @@ class MoneyField extends StatelessWidget {
   });
 
   final TextEditingController controller;
-  final InputDecoration? decoration;
-  final TextStyle? style;
+  final Widget? label;
+  final Widget? description;
+  final String? hint;
+
+  /// Short text in front of the amount, e.g. a currency code.
+  final String? prefixText;
+
+  /// Extra trailing widget, shown before the calculator button.
+  final Widget? suffix;
+
+  /// Size/weight override for the typed amount (e.g. the hero amount in
+  /// quick entry). Only `fontSize` and `fontWeight` are applied.
+  final TextStyle? contentTextStyle;
   final FormFieldValidator<String>? validator;
   final ValueChanged<String>? onChanged;
   final bool autofocus;
@@ -970,53 +1025,64 @@ class MoneyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseDecoration = decoration ?? const InputDecoration();
     final calculatorButton = _calculatorEnabled
-        ? IconButton(
-            tooltip: '小算盤',
-            icon: const Icon(Icons.calculate_outlined),
-            onPressed: () => _openCalculator(context),
+        ? FTooltip(
+            tipBuilder: (context, _) => const Text('小算盤'),
+            child: FButton.icon(
+              variant: FButtonVariant.ghost,
+              onPress: () => _openCalculator(context),
+              semanticsLabel: '小算盤',
+              child: const Icon(FLucideIcons.calculator),
+            ),
           )
         : null;
-    final existingSuffix = baseDecoration.suffixIcon;
-    final mergedSuffix = calculatorButton == null
-        ? existingSuffix
-        : existingSuffix == null
-        ? calculatorButton
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [existingSuffix, calculatorButton],
+    final trailing = [?suffix, ?calculatorButton];
+    final style = contentTextStyle == null
+        ? const FTextFieldStyleDelta.context()
+        : FTextFieldStyleDelta.delta(
+            contentTextStyle: FVariantsDelta.delta([
+              FVariantOperation.all(
+                TextStyleDelta.delta(
+                  fontSize: contentTextStyle!.fontSize,
+                  fontWeight: contentTextStyle!.fontWeight,
+                ),
+              ),
+            ]),
           );
-    if (_acceptsTyping) {
-      return TextFormField(
+    final typing = _acceptsTyping;
+    return FTextFormField(
+      control: FTextFieldControl.managed(
         controller: controller,
-        readOnly: readOnly,
-        enabled: enabled,
-        autofocus: autofocus,
-        style: style,
-        textAlign: textAlign,
-        keyboardType:
-            keyboardType ??
-            const TextInputType.numberWithOptions(decimal: true, signed: true),
-        inputFormatters: [_amountCharacters, ...?inputFormatters],
-        textInputAction: textInputAction,
-        decoration: baseDecoration.copyWith(suffixIcon: mergedSuffix),
-        validator: validator,
-        onChanged: onChanged,
-      );
-    }
-    return TextFormField(
-      controller: controller,
-      readOnly: true,
-      showCursor: true,
-      enableInteractiveSelection: false,
+        onChange: typing && onChanged != null
+            ? (value) => onChanged!(value.text)
+            : null,
+      ),
+      style: style,
+      label: label,
+      description: description,
+      hint: hint,
+      readOnly: typing ? readOnly : true,
+      showCursor: typing ? null : true,
+      enableInteractiveSelection: typing,
       enabled: enabled,
       autofocus: autofocus,
-      style: style,
       textAlign: textAlign,
-      decoration: baseDecoration.copyWith(suffixIcon: mergedSuffix),
-      validator: validator,
-      onTap: readOnly ? null : () => _openCalculator(context),
+      keyboardType: typing
+          ? keyboardType ??
+                const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                )
+          : null,
+      inputFormatters: typing ? [_amountCharacters, ...?inputFormatters] : null,
+      textInputAction: typing ? textInputAction : null,
+      validator: validator ?? (_) => null,
+      onTap: typing || readOnly ? null : () => _openCalculator(context),
+      prefixBuilder: prefixText == null ? null : fieldPrefixText(prefixText!),
+      suffixBuilder: trailing.isEmpty
+          ? null
+          : (context, style, variants) =>
+                Row(mainAxisSize: MainAxisSize.min, children: trailing),
     );
   }
 }
@@ -1030,25 +1096,29 @@ Future<String?> showMoneyCalculator(
 }) {
   final compact = MediaQuery.sizeOf(context).width < 600;
   if (compact) {
-    return showModalBottomSheet<String>(
+    return showFSheet<String>(
+      useRootNavigator: true,
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
+      side: FLayout.btt,
+      mainAxisMaxRatio: null,
+      builder: (context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.theme.colors.background,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: context.theme.colors.border)),
         ),
         child: _MoneyCalculatorSheet(initialValue: initialValue),
       ),
     );
   }
-  return showDialog<String>(
+  return showFDialog<String>(
+    useRootNavigator: true,
     context: context,
-    builder: (_) => Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: _MoneyCalculatorSheet(initialValue: initialValue),
-      ),
+    builder: (context, style, animation) => FDialog(
+      animation: animation,
+      constraints: const BoxConstraints(maxWidth: 360),
+      builder: (context, style) =>
+          _MoneyCalculatorSheet(initialValue: initialValue),
     ),
   );
 }
@@ -1285,10 +1355,14 @@ class _MoneyCalculatorSheetState extends State<_MoneyCalculatorSheet> {
                   ),
                 ),
                 const Spacer(),
-                IconButton(
-                  tooltip: '關閉',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
+                FTooltip(
+                  tipBuilder: (context, _) => Text('關閉'),
+                  child: FButton.icon(
+                    variant: FButtonVariant.ghost,
+                    onPress: () => Navigator.pop(context),
+                    semanticsLabel: '關閉',
+                    child: const Icon(Icons.close),
+                  ),
                 ),
               ],
             ),
@@ -1296,7 +1370,7 @@ class _MoneyCalculatorSheetState extends State<_MoneyCalculatorSheet> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: context.colors.subtle,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -1328,7 +1402,11 @@ class _MoneyCalculatorSheetState extends State<_MoneyCalculatorSheet> {
               onSign: _pressSign,
             ),
             const SizedBox(height: 14),
-            FilledButton(onPressed: _confirm, child: const Text('確定帶入金額')),
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: _confirm,
+              child: const Text('確定帶入金額'),
+            ),
           ],
         ),
       ),
@@ -1365,20 +1443,28 @@ class _CalculatorGrid extends StatelessWidget {
       flex: flex,
       child: SizedBox(
         height: 54,
-        child: Material(
-          color: background ?? Theme.of(context).colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: onPressed,
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: foreground,
-                ),
+        child: FTappable(
+          onPress: onPressed,
+          semanticsLabel: label,
+          builder: (context, variants, child) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: variants.contains(FTappableVariant.pressed)
+                  ? Color.alphaBlend(
+                      context.colors.text.withValues(alpha: .08),
+                      background ?? context.colors.subtle,
+                    )
+                  : background ?? context.colors.subtle,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: child,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: foreground ?? context.colors.text,
               ),
             ),
           ),
@@ -1388,9 +1474,9 @@ class _CalculatorGrid extends StatelessWidget {
     Widget spacer() => const SizedBox(width: 10);
     Widget rowGap() => const SizedBox(height: 10);
 
-    final accent = Theme.of(context).colorScheme.primary;
-    final onAccent = Theme.of(context).colorScheme.onPrimary;
-    final error = Theme.of(context).colorScheme.error;
+    final accent = context.colors.accent;
+    final onAccent = context.colors.onPrimary;
+    final error = context.colors.expense;
     final opBg = accent.withValues(alpha: .12);
 
     return Column(
@@ -1480,4 +1566,65 @@ class _CalculatorGrid extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Date picker dialog on forui's [FCalendar], replacing Material's
+/// `showDatePicker` (same parameters). Tapping a day confirms it; the result
+/// is a local date at midnight, or null when dismissed.
+Future<DateTime?> showKgzDatePicker({
+  required BuildContext context,
+  required DateTime initialDate,
+  required DateTime firstDate,
+  required DateTime lastDate,
+  String? helpText,
+}) {
+  DateTime day(DateTime value) => DateTime(value.year, value.month, value.day);
+  return showFDialog<DateTime>(
+    useRootNavigator: true,
+    context: context,
+    builder: (context, style, animation) => FDialog(
+      animation: animation,
+      constraints: const BoxConstraints(minWidth: 300, maxWidth: 360),
+      builder: (context, style) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                helpText ?? '選擇日期',
+                style: style.titleTextStyle.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            FCalendar.grid(
+              selectionControl: FDateSelectionControl.managedSingle(
+                initial: day(initialDate),
+                toggleable: false,
+              ),
+              control: FGridCalendarControl(
+                start: day(firstDate),
+                end: day(lastDate),
+                initial: day(initialDate),
+              ),
+              onDayPress: (value) => Navigator.pop(context, day(value)),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

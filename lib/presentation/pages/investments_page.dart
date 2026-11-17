@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/app_store.dart';
@@ -25,9 +26,9 @@ class InvestmentsPage extends ConsumerStatefulWidget {
   ConsumerState<InvestmentsPage> createState() => _InvestmentsPageState();
 }
 
-class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+class _InvestmentsPageState extends ConsumerState<InvestmentsPage> {
+  /// 0 = 庫存, 1 = 交易紀錄, 2 = 商品.
+  int _tab = 0;
   bool _editorOpened = false;
   bool _marketUpgradeChecked = false;
 
@@ -52,9 +53,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     final candidates = store.existingMarketLinkCandidates;
     if (candidates.isEmpty) return;
     final selected = candidates.keys.toSet();
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: const Text('連結證交所自動報價'),
           content: SizedBox(
@@ -70,20 +72,26 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                     shrinkWrap: true,
                     children: [
                       for (final entry in candidates.entries)
-                        CheckboxListTile(
-                          value: selected.contains(entry.key),
-                          contentPadding: EdgeInsets.zero,
+                        FItem(
+                          prefix: FCheckbox(
+                            value: selected.contains(entry.key) == true,
+                            onChange: (value) => setState(() {
+                              value == true
+                                  ? selected.add(entry.key)
+                                  : selected.remove(entry.key);
+                            }),
+                          ),
                           title: Text(
                             '${entry.value.symbol} ${entry.value.name}',
                           ),
                           subtitle: Text(
                             '${entry.value.type}・最近收盤 ${moneyText(entry.value.closePriceMinor)}',
                           ),
-                          onChanged: (value) => setState(() {
+                          onPress: () => ((value) => setState(() {
                             value == true
                                 ? selected.add(entry.key)
                                 : selected.remove(entry.key);
-                          }),
+                          }))(!(selected.contains(entry.key) == true)),
                         ),
                     ],
                   ),
@@ -92,12 +100,15 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('維持手動'),
             ),
-            FilledButton(
-              onPressed: selected.isEmpty
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: selected.isEmpty
                   ? null
                   : () async {
                       await store.linkMarketProducts({
@@ -131,12 +142,6 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
   }
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final store = ref.watch(appStoreProvider);
     final heldProducts = store.data.products.where(
@@ -155,24 +160,25 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              FilledButton.icon(
+              FButton(
+                mainAxisSize: MainAxisSize.min,
                 key: const ValueKey('create-holding'),
-                onPressed: () => _showCreateHoldingDialog(context),
-                icon: const Icon(Icons.add),
-                label: const Text('建立庫存'),
+                onPress: () => _showCreateHoldingDialog(context),
+                prefix: const Icon(Icons.add),
+                child: const Text('建立庫存'),
               ),
-              PopupMenuButton<String>(
-                tooltip: '其他投資操作',
+              KgzPopoverMenu<String>(
+                semanticsLabel: '其他投資操作',
+                entries: const [
+                  KgzMenuEntry('transaction', '新增交易'),
+                  KgzMenuEntry('product', '新增商品'),
+                  KgzMenuEntry('adjustment', '庫存盤點調整'),
+                ],
                 onSelected: (value) {
                   if (value == 'product') _showProductDialog(context);
                   if (value == 'transaction') _showTransactionDialog(context);
                   if (value == 'adjustment') _showAdjustmentDialog(context);
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'transaction', child: Text('新增交易')),
-                  PopupMenuItem(value: 'product', child: Text('新增商品')),
-                  PopupMenuItem(value: 'adjustment', child: Text('庫存盤點調整')),
-                ],
               ),
             ],
           ),
@@ -219,32 +225,24 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
         const SizedBox(height: 14),
         // Holdings come first; the charts follow and start collapsed on
         // phones, where a pie chart alone used to fill most of the screen.
-        Card(
-          child: TabBar(
-            controller: _tabs,
-            tabs: const [
-              Tab(text: '庫存'),
-              Tab(text: '交易紀錄'),
-              Tab(text: '商品'),
-            ],
-          ),
+        KgzTabBar<int>(
+          tabs: const [(0, '庫存', null), (1, '交易紀錄', null), (2, '商品', null)],
+          selected: _tab,
+          onSelected: (value) => setState(() => _tab = value),
         ),
         const SizedBox(height: 12),
-        ListenableBuilder(
-          listenable: _tabs,
-          builder: (context, _) => switch (_tabs.index) {
-            1 => _TransactionsList(
-              onEdit: (item) => _showTransactionDialog(context, item),
-            ),
-            2 => _ProductsList(
-              onEdit: (item) => _showProductDialog(context, item),
-            ),
-            _ => _HoldingsList(
-              onCreate: () => _showCreateHoldingDialog(context),
-              onAdjust: (id) => _showAdjustmentDialog(context, id),
-            ),
-          },
-        ),
+        switch (_tab) {
+          1 => _TransactionsList(
+            onEdit: (item) => _showTransactionDialog(context, item),
+          ),
+          2 => _ProductsList(
+            onEdit: (item) => _showProductDialog(context, item),
+          ),
+          _ => _HoldingsList(
+            onCreate: () => _showCreateHoldingDialog(context),
+            onAdjust: (id) => _showAdjustmentDialog(context, id),
+          ),
+        },
         const SizedBox(height: 18),
         if (pricedHoldingCount == 0)
           const InvestmentCharts(key: ValueKey('investment-charts'))
@@ -289,9 +287,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
 
     if (!createProduct) loadExistingProduct(productId);
 
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final selectedHolding = createProduct || productId == null
               ? null
@@ -324,23 +323,22 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SegmentedButton<_HoldingCreationMode>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: _HoldingCreationMode.snapshot,
-                          icon: Icon(Icons.inventory_2_outlined),
-                          label: Text('既有持倉'),
+                    KgzTabBar<_HoldingCreationMode>(
+                      tabs: const [
+                        (
+                          _HoldingCreationMode.snapshot,
+                          '既有持倉',
+                          Icons.inventory_2_outlined,
                         ),
-                        ButtonSegment(
-                          value: _HoldingCreationMode.purchase,
-                          icon: Icon(Icons.shopping_cart_outlined),
-                          label: Text('新買入'),
+                        (
+                          _HoldingCreationMode.purchase,
+                          '新買入',
+                          Icons.shopping_cart_outlined,
                         ),
                       ],
-                      selected: {mode},
-                      onSelectionChanged: (value) => setState(() {
-                        mode = value.first;
+                      selected: mode,
+                      onSelected: (value) => setState(() {
+                        mode = value;
                         if (mode == _HoldingCreationMode.snapshot &&
                             !createProduct) {
                           loadExistingProduct(productId);
@@ -351,32 +349,24 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       }),
                     ),
                     const SizedBox(height: 16),
-                    SegmentedButton<bool>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: true,
-                          icon: Icon(Icons.add_chart),
-                          label: Text('新增商品'),
-                        ),
-                        ButtonSegment(
-                          value: false,
-                          icon: Icon(Icons.search),
-                          label: Text('既有商品'),
-                        ),
+                    KgzTabBar<bool>(
+                      tabs: const [
+                        (true, '新增商品', Icons.add_chart),
+                        (false, '既有商品', Icons.search),
                       ],
-                      selected: {createProduct},
-                      onSelectionChanged: store.data.products.isEmpty
-                          ? null
-                          : (value) => setState(() {
-                              createProduct = value.first;
-                              if (!createProduct) {
-                                loadExistingProduct(productId);
-                              } else {
-                                quantity.clear();
-                                unitCost.clear();
-                              }
-                            }),
+                      selected: createProduct,
+                      onSelected: (value) {
+                        if (store.data.products.isEmpty) return;
+                        setState(() {
+                          createProduct = value;
+                          if (!createProduct) {
+                            loadExistingProduct(productId);
+                          } else {
+                            quantity.clear();
+                            unitCost.clear();
+                          }
+                        });
+                      },
                     ),
                     const SizedBox(height: 16),
                     if (createProduct) ...[
@@ -405,13 +395,13 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                           const SizedBox(width: 12),
                           Expanded(
                             flex: 2,
-                            child: TextField(
+                            child: FTextField(
                               key: const ValueKey('holding-product-name'),
-                              controller: name,
-                              decoration: const InputDecoration(
-                                labelText: '商品名稱',
+                              control: FTextFieldControl.managed(
+                                controller: name,
+                                onChange: (_) => setState(() {}),
                               ),
-                              onChanged: (_) => setState(() {}),
+                              label: Text('商品名稱'),
                             ),
                           ),
                         ],
@@ -420,18 +410,11 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       Row(
                         children: [
                           Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: productType,
-                              decoration: const InputDecoration(
-                                labelText: '商品類型',
-                              ),
+                            child: KgzSelect<String>(
+                              value: productType,
+                              label: Text('商品類型'),
                               items: const ['股票', 'ETF', '基金', '外幣', '虛擬資產']
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(value),
-                                    ),
-                                  )
+                                  .map((value) => KgzSelectItem(value, value))
                                   .toList(),
                               onChanged: (value) =>
                                   setState(() => productType = value!),
@@ -439,18 +422,11 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: currency,
-                              decoration: const InputDecoration(
-                                labelText: '幣別',
-                              ),
+                            child: KgzSelect<String>(
+                              value: currency,
+                              label: Text('幣別'),
                               items: const ['TWD', 'USD', 'JPY', 'EUR']
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(value),
-                                    ),
-                                  )
+                                  .map((value) => KgzSelectItem(value, value))
                                   .toList(),
                               onChanged: (value) =>
                                   setState(() => currency = value!),
@@ -472,17 +448,15 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         style: TextStyle(color: context.colors.textMuted),
                       ),
                     ] else
-                      DropdownButtonFormField<String>(
+                      KgzSelect<String>(
                         key: const ValueKey('holding-existing-product'),
-                        initialValue: productId,
-                        decoration: const InputDecoration(labelText: '投資商品'),
+                        value: productId,
+                        label: Text('投資商品'),
                         items: store.data.products
                             .map(
-                              (product) => DropdownMenuItem(
-                                value: product.id,
-                                child: Text(
-                                  '${product.symbol} ${product.name}',
-                                ),
+                              (product) => KgzSelectItem(
+                                product.id,
+                                '${product.symbol} ${product.name}',
                               ),
                             )
                             .toList(),
@@ -491,9 +465,13 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         }),
                       ),
                     const SizedBox(height: 12),
-                    InkWell(
+                    KgzValueField(
+                      label: mode == _HoldingCreationMode.snapshot
+                          ? '盤點日期'
+                          : '交易日期',
+                      value: dateText(date),
                       onTap: () async {
-                        final value = await showDatePicker(
+                        final value = await showKgzDatePicker(
                           context: context,
                           initialDate: date,
                           firstDate: DateTime(2000),
@@ -503,27 +481,21 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         );
                         if (value != null) setState(() => date = value);
                       },
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: mode == _HoldingCreationMode.snapshot
-                              ? '盤點日期'
-                              : '交易日期',
-                        ),
-                        child: Text(dateText(date)),
-                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: FTextField(
                             key: const ValueKey('holding-quantity'),
-                            controller: quantity,
+                            control: FTextFieldControl.managed(
+                              controller: quantity,
+                              onChange: (_) => setState(() {}),
+                            ),
+                            label: Text('單位數'),
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            decoration: const InputDecoration(labelText: '單位數'),
-                            onChanged: (_) => setState(() {}),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -531,8 +503,8 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                           child: MoneyField(
                             key: const ValueKey('holding-unit-cost'),
                             controller: unitCost,
-                            decoration: InputDecoration(
-                              labelText: mode == _HoldingCreationMode.snapshot
+                            label: Text(
+                              mode == _HoldingCreationMode.snapshot
                                   ? '平均成本'
                                   : '買入單價',
                             ),
@@ -543,29 +515,29 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                     ),
                     if (mode == _HoldingCreationMode.purchase) ...[
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
+                      KgzSelect<String>(
                         key: const ValueKey('holding-debit-account'),
-                        initialValue:
+                        value:
                             activeAccounts.any((item) => item.id == accountId)
                             ? accountId
                             : null,
-                        decoration: const InputDecoration(labelText: '扣款帳戶'),
+                        label: Text('扣款帳戶'),
                         items: activeAccounts
                             .map(
-                              (account) => DropdownMenuItem(
-                                value: account.id,
-                                child: Text(account.name),
-                              ),
+                              (account) =>
+                                  KgzSelectItem(account.id, account.name),
                             )
                             .toList(),
                         onChanged: (value) => setState(() => accountId = value),
                       ),
-                      TextButton.icon(
-                        onPressed: () => setState(() => showCosts = !showCosts),
-                        icon: Icon(
+                      FButton(
+                        variant: FButtonVariant.ghost,
+                        mainAxisSize: MainAxisSize.min,
+                        onPress: () => setState(() => showCosts = !showCosts),
+                        prefix: Icon(
                           showCosts ? Icons.expand_less : Icons.expand_more,
                         ),
-                        label: Text(showCosts ? '收起費用' : '加入手續費與稅費'),
+                        child: Text(showCosts ? '收起費用' : '加入手續費與稅費'),
                       ),
                       if (showCosts)
                         Row(
@@ -574,9 +546,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                               child: MoneyField(
                                 key: const ValueKey('holding-fee'),
                                 controller: fee,
-                                decoration: const InputDecoration(
-                                  labelText: '手續費',
-                                ),
+                                label: Text('手續費'),
                                 onChanged: (_) => setState(() {}),
                               ),
                             ),
@@ -585,9 +555,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                               child: MoneyField(
                                 key: const ValueKey('holding-tax'),
                                 controller: tax,
-                                decoration: const InputDecoration(
-                                  labelText: '稅費',
-                                ),
+                                label: Text('稅費'),
                                 onChanged: (_) => setState(() {}),
                               ),
                             ),
@@ -612,13 +580,16 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
+              FButton(
+                mainAxisSize: MainAxisSize.min,
                 key: const ValueKey('save-holding'),
-                onPressed: canSave
+                onPress: canSave
                     ? () async {
                         final marketInstrument = selectedMarketInstrument;
                         final product = createProduct
@@ -675,7 +646,7 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                                 )
                               : null,
                         );
-                        _tabs.animateTo(0);
+                        if (mounted) setState(() => _tab = 0);
                         if (dialogContext.mounted) {
                           Navigator.pop(dialogContext);
                         }
@@ -718,9 +689,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
     var type = existing?.type ?? 'ETF';
     var currency = existing?.currency ?? 'TWD';
     MarketInstrument? selectedMarketInstrument;
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增投資商品' : '編輯投資商品'),
           content: SizedBox(
@@ -754,10 +726,12 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 2,
-                      child: TextField(
-                        controller: name,
-                        decoration: const InputDecoration(labelText: '商品名稱'),
-                        onChanged: (_) => setState(() {}),
+                      child: FTextField(
+                        control: FTextFieldControl.managed(
+                          controller: name,
+                          onChange: (_) => setState(() {}),
+                        ),
+                        label: Text('商品名稱'),
                       ),
                     ),
                   ],
@@ -766,33 +740,30 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                 Row(
                   children: [
                     Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: type,
-                        decoration: const InputDecoration(labelText: '商品類型'),
-                        items: const ['股票', 'ETF', '基金', '外幣', '虛擬資產']
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
+                      child: KgzSelect<String>(
+                        value: type,
+                        label: Text('商品類型'),
+                        items: const [
+                          '股票',
+                          'ETF',
+                          '基金',
+                          '外幣',
+                          '虛擬資產',
+                        ].map((value) => KgzSelectItem(value, value)).toList(),
                         onChanged: (value) => setState(() => type = value!),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: currency,
-                        decoration: const InputDecoration(labelText: '幣別'),
-                        items: const ['TWD', 'USD', 'JPY', 'EUR']
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
+                      child: KgzSelect<String>(
+                        value: currency,
+                        label: Text('幣別'),
+                        items: const [
+                          'TWD',
+                          'USD',
+                          'JPY',
+                          'EUR',
+                        ].map((value) => KgzSelectItem(value, value)).toList(),
                         onChanged: (value) => setState(() => currency = value!),
                       ),
                     ),
@@ -806,23 +777,26 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       ((existing?.usesAutomaticQuote ?? false) &&
                           symbol.text.trim().toUpperCase() ==
                               existing!.symbol.trim().toUpperCase()),
-                  decoration: const InputDecoration(labelText: '目前價格'),
+                  label: Text('目前價格'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: note,
-                  decoration: const InputDecoration(labelText: '備註'),
+                FTextField(
+                  control: FTextFieldControl.managed(controller: note),
+                  label: Text('備註'),
                 ),
               ],
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: name.text.trim().isEmpty
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: name.text.trim().isEmpty
                   ? null
                   : () async {
                       final marketInstrument = selectedMarketInstrument;
@@ -903,9 +877,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
       text: existing == null ? '0' : (existing.taxMinor / 100).toString(),
     );
     final note = TextEditingController(text: existing?.note);
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final needsDebit =
               type == InvestmentTransactionType.buy ||
@@ -921,42 +896,39 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue:
+                    KgzSelect<String>(
+                      value:
                           store.data.products.any(
                             (item) => item.id == productId,
                           )
                           ? productId
                           : null,
-                      decoration: const InputDecoration(labelText: '投資商品'),
+                      label: Text('投資商品'),
                       items: store.data.products
                           .map(
-                            (product) => DropdownMenuItem(
-                              value: product.id,
-                              child: Text('${product.symbol} ${product.name}'),
+                            (product) => KgzSelectItem(
+                              product.id,
+                              '${product.symbol} ${product.name}',
                             ),
                           )
                           .toList(),
                       onChanged: (value) => setState(() => productId = value),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<InvestmentTransactionType>(
-                      initialValue: type,
-                      decoration: const InputDecoration(labelText: '交易類型'),
+                    KgzSelect<InvestmentTransactionType>(
+                      value: type,
+                      label: Text('交易類型'),
                       items: InvestmentTransactionType.values
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value.label),
-                            ),
-                          )
+                          .map((value) => KgzSelectItem(value, value.label))
                           .toList(),
                       onChanged: (value) => setState(() => type = value!),
                     ),
                     const SizedBox(height: 12),
-                    InkWell(
+                    KgzValueField(
+                      label: '交易日期',
+                      value: dateText(date),
                       onTap: () async {
-                        final value = await showDatePicker(
+                        final value = await showKgzDatePicker(
                           context: context,
                           initialDate: date,
                           firstDate: DateTime(2000),
@@ -966,83 +938,77 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                         );
                         if (value != null) setState(() => date = value);
                       },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(labelText: '交易日期'),
-                        child: Text(dateText(date)),
-                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: quantity,
+                          child: FTextField(
+                            control: FTextFieldControl.managed(
+                              controller: quantity,
+                              onChange: (_) => setState(() {}),
+                            ),
+                            label: Text('數量'),
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            decoration: const InputDecoration(labelText: '數量'),
-                            onChanged: (_) => setState(() {}),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: MoneyField(
                             controller: price,
-                            decoration: const InputDecoration(
-                              labelText: '價格／每單位配息',
-                            ),
+                            label: Text('價格／每單位配息'),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      title: const Text('手續費與稅費'),
+                    FAccordion(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: MoneyField(
-                                controller: fee,
-                                decoration: const InputDecoration(
-                                  labelText: '手續費',
-                                ),
+                        FAccordionItem(
+                          title: const Text('手續費與稅費'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: MoneyField(
+                                      controller: fee,
+                                      label: Text('手續費'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: MoneyField(
+                                      controller: tax,
+                                      label: Text('稅費'),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: MoneyField(
-                                controller: tax,
-                                decoration: const InputDecoration(
-                                  labelText: '稅費',
-                                ),
-                              ),
-                            ),
-                          ],
+                              const SizedBox(height: 12),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 12),
                       ],
                     ),
                     if (needsDebit || needsCredit) ...[
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue:
+                      KgzSelect<String>(
+                        value:
                             store.activeAssetAccounts.any(
                               (item) =>
                                   item.id == (needsDebit ? debitId : creditId),
                             )
                             ? (needsDebit ? debitId : creditId)
                             : null,
-                        decoration: InputDecoration(
-                          labelText: needsDebit ? '扣款帳戶' : '入款帳戶',
-                        ),
+                        label: Text(needsDebit ? '扣款帳戶' : '入款帳戶'),
                         items: store.activeAssetAccounts
                             .map(
-                              (account) => DropdownMenuItem(
-                                value: account.id,
-                                child: Text(account.name),
-                              ),
+                              (account) =>
+                                  KgzSelectItem(account.id, account.name),
                             )
                             .toList(),
                         onChanged: (value) => setState(() {
@@ -1051,22 +1017,24 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                       ),
                     ],
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('備註'),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed:
-                    productId == null || parseQuantity(quantity.text) <= 0
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: productId == null || parseQuantity(quantity.text) <= 0
                     ? null
                     : () async {
                         await store.upsertInvestmentTransaction(
@@ -1117,9 +1085,10 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
           : (initialHolding.averageCostMinor / 100).toString(),
     );
     final reason = TextEditingController(text: '券商庫存盤點');
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: const Text('庫存盤點調整'),
           content: SizedBox(
@@ -1127,14 +1096,14 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: productId,
-                  decoration: const InputDecoration(labelText: '投資商品'),
+                KgzSelect<String>(
+                  value: productId,
+                  label: Text('投資商品'),
                   items: store.data.products
                       .map(
-                        (product) => DropdownMenuItem(
-                          value: product.id,
-                          child: Text('${product.symbol} ${product.name}'),
+                        (product) => KgzSelectItem(
+                          product.id,
+                          '${product.symbol} ${product.name}',
                         ),
                       )
                       .toList(),
@@ -1151,27 +1120,29 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: quantity,
+                      child: FTextField(
+                        control: FTextFieldControl.managed(
+                          controller: quantity,
+                        ),
+                        label: Text('校正後數量'),
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(labelText: '校正後數量'),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: MoneyField(
                         controller: cost,
-                        decoration: const InputDecoration(labelText: '校正後平均成本'),
+                        label: Text('校正後平均成本'),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: reason,
-                  decoration: const InputDecoration(labelText: '調整原因'),
+                FTextField(
+                  control: FTextFieldControl.managed(controller: reason),
+                  label: Text('調整原因'),
                 ),
                 const SizedBox(height: 10),
                 Text(
@@ -1182,12 +1153,15 @@ class _InvestmentsPageState extends ConsumerState<InvestmentsPage>
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: productId == null
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: productId == null
                   ? null
                   : () async {
                       await store.upsertInvestmentAdjustment(
@@ -1231,11 +1205,12 @@ class _HoldingsList extends ConsumerWidget {
         icon: Icons.inventory_2_outlined,
         title: '目前沒有投資庫存',
         message: '直接填入商品、單位數與平均成本即可開始。',
-        action: FilledButton.icon(
+        action: FButton(
+          mainAxisSize: MainAxisSize.min,
           key: const ValueKey('empty-create-holding'),
-          onPressed: onCreate,
-          icon: const Icon(Icons.add),
-          label: const Text('建立庫存'),
+          onPress: onCreate,
+          prefix: const Icon(Icons.add),
+          child: const Text('建立庫存'),
         ),
       );
     }
@@ -1253,7 +1228,7 @@ class _HoldingsList extends ConsumerWidget {
         );
         final identity = Row(
           children: [
-            CircleAvatar(
+            FAvatar.raw(
               child: Text(
                 product.symbol.isEmpty
                     ? product.name.characters.take(2).toString()
@@ -1303,13 +1278,17 @@ class _HoldingsList extends ConsumerWidget {
                 key: const ValueKey('holding-unpriced'),
                 style: TextStyle(color: context.colors.textMuted),
               );
-        return Card(
+        return KgzCard(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final action = IconButton(
-                tooltip: '盤點調整',
-                onPressed: () => onAdjust(product.id),
-                icon: const Icon(Icons.tune),
+              final action = FTooltip(
+                tipBuilder: (context, _) => Text('盤點調整'),
+                child: FButton.icon(
+                  variant: FButtonVariant.ghost,
+                  onPress: () => onAdjust(product.id),
+                  semanticsLabel: '盤點調整',
+                  child: const Icon(Icons.tune),
+                ),
               );
               if (constraints.maxWidth < 600) {
                 return Padding(
@@ -1368,18 +1347,18 @@ class _TransactionsList extends ConsumerWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: items.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => FDivider(),
       itemBuilder: (context, index) {
         final item = items[index];
         final product = store.productById(item.productId);
-        return ListTile(
-          leading: CircleAvatar(child: Text(item.type.label.characters.first)),
+        return FItem(
+          prefix: FAvatar.raw(child: Text(item.type.label.characters.first)),
           title: Text('${product?.symbol ?? ''} ${product?.name ?? ''}'),
           subtitle: Text(
             '${dateText(item.date)}・${item.type.label}・'
             '${item.quantity.toStringAsFixed(4)} 單位',
           ),
-          trailing: Row(
+          suffix: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
@@ -1389,7 +1368,12 @@ class _TransactionsList extends ConsumerWidget {
                 ),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              PopupMenuButton<String>(
+              KgzPopoverMenu<String>(
+                semanticsLabel: '更多操作',
+                entries: const [
+                  KgzMenuEntry('edit', '編輯'),
+                  KgzMenuEntry('delete', '刪除', destructive: true),
+                ],
                 onSelected: (value) async {
                   if (value == 'edit') onEdit(item);
                   if (value == 'delete' &&
@@ -1397,10 +1381,6 @@ class _TransactionsList extends ConsumerWidget {
                     await store.deleteInvestmentTransaction(item.id);
                   }
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'edit', child: Text('編輯')),
-                  PopupMenuItem(value: 'delete', child: Text('刪除')),
-                ],
               ),
             ],
           ),
@@ -1428,25 +1408,31 @@ class _ProductsList extends ConsumerWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: store.data.products.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => FDivider(),
       itemBuilder: (context, index) {
         final item = store.data.products[index];
-        return ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.show_chart)),
+        return FItem(
+          prefix: FAvatar.raw(child: Icon(Icons.show_chart)),
           title: Text('${item.symbol} ${item.name}'),
           subtitle: Text(
             '${item.type}・${item.currency}・'
             '${item.usesAutomaticQuote ? '證交所自動報價' : '手動價格'}・'
             '更新 ${dateText(item.priceUpdatedAt)}',
           ),
-          trailing: Row(
+          suffix: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 moneyText(item.currentPriceMinor, currency: item.currency),
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
-              PopupMenuButton<String>(
+              KgzPopoverMenu<String>(
+                semanticsLabel: '更多操作',
+                entries: [
+                  KgzMenuEntry('edit', '編輯'),
+                  if (item.usesAutomaticQuote) KgzMenuEntry('unlink', '取消自動報價'),
+                  KgzMenuEntry('delete', '刪除', destructive: true),
+                ],
                 onSelected: (value) async {
                   if (value == 'edit') {
                     onEdit(item);
@@ -1457,12 +1443,6 @@ class _ProductsList extends ConsumerWidget {
                     await store.deleteProduct(item.id);
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'edit', child: Text('編輯')),
-                  if (item.usesAutomaticQuote)
-                    const PopupMenuItem(value: 'unlink', child: Text('取消自動報價')),
-                  const PopupMenuItem(value: 'delete', child: Text('刪除')),
-                ],
               ),
             ],
           ),
@@ -1493,30 +1473,30 @@ class _MarketAutocomplete extends StatelessWidget {
     optionsBuilder: (value) => store.searchMarketCatalog(value.text),
     onSelected: onSelected,
     fieldViewBuilder: (context, controller, focusNode, onSubmitted) =>
-        TextField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: onChanged,
-          onSubmitted: (_) => onSubmitted(),
-          textCapitalization: TextCapitalization.characters,
-          decoration: InputDecoration(
-            labelText: '商品代號或名稱',
-            suffixIcon: store.isLoadingMarketCatalog
+        FTextField(
+          control: FTextFieldControl.managed(
+            controller: controller,
+            onChange: (value) => onChanged(value.text),
+          ),
+          label: Text('商品代號或名稱'),
+          suffixBuilder: (context, style, variants) => Padding(
+            padding: const EdgeInsetsDirectional.only(end: 4),
+            child: store.isLoadingMarketCatalog
                 ? const Padding(
                     padding: EdgeInsets.all(12),
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FCircularProgress(),
                   )
                 : const Icon(Icons.search),
           ),
+          focusNode: focusNode,
+          onSubmit: (_) => onSubmitted(),
+          textCapitalization: TextCapitalization.characters,
         ),
     optionsViewBuilder: (context, onSelectedOption, options) {
       final items = options.toList();
       return Align(
         alignment: Alignment.topLeft,
-        child: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(12),
-          clipBehavior: Clip.antiAlias,
+        child: KgzCard(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 320, maxWidth: 420),
             child: ListView.builder(
@@ -1525,13 +1505,12 @@ class _MarketAutocomplete extends StatelessWidget {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
-                return ListTile(
-                  dense: true,
+                return FItem(
                   title: Text('${item.symbol} ${item.name}'),
                   subtitle: Text(
                     '${item.type}・${item.quoteDate == null ? '尚無收盤價' : dateText(item.quoteDate!)}',
                   ),
-                  onTap: () => onSelectedOption(item),
+                  onPress: () => onSelectedOption(item),
                 );
               },
             ),
@@ -1554,11 +1533,10 @@ class _ChartsSection extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+      KgzCard(
+        child: FTappable(
           key: const ValueKey('investment-charts-toggle'),
-          onTap: onToggle,
+          onPress: onToggle,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             child: Row(

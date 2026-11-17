@@ -9,6 +9,7 @@ import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/pages/settings_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -49,6 +50,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: SettingsPage()),
           ),

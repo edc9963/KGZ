@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -22,9 +23,9 @@ class CardsPage extends ConsumerStatefulWidget {
   ConsumerState<CardsPage> createState() => _CardsPageState();
 }
 
-class _CardsPageState extends ConsumerState<CardsPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+class _CardsPageState extends ConsumerState<CardsPage> {
+  /// 0 = 卡片, 1 = 信用卡帳單.
+  int _tab = 0;
   bool _editorOpened = false;
 
   @override
@@ -45,18 +46,12 @@ class _CardsPageState extends ConsumerState<CardsPage>
   }
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final store = ref.watch(appStoreProvider);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tabView = TabBarView(
-          controller: _tabs,
+        final tabView = IndexedStack(
+          index: _tab,
           children: [
             _CardsList(onEdit: (card) => _showCardDialog(context, card)),
             _BillsList(onEdit: (bill) => _showBillDialog(context, bill)),
@@ -67,30 +62,27 @@ class _CardsPageState extends ConsumerState<CardsPage>
           children: [
             PageHeader(
               title: '卡片',
-              action: FilledButton.icon(
-                onPressed: () => _tabs.index == 0
+              action: FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => _tab == 0
                     ? _showCardDialog(context)
                     : _showBillDialog(context),
-                icon: const Icon(Icons.add),
-                label: const Text('新增'),
+                prefix: const Icon(Icons.add),
+                child: const Text('新增'),
               ),
             ),
             const SizedBox(height: 20),
-            Card(
-              child: TabBar(
-                controller: _tabs,
-                tabs: const [
-                  Tab(text: '卡片'),
-                  Tab(text: '信用卡帳單'),
-                ],
-              ),
+            KgzTabBar<int>(
+              tabs: const [(0, '卡片', null), (1, '信用卡帳單', null)],
+              selected: _tab,
+              onSelected: (value) => setState(() => _tab = value),
             ),
             const SizedBox(height: 16),
             if (constraints.hasBoundedHeight)
               Expanded(child: tabView)
             else
               SizedBox(height: 620, child: tabView),
-            Card(
+            KgzCard(
               color: context.colors.warnPale,
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -131,9 +123,10 @@ class _CardsPageState extends ConsumerState<CardsPage>
     var active = existing?.isActive ?? true;
     var cardType = existing?.cardType ?? PaymentCardType.credit;
     final formKey = GlobalKey<FormState>();
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: Text(
             existing == null ? '新增卡片' : '編輯${existing.cardType.label}',
@@ -145,27 +138,20 @@ class _CardsPageState extends ConsumerState<CardsPage>
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    DropdownButtonFormField<PaymentCardType>(
-                      initialValue: cardType,
-                      decoration: const InputDecoration(labelText: '卡片類別'),
+                    KgzSelect<PaymentCardType>(
+                      value: cardType,
+                      label: Text('卡片類別'),
                       items: PaymentCardType.values
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type.label),
-                            ),
-                          )
+                          .map((type) => KgzSelectItem(type, type.label))
                           .toList(),
                       onChanged: existing == null
                           ? (value) => setState(() => cardType = value!)
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      controller: name,
-                      decoration: InputDecoration(
-                        labelText: '${cardType.label}名稱',
-                      ),
+                    FTextFormField(
+                      control: FTextFieldControl.managed(controller: name),
+                      label: Text('${cardType.label}名稱'),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
                           ? '請輸入名稱'
@@ -175,22 +161,22 @@ class _CardsPageState extends ConsumerState<CardsPage>
                     Row(
                       children: [
                         Expanded(
-                          child: TextFormField(
-                            controller: bank,
-                            decoration: const InputDecoration(
-                              labelText: '發卡銀行',
+                          child: FTextFormField(
+                            control: FTextFieldControl.managed(
+                              controller: bank,
                             ),
+                            label: Text('發卡銀行'),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextFormField(
-                            controller: lastFour,
+                          child: FTextFormField(
+                            control: FTextFieldControl.managed(
+                              controller: lastFour,
+                            ),
+                            label: Text('卡號末四碼'),
                             maxLength: 4,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: '卡號末四碼',
-                            ),
                             validator: (value) =>
                                 value?.length == 4 ? null : '請輸入四碼',
                           ),
@@ -212,16 +198,14 @@ class _CardsPageState extends ConsumerState<CardsPage>
                                 padding: EdgeInsets.only(
                                   right: entry.$1 == '自動扣款日' ? 0 : 8,
                                 ),
-                                child: DropdownButtonFormField<int>(
-                                  initialValue: entry.$2,
-                                  decoration: InputDecoration(
-                                    labelText: entry.$1,
-                                  ),
+                                child: KgzSelect<int>(
+                                  value: entry.$2,
+                                  label: Text(entry.$1),
                                   items: List.generate(
                                     31,
-                                    (index) => DropdownMenuItem(
-                                      value: index + 1,
-                                      child: Text('${index + 1} 日'),
+                                    (index) => KgzSelectItem(
+                                      index + 1,
+                                      '${index + 1} 日',
                                     ),
                                   ),
                                   onChanged: (value) => setState(() {
@@ -236,42 +220,42 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       ),
                     if (cardType == PaymentCardType.credit)
                       const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue:
+                    KgzSelect<String>(
+                      value:
                           store.activeAssetAccounts.any(
                             (item) => item.id == accountId,
                           )
                           ? accountId
                           : null,
-                      decoration: InputDecoration(
-                        labelText: cardType == PaymentCardType.debit
-                            ? '直接扣款帳戶'
-                            : '自動扣款帳戶',
-                        helperText: cardType == PaymentCardType.debit
-                            ? '使用此金融卡消費時，金額會立即從這個帳戶扣除'
-                            : null,
+                      label: Text(
+                        cardType == PaymentCardType.debit ? '直接扣款帳戶' : '自動扣款帳戶',
                       ),
+                      description: cardType == PaymentCardType.debit
+                          ? const Text('使用此金融卡消費時，金額會立即從這個帳戶扣除')
+                          : null,
                       items: store.activeAssetAccounts
                           .map(
-                            (account) => DropdownMenuItem(
-                              value: account.id,
-                              child: Text(account.name),
-                            ),
+                            (account) =>
+                                KgzSelectItem(account.id, account.name),
                           )
                           .toList(),
                       validator: (value) => value == null ? '請選擇帳戶' : null,
                       onChanged: (value) => setState(() => accountId = value),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('備註'),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
+                    FItem(
                       title: Text('啟用${cardType.label}'),
-                      value: active,
-                      onChanged: (value) => setState(() => active = value),
+                      suffix: FSwitch(
+                        value: active,
+                        onChange: (value) => setState(() => active = value),
+                      ),
+                      onPress: () =>
+                          ((value) =>
+                              setState(() => active = value))(!(active)),
                     ),
                   ],
                 ),
@@ -279,12 +263,15 @@ class _CardsPageState extends ConsumerState<CardsPage>
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 if (!formKey.currentState!.validate()) return;
                 await store.upsertCard(
                   CreditCard(
@@ -343,9 +330,10 @@ class _CardsPageState extends ConsumerState<CardsPage>
     var debitDate =
         existing?.autoDebitDate ?? now.add(const Duration(days: 21));
     final selected = <String>{...?existing?.chargeIds};
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final candidates = <({String id, String label, int amount})>[
             for (final expense in store.data.expenses.where(
@@ -394,22 +382,17 @@ class _CardsPageState extends ConsumerState<CardsPage>
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue:
+                    KgzSelect<String>(
+                      value:
                           store.data.cards.any(
                             (item) => item.id == cardId && item.isCredit,
                           )
                           ? cardId
                           : null,
-                      decoration: const InputDecoration(labelText: '信用卡'),
+                      label: Text('信用卡'),
                       items: store.data.cards
                           .where((card) => card.isCredit)
-                          .map(
-                            (card) => DropdownMenuItem(
-                              value: card.id,
-                              child: Text(card.name),
-                            ),
-                          )
+                          .map((card) => KgzSelectItem(card.id, card.name))
                           .toList(),
                       onChanged: (value) => setState(() {
                         cardId = value;
@@ -425,12 +408,10 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       }),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: month,
-                      decoration: const InputDecoration(
-                        labelText: '帳單月份',
-                        hintText: '2026-07',
-                      ),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: month),
+                      label: Text('帳單月份'),
+                      hint: '2026-07',
                     ),
                     const SizedBox(height: 16),
                     Align(
@@ -443,35 +424,37 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       ),
                     ),
                     if (candidates.isEmpty)
-                      const ListTile(title: Text('此卡目前沒有刷卡紀錄'))
+                      FItem(title: Text('此卡目前沒有刷卡紀錄'))
                     else
                       for (final item in candidates)
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: selected.contains(item.id),
+                        FItem(
+                          prefix: FCheckbox(
+                            value: selected.contains(item.id) == true,
+                            onChange: (value) => setState(() {
+                              value == true
+                                  ? selected.add(item.id)
+                                  : selected.remove(item.id);
+                            }),
+                          ),
                           title: Text(item.label),
-                          secondary: Text(moneyText(item.amount)),
-                          onChanged: (value) => setState(() {
+                          suffix: Text(moneyText(item.amount)),
+                          onPress: () => ((value) => setState(() {
                             value == true
                                 ? selected.add(item.id)
                                 : selected.remove(item.id);
-                          }),
+                          }))(!(selected.contains(item.id) == true)),
                         ),
                     MoneyField(
                       controller: adjustment,
-                      decoration: const InputDecoration(
-                        labelText: '帳單人工調整',
-                        helperText: '回饋或折抵可填負數',
-                      ),
+                      label: Text('帳單人工調整'),
+                      description: Text('回饋或折抵可填負數'),
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 12),
                     MoneyField(
                       controller: paid,
-                      decoration: const InputDecoration(
-                        labelText: '已繳金額',
-                        helperText: '可記錄部分繳款；繳款會扣除自動扣款帳戶',
-                      ),
+                      label: Text('已繳金額'),
+                      description: Text('可記錄部分繳款；繳款會扣除自動扣款帳戶'),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -496,9 +479,9 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('備註'),
                     ),
                     const SizedBox(height: 12),
                     Align(
@@ -516,12 +499,15 @@ class _CardsPageState extends ConsumerState<CardsPage>
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: cardId == null
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: cardId == null
                     ? null
                     : () async {
                         await store.upsertBill(
@@ -654,9 +640,10 @@ class _CardsPageState extends ConsumerState<CardsPage>
       return item.date.isAfter(previous) && !item.date.isAfter(current);
     }
 
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final all = candidates();
           selected.retainAll(all.map((item) => item.id).toSet());
@@ -693,16 +680,16 @@ class _CardsPageState extends ConsumerState<CardsPage>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: cardId,
-                      decoration: const InputDecoration(labelText: '信用卡'),
+                    KgzSelect<String>(
+                      value: cardId,
+                      label: Text('信用卡'),
                       items: [
                         for (final card in store.data.cards.where(
                           (item) => item.isCredit,
                         ))
-                          DropdownMenuItem(
-                            value: card.id,
-                            child: Text('${card.name} •${card.lastFour}'),
+                          KgzSelectItem(
+                            card.id,
+                            '${card.name} •${card.lastFour}',
                           ),
                       ],
                       onChanged: existing == null
@@ -716,10 +703,12 @@ class _CardsPageState extends ConsumerState<CardsPage>
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    InkWell(
+                    KgzValueField(
+                      label: '帳單月份',
+                      value: billMonth,
                       onTap: () async {
                         final parts = billMonth.split('-');
-                        final picked = await showDatePicker(
+                        final picked = await showKgzDatePicker(
                           context: context,
                           initialDate: DateTime(
                             int.tryParse(parts.first) ?? now.year,
@@ -739,27 +728,32 @@ class _CardsPageState extends ConsumerState<CardsPage>
                           });
                         }
                       },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(labelText: '帳單月份'),
-                        child: Text(billMonth),
-                      ),
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: search,
-                            decoration: const InputDecoration(
-                              labelText: '搜尋刷卡紀錄',
-                              prefixIcon: Icon(Icons.search),
+                          child: FTextField(
+                            control: FTextFieldControl.managed(
+                              controller: search,
+                              onChange: (_) => setState(() {}),
                             ),
-                            onChanged: (_) => setState(() {}),
+                            label: Text('搜尋刷卡紀錄'),
+                            prefixBuilder: (context, style, variants) =>
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.only(
+                                    start: 10,
+                                    end: 2,
+                                  ),
+                                  child: Icon(Icons.search),
+                                ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: visible.isEmpty
+                        FButton(
+                          variant: FButtonVariant.ghost,
+                          mainAxisSize: MainAxisSize.min,
+                          onPress: visible.isEmpty
                               ? null
                               : () => setState(
                                   () => selected.addAll(
@@ -768,8 +762,10 @@ class _CardsPageState extends ConsumerState<CardsPage>
                                 ),
                           child: const Text('全選'),
                         ),
-                        TextButton(
-                          onPressed: visible.isEmpty
+                        FButton(
+                          variant: FButtonVariant.ghost,
+                          mainAxisSize: MainAxisSize.min,
+                          onPress: visible.isEmpty
                               ? null
                               : () => setState(
                                   () => selected.removeAll(
@@ -783,59 +779,59 @@ class _CardsPageState extends ConsumerState<CardsPage>
                     const SizedBox(height: 8),
                     Text('本期結帳日 ${dateText(dates().closingDate)}；已自動預選結帳週期內紀錄'),
                     if (visible.isEmpty)
-                      const ListTile(title: Text('沒有符合條件的未入帳紀錄'))
+                      FItem(title: Text('沒有符合條件的未入帳紀錄'))
                     else
                       for (final item in visible)
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: selected.contains(item.id),
+                        FItem(
+                          prefix: FCheckbox(
+                            value: selected.contains(item.id) == true,
+                            onChange: (value) => setState(() {
+                              value == true
+                                  ? selected.add(item.id)
+                                  : selected.remove(item.id);
+                            }),
+                          ),
                           title: Text(item.label),
                           subtitle: Text(
                             '${dateText(item.date)}・${item.detail}${inCycle(item) ? '' : '・週期外'}',
                           ),
-                          secondary: Text(moneyText(item.amountMinor)),
-                          onChanged: (value) => setState(() {
+                          suffix: Text(moneyText(item.amountMinor)),
+                          onPress: () => ((value) => setState(() {
                             value == true
                                 ? selected.add(item.id)
                                 : selected.remove(item.id);
-                          }),
+                          }))(!(selected.contains(item.id) == true)),
                         ),
-                    const Divider(height: 24),
+                    FDivider(),
                     MoneyField(
                       controller: actualAmount,
-                      decoration: const InputDecoration(
-                        labelText: '銀行實際帳單總額',
-                        helperText: '依銀行帳單填寫',
-                      ),
+                      label: Text('銀行實際帳單總額'),
+                      description: Text('依銀行帳單填寫'),
                       onChanged: (_) => setState(() {}),
                     ),
                     if (difference != 0) ...[
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<CardBillReconciliationReason>(
-                        initialValue:
-                            reason == CardBillReconciliationReason.none
+                      KgzSelect<CardBillReconciliationReason>(
+                        value: reason == CardBillReconciliationReason.none
                             ? null
                             : reason,
-                        decoration: const InputDecoration(labelText: '差異原因'),
+                        label: Text('差異原因'),
                         items: [
                           for (final item
                               in CardBillReconciliationReason.values)
                             if (item != CardBillReconciliationReason.none)
-                              DropdownMenuItem(
-                                value: item,
-                                child: Text(item.label),
-                              ),
+                              KgzSelectItem(item, item.label),
                         ],
                         onChanged: (value) => setState(() => reason = value!),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: reconciliationNote,
-                        decoration: InputDecoration(
-                          labelText: '差異說明',
-                          helperText:
-                              reason ==
-                                  CardBillReconciliationReason.missingOrOther
+                      FTextField(
+                        control: FTextFieldControl.managed(
+                          controller: reconciliationNote,
+                        ),
+                        label: Text('差異說明'),
+                        description: Text(
+                          reason == CardBillReconciliationReason.missingOrOther
                               ? '漏登／其他時必填'
                               : '選填',
                         ),
@@ -875,9 +871,9 @@ class _CardsPageState extends ConsumerState<CardsPage>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '帳單備註'),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('帳單備註'),
                     ),
                     if (error.isNotEmpty)
                       Padding(
@@ -894,12 +890,15 @@ class _CardsPageState extends ConsumerState<CardsPage>
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: cardId == null
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: cardId == null
                     ? null
                     : () async {
                         if (actual == null || actual < 0) {
@@ -970,8 +969,10 @@ class _BillMetric extends StatelessWidget {
   final int amountMinor;
 
   @override
-  Widget build(BuildContext context) =>
-      Chip(label: Text('$label ${moneyText(amountMinor)}'));
+  Widget build(BuildContext context) => FBadge(
+    variant: FBadgeVariant.secondary,
+    child: Text('$label ${moneyText(amountMinor)}'),
+  );
 }
 
 class _BillCandidate {
@@ -1038,108 +1039,140 @@ class _CardsList extends ConsumerWidget {
             ),
         ]..sort((a, b) => b.date.compareTo(a.date));
         final unbilled = card.isCredit ? store.unbilledCardMinor(card.id) : 0;
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: ExpansionTile(
+        return KgzCard(
+          child: FAccordion(
             key: PageStorageKey('card-${card.id}'),
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 8,
-            ),
-            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: CircleAvatar(
-              child: Icon(
-                card.isDebit ? Icons.account_balance_wallet : Icons.credit_card,
-              ),
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    card.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: '卡片操作',
-                  onSelected: (value) async {
-                    if (value == 'edit') {
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => onEdit(card),
-                      );
-                      return;
-                    }
-                    if (value == 'delete' &&
-                        await confirmDelete(context, '卡片')) {
-                      await store.deleteCard(card.id);
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('編輯')),
-                    PopupMenuItem(value: 'delete', child: Text('刪除')),
+            children: [
+              FAccordionItem(
+                title: Row(
+                  children: [
+                    FAvatar.raw(
+                      child: Icon(
+                        card.isDebit
+                            ? Icons.account_balance_wallet
+                            : Icons.credit_card,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  card.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              KgzPopoverMenu<String>(
+                                semanticsLabel: '卡片操作',
+                                entries: const [
+                                  KgzMenuEntry('edit', '編輯'),
+                                  KgzMenuEntry(
+                                    'delete',
+                                    '刪除',
+                                    destructive: true,
+                                  ),
+                                ],
+                                onSelected: (value) async {
+                                  if (value == 'edit') {
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback(
+                                          (_) => onEdit(card),
+                                        );
+                                    return;
+                                  }
+                                  if (value == 'delete' &&
+                                      await confirmDelete(context, '卡片')) {
+                                    await store.deleteCard(card.id);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                          DefaultTextStyle.merge(
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: context.colors.textMuted,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${card.cardType.label}・${card.bank} •${card.lastFour}\n'
+                                '${card.isDebit ? '直接扣款' : '${card.closingDay} 日結帳・${card.autoDebitDay} 日自動扣款'}・'
+                                '${accountName(store, card.debitAccountId)}'
+                                '${card.isCredit ? '\n未入帳 ${moneyText(unbilled, mask: store.data.settings.maskBalances)}' : ''}',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ],
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '${card.cardType.label}・${card.bank} •${card.lastFour}\n'
-                '${card.isDebit ? '直接扣款' : '${card.closingDay} 日結帳・${card.autoDebitDay} 日自動扣款'}・'
-                '${accountName(store, card.debitAccountId)}'
-                '${card.isCredit ? '\n未入帳 ${moneyText(unbilled, mask: store.data.settings.maskBalances)}' : ''}',
-              ),
-            ),
-            children: [
-              const Divider(height: 1),
-              if (records.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.receipt_long_outlined),
-                      SizedBox(width: 10),
-                      Text('目前沒有刷卡紀錄'),
+                      FDivider(),
+                      if (records.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.receipt_long_outlined),
+                              SizedBox(width: 10),
+                              Text('目前沒有刷卡紀錄'),
+                            ],
+                          ),
+                        )
+                      else
+                        for (final record in records)
+                          Builder(
+                            builder: (context) {
+                              final bill = store.cardBillForCharge(record.id);
+                              final status = card.isDebit
+                                  ? '已從 ${accountName(store, card.debitAccountId)} 直接扣款'
+                                  : bill == null
+                                  ? '未入帳'
+                                  : '已列入 ${bill.month} 帳單';
+                              return FItem(
+                                prefix: Icon(
+                                  record.isOrder
+                                      ? Icons.groups_outlined
+                                      : Icons.receipt_long_outlined,
+                                ),
+                                title: Text(record.item),
+                                subtitle: Text(
+                                  '${dateText(record.date)}・${record.detail}\n$status',
+                                ),
+                                suffix: Text(
+                                  moneyText(
+                                    record.amountMinor,
+                                    mask: store.data.settings.maskBalances,
+                                  ),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                onPress: () => context.go(
+                                  record.isOrder
+                                      ? '/orders/${record.sourceId}'
+                                      : '/expenses?edit=${record.sourceId}',
+                                ),
+                              );
+                            },
+                          ),
                     ],
                   ),
-                )
-              else
-                for (final record in records)
-                  Builder(
-                    builder: (context) {
-                      final bill = store.cardBillForCharge(record.id);
-                      final status = card.isDebit
-                          ? '已從 ${accountName(store, card.debitAccountId)} 直接扣款'
-                          : bill == null
-                          ? '未入帳'
-                          : '已列入 ${bill.month} 帳單';
-                      return ListTile(
-                        leading: Icon(
-                          record.isOrder
-                              ? Icons.groups_outlined
-                              : Icons.receipt_long_outlined,
-                        ),
-                        title: Text(record.item),
-                        subtitle: Text(
-                          '${dateText(record.date)}・${record.detail}\n$status',
-                        ),
-                        isThreeLine: true,
-                        trailing: Text(
-                          moneyText(
-                            record.amountMinor,
-                            mask: store.data.settings.maskBalances,
-                          ),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        onTap: () => context.go(
-                          record.isOrder
-                              ? '/orders/${record.sourceId}'
-                              : '/expenses?edit=${record.sourceId}',
-                        ),
-                      );
-                    },
-                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -1216,37 +1249,45 @@ class _BillsListState extends ConsumerState<_BillsList> {
           spacing: 12,
           runSpacing: 8,
           children: [
-            DropdownButton<String?>(
-              value: cardFilter,
-              hint: const Text('所有信用卡'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('所有信用卡')),
-                for (final card in store.data.cards.where(
-                  (item) => item.isCredit,
-                ))
-                  DropdownMenuItem(value: card.id, child: Text(card.name)),
-              ],
-              onChanged: (value) => setState(() => cardFilter = value),
+            SizedBox(
+              width: 190,
+              child: KgzSelect<String?>(
+                value: cardFilter,
+                hint: '所有信用卡',
+                items: [
+                  const KgzSelectItem(null, '所有信用卡'),
+                  for (final card in store.data.cards.where(
+                    (item) => item.isCredit,
+                  ))
+                    KgzSelectItem(card.id, card.name),
+                ],
+                onChanged: (value) => setState(() => cardFilter = value),
+              ),
             ),
-            DropdownButton<int?>(
-              value: yearFilter,
-              hint: const Text('所有年份'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('所有年份')),
-                for (final year in years)
-                  DropdownMenuItem(value: year, child: Text('$year 年')),
-              ],
-              onChanged: (value) => setState(() => yearFilter = value),
+            SizedBox(
+              width: 150,
+              child: KgzSelect<int?>(
+                value: yearFilter,
+                hint: '所有年份',
+                items: [
+                  const KgzSelectItem(null, '所有年份'),
+                  for (final year in years) KgzSelectItem(year, '$year 年'),
+                ],
+                onChanged: (value) => setState(() => yearFilter = value),
+              ),
             ),
-            DropdownButton<CardBillStatus?>(
-              value: statusFilter,
-              hint: const Text('所有狀態'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('所有狀態')),
-                for (final status in CardBillStatus.values)
-                  DropdownMenuItem(value: status, child: Text(status.label)),
-              ],
-              onChanged: (value) => setState(() => statusFilter = value),
+            SizedBox(
+              width: 150,
+              child: KgzSelect<CardBillStatus?>(
+                value: statusFilter,
+                hint: '所有狀態',
+                items: [
+                  const KgzSelectItem(null, '所有狀態'),
+                  for (final status in CardBillStatus.values)
+                    KgzSelectItem(status, status.label),
+                ],
+                onChanged: (value) => setState(() => statusFilter = value),
+              ),
             ),
           ],
         ),
@@ -1274,9 +1315,9 @@ class _BillsListState extends ConsumerState<_BillsList> {
                       bill.dueDate.month,
                       bill.dueDate.day,
                     ).difference(DateTime(now.year, now.month, now.day)).inDays;
-                    return Card(
-                      child: InkWell(
-                        onTap: () => _showDetails(context, store, bill),
+                    return KgzCard(
+                      child: FTappable(
+                        onPress: () => _showDetails(context, store, bill),
                         child: Padding(
                           padding: const EdgeInsets.all(18),
                           child: LayoutBuilder(
@@ -1329,7 +1370,22 @@ class _BillsListState extends ConsumerState<_BillsList> {
                                       ),
                                     ],
                                   ),
-                                  PopupMenuButton<String>(
+                                  KgzPopoverMenu<String>(
+                                    semanticsLabel: '更多操作',
+                                    entries: [
+                                      KgzMenuEntry('edit', '編輯帳單'),
+                                      if (!paid)
+                                        KgzMenuEntry('payment', '新增繳款'),
+                                      if (!paid)
+                                        KgzMenuEntry('pay', '確認自動扣款成功'),
+                                      if (!paid)
+                                        KgzMenuEntry('failed', '標記扣款失敗'),
+                                      KgzMenuEntry(
+                                        'delete',
+                                        '刪除',
+                                        destructive: true,
+                                      ),
+                                    ],
                                     onSelected: (value) async {
                                       if (value == 'edit') {
                                         WidgetsBinding.instance
@@ -1358,41 +1414,18 @@ class _BillsListState extends ConsumerState<_BillsList> {
                                         }
                                       }
                                     },
-                                    itemBuilder: (context) => [
-                                      const PopupMenuItem(
-                                        value: 'edit',
-                                        child: Text('編輯帳單'),
-                                      ),
-                                      if (!paid)
-                                        const PopupMenuItem(
-                                          value: 'payment',
-                                          child: Text('新增繳款'),
-                                        ),
-                                      if (!paid)
-                                        const PopupMenuItem(
-                                          value: 'pay',
-                                          child: Text('確認自動扣款成功'),
-                                        ),
-                                      if (!paid)
-                                        const PopupMenuItem(
-                                          value: 'failed',
-                                          child: Text('標記扣款失敗'),
-                                        ),
-                                      const PopupMenuItem(
-                                        value: 'delete',
-                                        child: Text('刪除'),
-                                      ),
-                                    ],
                                   ),
                                 ],
                               );
                               return Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  CircleAvatar(
-                                    backgroundColor: paid
-                                        ? context.colors.incomePale
-                                        : context.colors.warnPale,
+                                  FAvatar.raw(
+                                    style: FAvatarStyleDelta.delta(
+                                      backgroundColor: paid
+                                          ? context.colors.incomePale
+                                          : context.colors.warnPale,
+                                    ),
                                     child: Icon(
                                       paid
                                           ? Icons.check
@@ -1454,9 +1487,10 @@ class _BillsListState extends ConsumerState<_BillsList> {
         .firstOrNull;
     accountId ??= store.cardById(bill.cardId)?.debitAccountId;
     var error = '';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增繳款' : '編輯繳款'),
           content: SizedBox(
@@ -1466,22 +1500,18 @@ class _BillsListState extends ConsumerState<_BillsList> {
               children: [
                 MoneyField(
                   controller: amount,
-                  decoration: InputDecoration(
-                    labelText: '繳款金額',
-                    helperText:
-                        '剩餘 ${moneyText(store.outstandingBillMinor(bill))}',
+                  label: Text('繳款金額'),
+                  description: Text(
+                    '剩餘 ${moneyText(store.outstandingBillMinor(bill))}',
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: accountId,
-                  decoration: const InputDecoration(labelText: '扣款帳戶'),
+                KgzSelect<String>(
+                  value: accountId,
+                  label: Text('扣款帳戶'),
                   items: [
                     for (final account in store.activeAssetAccounts)
-                      DropdownMenuItem(
-                        value: account.id,
-                        child: Text(account.name),
-                      ),
+                      KgzSelectItem(account.id, account.name),
                   ],
                   onChanged: (value) => setState(() => accountId = value),
                 ),
@@ -1492,9 +1522,9 @@ class _BillsListState extends ConsumerState<_BillsList> {
                   onChanged: (value) => setState(() => date = value),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: note,
-                  decoration: const InputDecoration(labelText: '備註'),
+                FTextField(
+                  control: FTextFieldControl.managed(controller: note),
+                  label: Text('備註'),
                 ),
                 if (error.isNotEmpty)
                   Text(
@@ -1507,12 +1537,15 @@ class _BillsListState extends ConsumerState<_BillsList> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: accountId == null
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: accountId == null
                   ? null
                   : () async {
                       await store.upsertBillPayment(
@@ -1542,9 +1575,10 @@ class _BillsListState extends ConsumerState<_BillsList> {
     AppStore store,
     CardBill bill,
   ) async {
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) {
+      builder: (dialogContext, _, _) {
         final payments = store.billPayments(bill.id);
         return KgzDialog(
           title: Text(
@@ -1563,15 +1597,14 @@ class _BillsListState extends ConsumerState<_BillsList> {
                   ),
                   if (bill.reconciliationNote.isNotEmpty)
                     Text(bill.reconciliationNote),
-                  const Divider(),
+                  FDivider(),
                   Text('帳單明細', style: Theme.of(context).textTheme.titleSmall),
                   for (final id in bill.chargeIds)
-                    ListTile(
-                      dense: true,
+                    FItem(
                       title: Text(_chargeLabel(store, id)),
-                      trailing: Text(moneyText(_chargeAmount(store, id))),
+                      suffix: Text(moneyText(_chargeAmount(store, id))),
                     ),
-                  const Divider(),
+                  FDivider(),
                   Row(
                     children: [
                       Expanded(
@@ -1580,28 +1613,35 @@ class _BillsListState extends ConsumerState<_BillsList> {
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: store.outstandingBillMinor(bill) == 0
+                      FButton(
+                        variant: FButtonVariant.ghost,
+                        mainAxisSize: MainAxisSize.min,
+                        onPress: store.outstandingBillMinor(bill) == 0
                             ? null
                             : () async {
                                 Navigator.pop(dialogContext);
                                 await _showPayment(context, store, bill);
                               },
-                        icon: const Icon(Icons.add),
-                        label: const Text('新增繳款'),
+                        prefix: const Icon(Icons.add),
+                        child: const Text('新增繳款'),
                       ),
                     ],
                   ),
                   if (payments.isEmpty)
-                    const ListTile(title: Text('尚無繳款紀錄'))
+                    FItem(title: Text('尚無繳款紀錄'))
                   else
                     for (final payment in payments)
-                      ListTile(
+                      FItem(
                         title: Text(moneyText(payment.amountMinor)),
                         subtitle: Text(
                           '${dateText(payment.date)}${payment.note.isEmpty ? '' : '・${payment.note}'}',
                         ),
-                        trailing: PopupMenuButton<String>(
+                        suffix: KgzPopoverMenu<String>(
+                          semanticsLabel: '更多操作',
+                          entries: const [
+                            KgzMenuEntry('edit', '編輯'),
+                            KgzMenuEntry('delete', '刪除', destructive: true),
+                          ],
                           onSelected: (value) async {
                             Navigator.pop(dialogContext);
                             if (value == 'edit') {
@@ -1613,10 +1653,6 @@ class _BillsListState extends ConsumerState<_BillsList> {
                               );
                             }
                           },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('編輯')),
-                            PopupMenuItem(value: 'delete', child: Text('刪除')),
-                          ],
                         ),
                       ),
                 ],
@@ -1624,8 +1660,10 @@ class _BillsListState extends ConsumerState<_BillsList> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('關閉'),
             ),
           ],
@@ -1680,9 +1718,11 @@ class _DateField extends StatelessWidget {
   final ValueChanged<DateTime> onChanged;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) => KgzValueField(
+    label: label,
+    value: dateText(date),
     onTap: () async {
-      final value = await showDatePicker(
+      final value = await showKgzDatePicker(
         context: context,
         initialDate: date,
         firstDate: DateTime(2000),
@@ -1690,9 +1730,5 @@ class _DateField extends StatelessWidget {
       );
       if (value != null) onChanged(value);
     },
-    child: InputDecorator(
-      decoration: InputDecoration(labelText: label),
-      child: Text(dateText(date)),
-    ),
   );
 }

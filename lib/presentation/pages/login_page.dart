@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
 import '../design_tokens.dart';
 import '../widgets/brand_icon.dart';
+import '../widgets/common.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({
@@ -45,9 +47,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await ref.read(appStoreProvider).signIn(returnPath: widget.returnPath);
     } on Object catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('LINE 登入失敗：$error')));
+        showNotice(context, 'LINE 登入失敗：$error', error: true);
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -57,8 +57,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      body: DecoratedBox(
+    return FScaffold(
+      childPad: false,
+      child: DecoratedBox(
         decoration: BoxDecoration(
           // The Figma themes' own grounds: a honey-tinted wash fading into
           // the cream page color in light mode ("Warm Meadow"), a faint
@@ -109,7 +110,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     width: MediaQuery.sizeOf(context).width >= 800
                         ? 410
                         : MediaQuery.sizeOf(context).width - 48,
-                    child: Card(
+                    child: KgzCard(
                       child: Padding(
                         padding: const EdgeInsets.all(32),
                         child: Column(
@@ -161,37 +162,58 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ),
                             ],
                             const SizedBox(height: 32),
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.lineGreen,
-                                foregroundColor: Colors.white,
+                            // LINE's brand button keeps LINE's own green
+                            // (brand guidelines), so it's drawn on
+                            // FTappable instead of a themed FButton.
+                            FTappable(
+                              onPress: _loading ? null : _login,
+                              semanticsButton: true,
+                              builder: (context, variants, child) =>
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color:
+                                          variants.contains(
+                                            FTappableVariant.pressed,
+                                          )
+                                          ? Color.alphaBlend(
+                                              Colors.black12,
+                                              AppColors.lineGreen,
+                                            )
+                                          : AppColors.lineGreen,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: child,
+                                  ),
+                              child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 17,
                                 ),
-                              ),
-                              onPressed: _loading ? null : _login,
-                              child: _loading
-                                  ? const SizedBox.square(
-                                      dimension: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.chat_bubble_rounded),
-                                        SizedBox(width: 10),
-                                        Text(
-                                          '使用 LINE 登入',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
+                                child: _loading
+                                    ? const Center(
+                                        child: SizedBox.square(
+                                          dimension: 20,
+                                          child: FCircularProgress(),
                                         ),
-                                      ],
-                                    ),
+                                      )
+                                    : const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.chat_bubble_rounded,
+                                            color: Colors.white,
+                                          ),
+                                          SizedBox(width: 10),
+                                          Text(
+                                            '使用 LINE 登入',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
                             ),
                           ],
                         ),

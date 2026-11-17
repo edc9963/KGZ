@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,23 +17,31 @@ Future<void> showQuickEntry(
 }) async {
   final compact = MediaQuery.sizeOf(context).width < 600;
   if (compact) {
-    await showModalBottomSheet<void>(
+    await showFSheet<void>(
+      useRootNavigator: true,
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => FractionallySizedBox(
-        heightFactor: .9,
-        child: _QuickEntryEditor(initialKind: initialKind),
+      side: FLayout.btt,
+      mainAxisMaxRatio: .9,
+      builder: (context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: FractionallySizedBox(
+          heightFactor: 1,
+          child: _QuickEntryEditor(initialKind: initialKind),
+        ),
       ),
     );
   } else {
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (_) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
-          child: _QuickEntryEditor(initialKind: initialKind),
-        ),
+      builder: (context, style, animation) => FDialog(
+        animation: animation,
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
+        builder: (context, style) =>
+            _QuickEntryEditor(initialKind: initialKind),
       ),
     );
   }
@@ -127,12 +136,16 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                     ),
                   ),
                   const Spacer(),
-                  IconButton(
-                    tooltip: '關閉',
-                    onPressed: _submitting
-                        ? null
-                        : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                  FTooltip(
+                    tipBuilder: (context, _) => Text('關閉'),
+                    child: FButton.icon(
+                      variant: FButtonVariant.ghost,
+                      onPress: _submitting
+                          ? null
+                          : () => Navigator.pop(context),
+                      semanticsLabel: '關閉',
+                      child: const Icon(Icons.close),
+                    ),
                   ),
                 ],
               ),
@@ -163,12 +176,12 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                       MoneyField(
                         controller: _amount,
                         autofocus: true,
-                        style: Theme.of(context).textTheme.headlineMedium
+                        contentTextStyle: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
-                        decoration: const InputDecoration(
-                          labelText: '輸入金額',
-                          prefixText: r'NT$ ',
-                        ),
+                        label: Text('輸入金額'),
+                        prefixText: r'NT$ ',
                         validator: (value) =>
                             parseMoney(value ?? '') <= 0 ? '請輸入大於 0 的金額' : null,
                       ),
@@ -182,10 +195,8 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                           _category,
                         ),
                         textInputAction: TextInputAction.next,
-                        decoration: InputDecoration(
-                          labelText: _kind == QuickEntryKind.expense
-                              ? '項目'
-                              : '收入項目',
+                        label: Text(
+                          _kind == QuickEntryKind.expense ? '項目' : '收入項目',
                         ),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
@@ -212,22 +223,19 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                               runSpacing: 8,
                               children: [
                                 for (final category in categories)
-                                  ChoiceChip(
-                                    label: Text(category),
+                                  FButton(
+                                    variant: category == _category
+                                        ? FButtonVariant.primary
+                                        : FButtonVariant.outline,
+                                    size: FButtonSizeVariant.sm,
+                                    mainAxisSize: MainAxisSize.min,
                                     selected: category == _category,
-                                    showCheckmark: false,
-                                    labelStyle: TextStyle(
-                                      fontFamily: 'Noto Sans TC',
-                                      fontWeight: FontWeight.w700,
-                                      color: category == _category
-                                          ? context.colors.onPrimary
-                                          : context.colors.text,
-                                    ),
-                                    onSelected: (_) {
+                                    onPress: () {
                                       HapticFeedback.selectionClick();
                                       setState(() => _category = category);
                                       field.didChange(category);
                                     },
+                                    child: Text(category),
                                   ),
                               ],
                             ),
@@ -247,16 +255,12 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                       ),
                       const SizedBox(height: 12),
                       if (_kind == QuickEntryKind.expense) ...[
-                        DropdownButtonFormField<PaymentMethod>(
-                          initialValue: _payment,
-                          isExpanded: true,
-                          decoration: const InputDecoration(labelText: '付款方式'),
+                        KgzSelect<PaymentMethod>(
+                          value: _payment,
+                          label: Text('付款方式'),
                           items: [
                             for (final method in PaymentMethod.selectableWith())
-                              DropdownMenuItem(
-                                value: method,
-                                child: Text(method.label),
-                              ),
+                              KgzSelectItem(method, method.label),
                           ],
                           onChanged: (value) => setState(() {
                             _payment = value!;
@@ -281,15 +285,15 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                         if (_payment == PaymentMethod.creditCard ||
                             _payment == PaymentMethod.debitCard) ...[
                           const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            initialValue:
+                          KgzSelect<String>(
+                            value:
                                 store.data.cards.any(
                                   (card) => card.id == _cardId,
                                 )
                                 ? _cardId
                                 : null,
-                            decoration: InputDecoration(
-                              labelText: _payment == PaymentMethod.creditCard
+                            label: Text(
+                              _payment == PaymentMethod.creditCard
                                   ? '信用卡'
                                   : '金融卡',
                             ),
@@ -301,9 +305,9 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                                         ? card.isCredit
                                         : card.isDebit),
                               ))
-                                DropdownMenuItem(
-                                  value: card.id,
-                                  child: Text('${card.name} •${card.lastFour}'),
+                                KgzSelectItem(
+                                  card.id,
+                                  '${card.name} •${card.lastFour}',
                                 ),
                             ],
                             validator: (value) =>
@@ -318,38 +322,52 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                       ] else
                         _accountField(store),
                       const SizedBox(height: 8),
-                      ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        title: const Text('更多選項'),
-                        initiallyExpanded: _advanced,
-                        onExpansionChanged: (value) => _advanced = value,
+                      FAccordion(
+                        control: FAccordionControl.managed(
+                          onChange: (expanded) =>
+                              _advanced = expanded.isNotEmpty,
+                        ),
                         children: [
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('日期'),
-                            subtitle: Text(dateText(_date)),
-                            trailing: const Icon(Icons.calendar_today_outlined),
-                            onTap: _pickDate,
-                          ),
-                          if (_kind == QuickEntryKind.expense) ...[
-                            TextFormField(
-                              controller: _merchant,
-                              decoration: const InputDecoration(
-                                labelText: '商家（選填）',
-                              ),
-                            ),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('必要支出'),
-                              value: _necessary,
-                              onChanged: (value) =>
-                                  setState(() => _necessary = value),
-                            ),
-                          ],
-                          TextFormField(
-                            controller: _note,
-                            decoration: const InputDecoration(
-                              labelText: '備註（選填）',
+                          FAccordionItem(
+                            initiallyExpanded: _advanced,
+                            title: const Text('更多選項'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                FItem(
+                                  title: const Text('日期'),
+                                  subtitle: Text(dateText(_date)),
+                                  suffix: const Icon(
+                                    Icons.calendar_today_outlined,
+                                  ),
+                                  onPress: _pickDate,
+                                ),
+                                if (_kind == QuickEntryKind.expense) ...[
+                                  FTextFormField(
+                                    control: FTextFieldControl.managed(
+                                      controller: _merchant,
+                                    ),
+                                    label: Text('商家（選填）'),
+                                  ),
+                                  FItem(
+                                    title: const Text('必要支出'),
+                                    suffix: FSwitch(
+                                      value: _necessary,
+                                      onChange: (value) =>
+                                          setState(() => _necessary = value),
+                                    ),
+                                    onPress: () => ((value) => setState(
+                                      () => _necessary = value,
+                                    ))(!(_necessary)),
+                                  ),
+                                ],
+                                FTextFormField(
+                                  control: FTextFieldControl.managed(
+                                    controller: _note,
+                                  ),
+                                  label: Text('備註（選填）'),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -369,18 +387,16 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
                 ),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _submitting || !store.canWrite ? null : _save,
-                icon: _submitting
+              FButton(
+                size: FButtonSizeVariant.lg,
+                onPress: _submitting || !store.canWrite ? null : _save,
+                prefix: _submitting
                     ? const SizedBox.square(
                         dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FCircularProgress(),
                       )
                     : const Icon(Icons.check),
-                label: Text(_submitting ? '同步中' : '儲存記錄'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                ),
+                child: Text(_submitting ? '同步中' : '儲存記錄'),
               ),
             ],
           ),
@@ -389,25 +405,21 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
     );
   }
 
-  Widget _accountField(AppStore store) => DropdownButtonFormField<String>(
-    initialValue:
-        store.activeAssetAccounts.any((account) => account.id == _accountId)
+  Widget _accountField(AppStore store) => KgzSelect<String>(
+    value: store.activeAssetAccounts.any((account) => account.id == _accountId)
         ? _accountId
         : null,
-    isExpanded: true,
-    decoration: InputDecoration(
-      labelText: _kind == QuickEntryKind.income ? '入帳帳戶' : '扣款帳戶',
-    ),
+    label: Text(_kind == QuickEntryKind.income ? '入帳帳戶' : '扣款帳戶'),
     items: [
       for (final account in store.activeAssetAccounts)
-        DropdownMenuItem<String>(value: account.id, child: Text(account.name)),
+        KgzSelectItem<String>(account.id, account.name),
     ],
     validator: (value) => value == null ? '請選擇帳戶' : null,
     onChanged: (value) => setState(() => _accountId = value),
   );
 
   Future<void> _pickDate() async {
-    final value = await showDatePicker(
+    final value = await showKgzDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(2000),
@@ -467,13 +479,16 @@ class _QuickEntryEditorState extends ConsumerState<_QuickEntryEditor> {
     if (!mounted) return;
     if (store.lastSyncError == null && !store.hasConflict) {
       HapticFeedback.lightImpact();
-      final messenger = ScaffoldMessenger.of(context);
+      // The navigator outlives this sheet, so its context can still show
+      // the toast after the pop.
+      final noticeContext = Navigator.of(context).context;
       Navigator.pop(context);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(_kind == QuickEntryKind.expense ? '支出已儲存' : '收入已儲存'),
-        ),
-      );
+      if (noticeContext.mounted) {
+        showSaved(
+          noticeContext,
+          _kind == QuickEntryKind.expense ? '支出已儲存' : '收入已儲存',
+        );
+      }
     } else {
       setState(() {
         _submitting = false;

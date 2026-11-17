@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -96,13 +97,19 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         PageHeader(
           dockAction: false,
           title: '財務報表',
-          action: IconButton.filledTonal(
-            tooltip: mask ? '顯示金額' : '隱藏金額',
-            onPressed: () => store.updateSettings(
-              store.data.settings.copyWith(maskBalances: !mask),
-            ),
-            icon: Icon(
-              mask ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          action: FTooltip(
+            tipBuilder: (context, _) => Text(mask ? '顯示金額' : '隱藏金額'),
+            child: FButton.icon(
+              variant: FButtonVariant.secondary,
+              onPress: () => store.updateSettings(
+                store.data.settings.copyWith(maskBalances: !mask),
+              ),
+              semanticsLabel: mask ? '顯示金額' : '隱藏金額',
+              child: Icon(
+                mask
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
             ),
           ),
         ),
@@ -110,28 +117,15 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         _periodControls(),
         const SizedBox(height: 14),
         LayoutBuilder(
-          builder: (context, constraints) => SegmentedButton<_ReportTab>(
-            segments: const [
-              ButtonSegment(value: _ReportTab.summary, label: Text('總覽')),
-              ButtonSegment(value: _ReportTab.balance, label: Text('資產負債')),
-              ButtonSegment(value: _ReportTab.profitLoss, label: Text('收支損益')),
-              ButtonSegment(value: _ReportTab.cashFlow, label: Text('現金流')),
+          builder: (context, constraints) => KgzTabBar<_ReportTab>(
+            tabs: const [
+              (_ReportTab.summary, '總覽', null),
+              (_ReportTab.balance, '資產負債', null),
+              (_ReportTab.profitLoss, '收支損益', null),
+              (_ReportTab.cashFlow, '現金流', null),
             ],
-            showSelectedIcon: false,
-            style: ButtonStyle(
-              visualDensity: constraints.maxWidth < AppBreakpoints.mobile
-                  ? VisualDensity.compact
-                  : null,
-              padding: WidgetStatePropertyAll(
-                EdgeInsets.symmetric(
-                  horizontal: constraints.maxWidth < AppBreakpoints.mobile
-                      ? 6
-                      : 12,
-                ),
-              ),
-            ),
-            selected: {_tab},
-            onSelectionChanged: (value) => setState(() => _tab = value.first),
+            selected: _tab,
+            onSelected: (value) => setState(() => _tab = value),
           ),
         ),
         if (snapshot.issues.isNotEmpty) ...[
@@ -151,12 +145,19 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           _ReportTab.cashFlow => _cashFlow(snapshot, currency, mask),
         },
         const SizedBox(height: 16),
-        const ExpansionTile(
-          title: Text('報表說明'),
+        FAccordion(
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text('供個人財務管理使用，非 IFRS／GAAP 法定財報。'),
+            FAccordionItem(
+              title: Text('報表說明'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text('供個人財務管理使用，非 IFRS／GAAP 法定財報。'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -186,15 +187,19 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           if (value != null) setState(() => _preset = value);
         },
       );
-      final startButton = OutlinedButton.icon(
-        onPressed: () => _pickDate(start: true),
-        icon: const Icon(Icons.calendar_today_outlined),
-        label: Text('起 ${dateText(_customStart)}'),
+      final startButton = FButton(
+        variant: FButtonVariant.outline,
+        mainAxisSize: MainAxisSize.min,
+        onPress: () => _pickDate(start: true),
+        prefix: const Icon(Icons.calendar_today_outlined),
+        child: Text('起 ${dateText(_customStart)}'),
       );
-      final endButton = OutlinedButton.icon(
-        onPressed: () => _pickDate(start: false),
-        icon: const Icon(Icons.event_outlined),
-        label: Text('迄 ${dateText(_customEnd)}'),
+      final endButton = FButton(
+        variant: FButtonVariant.outline,
+        mainAxisSize: MainAxisSize.min,
+        onPress: () => _pickDate(start: false),
+        prefix: const Icon(Icons.event_outlined),
+        child: Text('迄 ${dateText(_customEnd)}'),
       );
       final cutoff = Text(
         '資產負債截止 ${dateText(_period.end)}',
@@ -242,7 +247,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
 
   Future<void> _pickDate({required bool start}) async {
     final initial = start ? _customStart : _customEnd;
-    final picked = await showDatePicker(
+    final picked = await showKgzDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2000),
@@ -267,21 +272,32 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   Widget _issues(FinancialReportSnapshot snapshot) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final warning = isDark ? const Color(0xFFE0B34D) : context.colors.warn;
-    return Card(
+    return KgzCard(
       color: Color.alphaBlend(
         warning.withValues(alpha: .14),
         context.colors.surface,
       ),
-      child: ExpansionTile(
-        leading: Icon(Icons.info_outline, color: warning),
-        title: Text('有 ${snapshot.issues.length} 項估值或資料品質提示'),
+      child: FAccordion(
         children: [
-          for (final issue in snapshot.issues)
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.circle, size: 8),
-              title: Text(issue.message),
+          FAccordionItem(
+            title: Row(
+              children: [
+                Icon(Icons.info_outline, color: warning),
+                const SizedBox(width: 12),
+                Expanded(child: Text('有 ${snapshot.issues.length} 項估值或資料品質提示')),
+              ],
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final issue in snapshot.issues)
+                  FItem(
+                    prefix: const Icon(Icons.circle, size: 8),
+                    title: Text(issue.message),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -364,25 +380,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               mask,
               asset: false,
               byPayment: byPayment,
-              headerAction: SegmentedButton<_ExpenseGrouping>(
-                segments: const [
-                  ButtonSegment(
-                    value: _ExpenseGrouping.category,
-                    label: Text('類別'),
-                  ),
-                  ButtonSegment(
-                    value: _ExpenseGrouping.payment,
-                    label: Text('支付方式'),
-                  ),
-                ],
-                showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                selected: {_expenseGrouping},
-                onSelectionChanged: (value) => setState(() {
-                  _expenseGrouping = value.first;
-                  _expenseSelected = null;
-                  _expenseTouched = -1;
-                }),
+              headerAction: SizedBox(
+                width: 210,
+                child: KgzTabBar<_ExpenseGrouping>(
+                  tabs: const [
+                    (_ExpenseGrouping.category, '類別', null),
+                    (_ExpenseGrouping.payment, '支付方式', null),
+                  ],
+                  selected: _expenseGrouping,
+                  onSelected: (value) => setState(() {
+                    _expenseGrouping = value;
+                    _expenseSelected = null;
+                    _expenseTouched = -1;
+                  }),
+                ),
               ),
               details: byPayment ? data.paymentDetails : data.expenseDetails,
               selectedLabel: _expenseSelected,
@@ -454,7 +465,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         : values.reduce((a, b) => a > b ? a : b);
     final spread = (rawMax - rawMin).abs();
     final padding = spread == 0 ? rawMax.abs() * .1 + 1 : spread * .15;
-    return Card(
+    return KgzCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -620,7 +631,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       (value, row) => row.$2.abs() > value ? row.$2.abs() : value,
     );
     final mobile = MediaQuery.sizeOf(context).width < AppBreakpoints.mobile;
-    return Card(
+    return KgzCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -680,14 +691,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                   ],
                 ),
               ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
+            FDivider(),
+            FItem(
               title: const Text(
                 '本期現金變動',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              trailing: SizedBox(
+              suffix: SizedBox(
                 width: mobile ? 140 : 200,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -786,9 +796,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     );
     Widget legendRow(int i, {required bool compact}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onSelect == null ? null : () => onSelect(slices[i].label),
+      child: FTappable(
+        onPress: onSelect == null ? null : () => onSelect(slices[i].label),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
@@ -846,7 +855,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ),
       ),
     );
-    return Card(
+    return KgzCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -996,11 +1005,15 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              IconButton(
-                tooltip: '收合明細',
-                visualDensity: VisualDensity.compact,
-                onPressed: onClose,
-                icon: const Icon(Icons.close_rounded, size: 18),
+              FTooltip(
+                tipBuilder: (context, _) => Text('收合明細'),
+                child: FButton.icon(
+                  size: FButtonSizeVariant.sm,
+                  variant: FButtonVariant.ghost,
+                  onPress: onClose,
+                  semanticsLabel: '收合明細',
+                  child: const Icon(Icons.close_rounded, size: 18),
+                ),
               ),
             ],
           ),
@@ -1017,7 +1030,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               ],
             ),
           ),
-          const Divider(height: 14),
+          FDivider(),
           if (items.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1030,8 +1043,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.only(right: 8),
                 itemCount: items.length,
-                separatorBuilder: (context, index) =>
-                    Divider(height: 1, color: muted.withValues(alpha: .18)),
+                separatorBuilder: (context, index) => FDivider(),
                 itemBuilder: (context, index) {
                   final item = items[index];
                   return Padding(
@@ -1068,7 +1080,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 },
               ),
             ),
-          const Divider(height: 14),
+          FDivider(),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Row(
@@ -1100,7 +1112,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         item.expenseMinor,
       ].reduce((a, b) => a > b ? a : b),
     );
-    return Card(
+    return KgzCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1312,7 +1324,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     String currency,
     bool mask, {
     bool signed = false,
-  }) => Card(
+  }) => KgzCard(
     child: Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -1336,7 +1348,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           else
             for (final line in lines)
               _statementLine(line, currency, mask, signed: signed),
-          const Divider(height: 26),
+          FDivider(),
           Row(
             children: [
               Expanded(
@@ -1366,17 +1378,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ? '+${moneyText(line.amountMinor, currency: currency, mask: mask)}'
         : moneyText(line.amountMinor, currency: currency, mask: mask);
     if (line.children.isEmpty) {
-      return ListTile(
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        minVerticalPadding: 4,
-        contentPadding: EdgeInsets.zero,
+      return FItem(
         title: Text(
           '${line.label}${line.estimated ? ' ・ 推估' : ''}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: ConstrainedBox(
+        suffix: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 160),
           child: FittedBox(
             fit: BoxFit.scaleDown,
@@ -1389,28 +1397,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ),
       );
     }
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(left: 18),
-      title: Text(
-        '${line.label}${line.estimated ? ' ・ 推估' : ''}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 160),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerRight,
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+    return FAccordion(
+      children: [
+        FAccordionItem(
+          title: Text(
+            '${line.label}${line.estimated ? ' ・ 推估' : ''}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final child in line.children)
+                  _statementLine(child, currency, mask, signed: signed),
+              ],
+            ),
           ),
         ),
-      ),
-      children: [
-        for (final child in line.children)
-          _statementLine(child, currency, mask, signed: signed),
       ],
     );
   }
@@ -1427,7 +1432,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     bool balanced,
   ) {
     final success = context.colors.income;
-    return Card(
+    return KgzCard(
       color: balanced
           ? Color.alphaBlend(
               success.withValues(alpha: .14),

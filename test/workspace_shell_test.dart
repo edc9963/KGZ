@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +12,7 @@ import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/app_shell.dart';
 import 'package:quick_ledger/presentation/pages/cards_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
@@ -47,8 +49,8 @@ void main() {
                           title: path,
                           action: path == '/settings'
                               ? null
-                              : FilledButton(
-                                  onPressed: () => lastAction = path,
+                              : FButton(
+                                  onPress: () => lastAction = path,
                                   child: Text('新增 $path'),
                                 ),
                         ),
@@ -69,17 +71,18 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp.router(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           routerConfig: router,
         ),
       ),
     );
     await tester.pumpAndSettle();
-    final action = find.widgetWithText(FilledButton, '新增 /accounts');
+    final action = find.widgetWithText(FButton, '新增 /accounts');
     expect(action, findsOneWidget);
     final original = tester.getTopLeft(action);
     expect(
       tester.getBottomLeft(action).dy,
-      lessThan(tester.getTopLeft(find.byType(NavigationBar)).dy),
+      lessThan(tester.getTopLeft(find.byType(FBottomNavigationBar)).dy),
     );
     await tester.drag(
       find.byType(SingleChildScrollView).first,
@@ -96,9 +99,11 @@ void main() {
     expect(lastAction, '/expenses');
     await tester.tap(find.text('設定').last);
     await tester.pumpAndSettle();
-    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
-    expect(nav.destinations, hasLength(5));
-    expect(nav.selectedIndex, 4);
+    final nav = tester.widget<FBottomNavigationBar>(
+      find.byType(FBottomNavigationBar),
+    );
+    expect(nav.children, hasLength(5));
+    expect(nav.index, 4);
     expect(find.text('新增 /expenses'), findsNothing);
     router.go('/accounts');
     await tester.pumpAndSettle();
@@ -147,6 +152,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp.router(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           routerConfig: router,
         ),
       ),
@@ -212,6 +218,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp.router(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             routerConfig: router,
           ),
         ),
@@ -229,15 +236,15 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       if (size.width < 600) {
-        expect(find.byType(NavigationBar), findsOneWidget);
+        expect(find.byType(FBottomNavigationBar), findsOneWidget);
         expect(find.byIcon(Icons.menu), findsNothing);
         expect(find.text('KGZ  /  總覽'), findsNothing);
       } else if (size.width < 1024) {
-        expect(find.byType(NavigationRail), findsOneWidget);
-        expect(find.byType(NavigationBar), findsNothing);
+        expect(find.byKey(const ValueKey('tablet-rail')), findsOneWidget);
+        expect(find.byType(FBottomNavigationBar), findsNothing);
       } else {
         expect(find.text('工作區'), findsOneWidget);
-        expect(find.byType(NavigationRail), findsNothing);
+        expect(find.byKey(const ValueKey('tablet-rail')), findsNothing);
       }
     });
   }
@@ -287,6 +294,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp.router(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           routerConfig: router,
         ),
       ),

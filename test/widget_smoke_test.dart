@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +27,7 @@ import 'package:quick_ledger/presentation/import_image_picker_models.dart';
 import 'package:quick_ledger/presentation/pages/reconciliation_page.dart';
 import 'package:quick_ledger/presentation/pages/reports_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -189,6 +191,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(18),
@@ -220,6 +223,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             home: const Scaffold(
               body: SingleChildScrollView(
                 padding: EdgeInsets.all(18),
@@ -239,7 +243,10 @@ void main() {
 
       expect(find.text('訂單資訊'), findsOneWidget);
       expect(find.text('下一步'), findsOneWidget);
-      expect(tester.getSize(find.byType(AlertDialog)).width, 390);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('kgz-dialog-body'))).width,
+        390,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -264,6 +271,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             home: buildUberEatsImportDialogForTest(
               images: [
                 _testImportImage('ue-1.png'),
@@ -282,13 +290,13 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (width < 600) {
-        await tester.tap(find.byTooltip('往後移').first);
+        await tester.tap(find.bySemanticsLabel('往後移').first);
         await tester.pump();
         expect(
           tester.getTopLeft(find.text('ue-2.png')).dy,
           lessThan(tester.getTopLeft(find.text('ue-1.png')).dy),
         );
-        await tester.tap(find.byTooltip('移除截圖').first);
+        await tester.tap(find.bySemanticsLabel('移除截圖').first);
         await tester.pump();
         expect(find.text('ue-2.png'), findsNothing);
         expect(tester.takeException(), isNull);
@@ -350,10 +358,10 @@ void main() {
       if (width == 430) {
         await tester.ensureVisible(deliverySwitch);
         await tester.pumpAndSettle();
-        expect(tester.widget<Switch>(deliverySwitch).value, isFalse);
+        expect(tester.widget<FSwitch>(deliverySwitch).value, isFalse);
         await tester.tap(deliverySwitch);
         await tester.pump();
-        expect(tester.widget<Switch>(deliverySwitch).value, isTrue);
+        expect(tester.widget<FSwitch>(deliverySwitch).value, isTrue);
         await tester.tap(deliverySwitch);
         await tester.pump();
       }
@@ -364,7 +372,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('fee-plus-收款附加費')));
         await tester.pump();
-        expect(find.byTooltip('已固定，點擊恢復自動'), findsOneWidget);
+        expect(find.bySemanticsLabel('已固定，點擊恢復自動'), findsOneWidget);
         expect(find.textContaining('目前多收'), findsOneWidget);
         await tester.tap(find.text('確認匯入'));
         await tester.pumpAndSettle();
@@ -393,6 +401,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: buildUberEatsImportDialogForTest(
             images: [_testImportImage('ue.png')],
           ),
@@ -428,6 +437,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: buildUberEatsImportDialogForTest(
             images: [_testImportImage('ue.png')],
           ),
@@ -438,7 +448,12 @@ void main() {
     await tester.tap(find.text('開始辨識'));
     await tester.pump();
     expect(find.text('正在下載測試模型'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is FProgress || widget is FDeterminateProgress,
+      ),
+      findsOneWidget,
+    );
 
     repository.completer.completeError(StateError('測試辨識失敗'));
     await tester.pumpAndSettle();
@@ -466,6 +481,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: buildUberEatsImportDialogForTest(
             images: [
               for (var index = 0; index < 8; index++)
@@ -503,6 +519,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const LoginPage(),
         ),
       ),
@@ -523,6 +540,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const LoginPage(autoSignIn: true, returnPath: '/dashboard'),
         ),
       ),
@@ -546,6 +564,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const LoginPage(autoSignIn: true),
         ),
       ),
@@ -559,6 +578,7 @@ void main() {
     await tester.tap(find.text('使用 LINE 登入'));
     await tester.pump();
     expect(auth.signInCalls, 2);
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets('LINE official account login skips an existing session', (
@@ -571,6 +591,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const LoginPage(autoSignIn: true),
         ),
       ),
@@ -789,6 +810,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ExpensesPage()),
           ),
@@ -831,6 +853,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ExpensesPage()),
           ),
@@ -880,6 +903,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: Scaffold(body: buildUberEatsImportDialogForTest()),
         ),
       ),
@@ -898,8 +922,8 @@ void main() {
     expect(find.text('目前沒有本人參與者'), findsOneWidget);
     expect(
       tester
-          .widget<Switch>(find.byKey(const ValueKey('include-self-delivery')))
-          .onChanged,
+          .widget<FSwitch>(find.byKey(const ValueKey('include-self-delivery')))
+          .onChange,
       isNull,
     );
 
@@ -915,6 +939,8 @@ void main() {
     );
     expect(find.text('姓名'), findsOneWidget);
     expect(find.text('姓名（自己）'), findsNothing);
+    // Let forui's 100 ms press animation finish before teardown.
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets('credit card with month-end dates can be edited', (tester) async {
@@ -979,18 +1005,19 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(body: CardsPage()),
         ),
       ),
     );
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.bySemanticsLabel('卡片操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('編輯'));
     await tester.pumpAndSettle();
 
     expect(find.text('編輯信用卡'), findsOneWidget);
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.tap(find.byType(KgzSelect<String>).first);
     await tester.pumpAndSettle();
     expect(find.text('已刪除舊帳戶'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -1062,6 +1089,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             home: const Scaffold(body: CardsPage()),
           ),
         ),
@@ -1173,6 +1201,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(body: CardsPage()),
         ),
       ),
@@ -1240,6 +1269,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: AccountsPage()),
           ),
@@ -1255,7 +1285,7 @@ void main() {
     expect(find.text('日常帳戶 扣／入帳明細'), findsOneWidget);
     expect(find.text('午餐'), findsOneWidget);
     expect(find.text('期初餘額'), findsWidgets);
-    await tester.tap(find.byTooltip('明細操作').first);
+    await tester.tap(find.bySemanticsLabel('明細操作').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('編輯'));
     await tester.pumpAndSettle();
@@ -1266,12 +1296,12 @@ void main() {
     expect(find.text('日常帳戶 扣／入帳明細'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byTooltip('明細操作').first);
+    await tester.tap(find.bySemanticsLabel('明細操作').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('刪除'));
     await tester.pumpAndSettle();
     expect(find.text('刪除消費？'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, '刪除'));
+    await tester.tap(find.widgetWithText(FButton, '刪除'));
     await tester.pumpAndSettle();
     expect(store.data.expenses, isEmpty);
     expect(store.accountBalance('account'), 100000);
@@ -1315,6 +1345,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: AccountsPage()),
           ),
@@ -1324,17 +1355,17 @@ void main() {
 
     final row = find.ancestor(
       of: find.text('彰銀'),
-      matching: find.byType(ListTile),
+      matching: find.byType(FItem),
     );
     await tester.tap(
-      find.descendant(of: row, matching: find.byType(PopupMenuButton<String>)),
+      find.descendant(of: row, matching: find.byType(KgzPopoverMenu<String>)),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('餘額調整'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('直接改總額'));
     await tester.pumpAndSettle();
-    await enterMoneyFieldValue(tester, find.byType(TextField).first, '10000');
+    await enterMoneyFieldValue(tester, find.byType(MoneyField).first, '10000');
     await tester.tap(find.text('套用調整'));
     await tester.pumpAndSettle();
 
@@ -1378,6 +1409,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ReconciliationPage()),
           ),
@@ -1388,16 +1420,13 @@ void main() {
     expect(find.textContaining('尚未對帳', findRichText: true), findsWidgets);
     final row = find.ancestor(
       of: find.text('彰銀'),
-      matching: find.byType(ListTile),
+      matching: find.byType(FItem),
     );
     await tester.tap(
-      find.descendant(
-        of: row,
-        matching: find.widgetWithText(FilledButton, '對帳'),
-      ),
+      find.descendant(of: row, matching: find.widgetWithText(FButton, '對帳')),
     );
     await tester.pumpAndSettle();
-    await enterMoneyFieldValue(tester, find.byType(TextField).first, '7950');
+    await enterMoneyFieldValue(tester, find.byType(MoneyField).first, '7950');
     await tester.pumpAndSettle();
     expect(find.textContaining('差額 −NT\$50'), findsOneWidget);
     await tester.tap(find.text('確認並調整'));
@@ -1411,76 +1440,78 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('rejected bill reconciliation stays in the dialog, not a banner', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final now = DateTime.now();
-    const card = CreditCard(
-      id: 'rejected-card',
-      userId: 'user',
-      name: '退件卡',
-      bank: '銀行',
-      lastFour: '1122',
-      closingDay: 15,
-      dueDay: 28,
-      autoDebitDay: 28,
-      debitAccountId: '',
-      isActive: true,
-      note: '',
-    );
-    final bill = CardBill(
-      id: 'rejected-bill',
-      userId: 'user',
-      cardId: card.id,
-      month: '${now.year}-${now.month.toString().padLeft(2, '0')}',
-      chargeIds: const [],
-      manualAdjustmentMinor: 0,
-      paidMinor: 4000,
-      dueDate: now.add(const Duration(days: 10)),
-      autoDebitDate: now.add(const Duration(days: 8)),
-      note: '',
-      statementAmountMinor: 4000,
-      reconciliationReason: CardBillReconciliationReason.feeOrInterest,
-    );
-    final store = await _makeStore(
-      auth: _WidgetAuth()..signedIn = true,
-      finance: _WidgetFinance(
-        data: AppData(cards: const [card], bills: [bill]),
-      ),
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [appStoreProvider.overrideWith((ref) => store)],
-        child: MaterialApp(
-          theme: buildAppTheme(Brightness.light),
-          home: const Scaffold(
-            body: SingleChildScrollView(child: ReconciliationPage()),
+  testWidgets(
+    'rejected bill reconciliation stays in the dialog, not a banner',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      const card = CreditCard(
+        id: 'rejected-card',
+        userId: 'user',
+        name: '退件卡',
+        bank: '銀行',
+        lastFour: '1122',
+        closingDay: 15,
+        dueDay: 28,
+        autoDebitDay: 28,
+        debitAccountId: '',
+        isActive: true,
+        note: '',
+      );
+      final bill = CardBill(
+        id: 'rejected-bill',
+        userId: 'user',
+        cardId: card.id,
+        month: '${now.year}-${now.month.toString().padLeft(2, '0')}',
+        chargeIds: const [],
+        manualAdjustmentMinor: 0,
+        paidMinor: 4000,
+        dueDate: now.add(const Duration(days: 10)),
+        autoDebitDate: now.add(const Duration(days: 8)),
+        note: '',
+        statementAmountMinor: 4000,
+        reconciliationReason: CardBillReconciliationReason.feeOrInterest,
+      );
+      final store = await _makeStore(
+        auth: _WidgetAuth()..signedIn = true,
+        finance: _WidgetFinance(
+          data: AppData(cards: const [card], bills: [bill]),
+        ),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appStoreProvider.overrideWith((ref) => store)],
+          child: MaterialApp(
+            theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
+            home: const Scaffold(
+              body: SingleChildScrollView(child: ReconciliationPage()),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final reconcile = find.widgetWithText(FilledButton, '核對').first;
-    await tester.ensureVisible(reconcile);
-    await tester.pumpAndSettle();
-    await tester.tap(reconcile);
-    await tester.pumpAndSettle();
-    // Matches the (empty) charge total, so the dialog's own checks pass and
-    // the store is what rejects it: it's below what's already been paid.
-    await enterMoneyFieldValue(tester, find.byType(TextField).first, '0');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('確認無差異'));
-    await tester.pumpAndSettle();
+      final reconcile = find.widgetWithText(FButton, '核對').first;
+      await tester.ensureVisible(reconcile);
+      await tester.pumpAndSettle();
+      await tester.tap(reconcile);
+      await tester.pumpAndSettle();
+      // Matches the (empty) charge total, so the dialog's own checks pass and
+      // the store is what rejects it: it's below what's already been paid.
+      await enterMoneyFieldValue(tester, find.byType(MoneyField).first, '0');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('確認無差異'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('實際帳單總額不得低於已繳金額'), findsOneWidget);
-    expect(store.lastSyncError, isNull);
-    expect(store.data.bills.single.statementAmountMinor, 4000);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.text('實際帳單總額不得低於已繳金額'), findsOneWidget);
+      expect(store.lastSyncError, isNull);
+      expect(store.data.bills.single.statementAmountMinor, 4000);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('investment reconciliation books a snapshot at 390px', (
     tester,
@@ -1525,6 +1556,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ReconciliationPage()),
           ),
@@ -1534,17 +1566,14 @@ void main() {
 
     final row = find.ancestor(
       of: find.text('元大台灣50（0050）'),
-      matching: find.byType(ListTile),
+      matching: find.byType(FItem),
     );
     await tester.ensureVisible(row);
     await tester.tap(
-      find.descendant(
-        of: row,
-        matching: find.widgetWithText(FilledButton, '對帳'),
-      ),
+      find.descendant(of: row, matching: find.widgetWithText(FButton, '對帳')),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, '實際持有數量'), '1100');
+    await tester.enterText(find.widgetWithText(FTextField, '實際持有數量'), '1100');
     await tester.pumpAndSettle();
     expect(find.textContaining('數量差 +100 單位'), findsOneWidget);
     await tester.tap(find.text('確認並調整'));
@@ -1606,6 +1635,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ReconciliationPage()),
           ),
@@ -1616,16 +1646,13 @@ void main() {
     expect(find.text('電信帳單 2026-09'), findsOneWidget);
     final row = find.ancestor(
       of: find.text('電信帳單 2026-09'),
-      matching: find.byType(ListTile),
+      matching: find.byType(FItem),
     );
     await tester.tap(
-      find.descendant(
-        of: row,
-        matching: find.widgetWithText(FilledButton, '核對'),
-      ),
+      find.descendant(of: row, matching: find.widgetWithText(FButton, '核對')),
     );
     await tester.pumpAndSettle();
-    await enterMoneyFieldValue(tester, find.byType(TextField).first, '612');
+    await enterMoneyFieldValue(tester, find.byType(MoneyField).first, '612');
     await tester.pumpAndSettle();
     expect(find.textContaining('差額 +NT\$13'), findsOneWidget);
     await tester.tap(find.text('確認並調整'));
@@ -1718,6 +1745,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             home: const Scaffold(
               body: SingleChildScrollView(
                 padding: EdgeInsets.all(16),
@@ -1778,6 +1806,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -1796,9 +1825,7 @@ void main() {
     expect(store.currentMonthExpenseMinor, 6400);
     expect(
       tester
-          .widgetList<LinearProgressIndicator>(
-            find.byType(LinearProgressIndicator),
-          )
+          .widgetList<KgzProgressBar>(find.byType(KgzProgressBar))
           .skip(1)
           .map((bar) => bar.color),
       [
@@ -1857,6 +1884,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp.router(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           routerConfig: router,
         ),
       ),
@@ -1865,7 +1893,7 @@ void main() {
     for (final entry in routes.entries) {
       router.go('/dashboard');
       await tester.pumpAndSettle();
-      if (find.text(entry.key).evaluate().isEmpty) {
+      if (find.text(entry.key).hitTestable().evaluate().isEmpty) {
         await tester.tap(find.text('其他財務摘要'));
         await tester.pumpAndSettle();
       }
@@ -1922,6 +1950,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: ExpensesPage()),
           ),
@@ -1954,6 +1983,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               child: ExpensesPage(createOnOpen: true),
@@ -1997,6 +2027,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               child: ExpensesPage(createIncomeOnOpen: true),
@@ -2007,13 +2038,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.widgetWithText(TextFormField, '收入項目'), '八月薪資');
+    await tester.enterText(find.widgetWithText(FTextFormField, '收入項目'), '八月薪資');
     await enterMoneyFieldValue(
       tester,
-      find.widgetWithText(TextFormField, '金額'),
+      find.widgetWithText(FTextFormField, '金額'),
       '50000',
     );
-    await tester.tap(find.widgetWithText(FilledButton, '儲存'));
+    await tester.tap(find.widgetWithText(FButton, '儲存'));
     await tester.pumpAndSettle();
 
     expect(store.data.incomes.single.item, '八月薪資');
@@ -2035,6 +2066,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -2067,8 +2099,8 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<FilledButton>(find.byKey(const ValueKey('save-holding')))
-          .onPressed,
+          .widget<FButton>(find.byKey(const ValueKey('save-holding')))
+          .onPress,
       isNotNull,
     );
     await tester.ensureVisible(find.byKey(const ValueKey('save-holding')));
@@ -2131,6 +2163,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(Brightness.light),
+            builder: kgzForuiBuilder,
             home: const Scaffold(
               body: SingleChildScrollView(
                 padding: EdgeInsets.all(16),
@@ -2197,6 +2230,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: InvestmentsPage()),
           ),
@@ -2277,6 +2311,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(child: InvestmentsPage()),
           ),
@@ -2291,7 +2326,12 @@ void main() {
     expect(find.text('更新庫存'), findsWidgets);
     expect(
       tester
-          .widget<TextField>(find.byKey(const ValueKey('holding-quantity')))
+          .widget<TextField>(
+            find.descendant(
+              of: find.byKey(const ValueKey('holding-quantity')),
+              matching: find.byType(TextField),
+            ),
+          )
           .controller
           ?.text,
       '3.0',
@@ -2362,6 +2402,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Scaffold(
             body: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -2385,17 +2426,18 @@ void main() {
     expect(expenseTop.dy, incomeTop.dy);
     final reportTabs = find.ancestor(
       of: find.text('收支損益'),
-      matching: find.byWidgetPredicate((widget) => widget is SegmentedButton),
+      matching: find.byWidgetPredicate((widget) => widget is KgzTabBar),
     );
     expect(tester.getSize(reportTabs).width, lessThanOrEqualTo(358));
     final expenseGrouping = find.ancestor(
       of: find.text('支付方式'),
-      matching: find.byWidgetPredicate((widget) => widget is SegmentedButton),
+      matching: find.byWidgetPredicate((widget) => widget is KgzTabBar),
     );
     expect(tester.getSize(expenseGrouping).width, lessThanOrEqualTo(358));
     await tester.tap(find.text('支付方式'));
     await tester.pump();
     expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   for (final (brightness, fill, label) in [
@@ -2434,6 +2476,7 @@ void main() {
           overrides: [appStoreProvider.overrideWith((ref) => store)],
           child: MaterialApp(
             theme: buildAppTheme(brightness),
+            builder: kgzForuiBuilder,
             home: const Scaffold(
               body: SingleChildScrollView(child: ReportsPage()),
             ),

@@ -9,6 +9,7 @@ import 'package:quick_ledger/data/repositories.dart';
 import 'package:quick_ledger/domain/models.dart';
 import 'package:quick_ledger/presentation/pages/collection_page.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 
 void main() {
   testWidgets('public collection loads without a signed-in finance snapshot', (
@@ -28,6 +29,7 @@ void main() {
         overrides: [appStoreProvider.overrideWith((ref) => store)],
         child: MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const CollectionPage(token: 'public-token'),
         ),
       ),

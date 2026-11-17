@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -95,20 +96,27 @@ class OrdersPage extends ConsumerWidget {
           action: Wrap(
             spacing: 8,
             children: [
-              IconButton.outlined(
-                tooltip: '收款資訊設定',
-                onPressed: () => _showCollectionSettings(context, ref),
-                icon: const Icon(Icons.qr_code_2),
+              FTooltip(
+                tipBuilder: (context, _) => Text('收款資訊設定'),
+                child: FButton.icon(
+                  variant: FButtonVariant.outline,
+                  onPress: () => _showCollectionSettings(context, ref),
+                  semanticsLabel: '收款資訊設定',
+                  child: const Icon(Icons.qr_code_2),
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _showImportDialog(context, ref),
-                icon: const Icon(Icons.document_scanner_outlined),
-                label: const Text('從截圖匯入'),
+              FButton(
+                variant: FButtonVariant.outline,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => _showImportDialog(context, ref),
+                prefix: const Icon(Icons.document_scanner_outlined),
+                child: const Text('從截圖匯入'),
               ),
-              FilledButton.icon(
-                onPressed: () => _showCreateMethodDialog(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('新增代訂'),
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => _showCreateMethodDialog(context, ref),
+                prefix: const Icon(Icons.add),
+                child: const Text('新增代訂'),
               ),
             ],
           ),
@@ -151,8 +159,9 @@ class OrdersPage extends ConsumerWidget {
             icon: Icons.groups_outlined,
             title: '還沒有代訂',
             message: '建立餐點或團購代訂，系統會分開計算個人支出與應收款。',
-            action: FilledButton(
-              onPressed: () => _showCreateMethodDialog(context, ref),
+            action: FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => _showCreateMethodDialog(context, ref),
               child: const Text('新增代訂'),
             ),
           )
@@ -160,10 +169,9 @@ class OrdersPage extends ConsumerWidget {
           for (final order in orders)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => context.go('/orders/${order.id}'),
+              child: KgzCard(
+                child: FTappable(
+                  onPress: () => context.go('/orders/${order.id}'),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Row(
@@ -221,7 +229,12 @@ class OrdersPage extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        PopupMenuButton<String>(
+                        KgzPopoverMenu<String>(
+                          semanticsLabel: '更多操作',
+                          entries: const [
+                            KgzMenuEntry('edit', '編輯'),
+                            KgzMenuEntry('delete', '刪除', destructive: true),
+                          ],
                           onSelected: (value) async {
                             if (value == 'edit') {
                               await _showOrderDialog(context, ref, order);
@@ -233,10 +246,6 @@ class OrdersPage extends ConsumerWidget {
                               if (confirmed) await store.deleteOrder(order.id);
                             }
                           },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(value: 'edit', child: Text('編輯')),
-                            PopupMenuItem(value: 'delete', child: Text('刪除')),
-                          ],
                         ),
                       ],
                     ),
@@ -252,31 +261,35 @@ class OrdersPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
   ) async {
-    final method = await showDialog<_OrderEntryMethod>(
+    final method = await showFDialog<_OrderEntryMethod>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => KgzDialog(
+      builder: (dialogContext, _, _) => KgzDialog(
         title: const Text('新增代訂'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_note_outlined),
+            FItem(
+              prefix: const Icon(Icons.edit_note_outlined),
               title: const Text('手動輸入'),
               subtitle: const Text('自行填寫訂單、人員與分攤'),
-              onTap: () =>
+              onPress: () =>
                   Navigator.pop(dialogContext, _OrderEntryMethod.manual),
             ),
-            ListTile(
-              leading: const Icon(Icons.document_scanner_outlined),
+            FItem(
+              prefix: const Icon(Icons.document_scanner_outlined),
               title: const Text('截圖辨識'),
               subtitle: const Text('從 Uber Eats 截圖帶入後再確認'),
-              onTap: () => Navigator.pop(dialogContext, _OrderEntryMethod.ocr),
+              onPress: () =>
+                  Navigator.pop(dialogContext, _OrderEntryMethod.ocr),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+          FButton(
+            variant: FButtonVariant.ghost,
+            mainAxisSize: MainAxisSize.min,
+            onPress: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
         ],
@@ -299,9 +312,10 @@ class OrdersPage extends ConsumerWidget {
     var accountId = store.defaultBankTransferAccountId;
     final bankQr = TextEditingController(text: current.bankQrData);
     final bankInfo = TextEditingController(text: current.bankAccountInfo);
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: const Text('收款資訊'),
           content: SizedBox(
@@ -309,46 +323,46 @@ class OrdersPage extends ConsumerWidget {
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue:
+                  KgzSelect<String>(
+                    value:
                         store.bankTransferAccounts.any(
                           (item) => item.id == accountId,
                         )
                         ? accountId
                         : null,
-                    decoration: const InputDecoration(labelText: '預設銀行轉入帳戶'),
+                    label: Text('預設銀行轉入帳戶'),
                     items: store.bankTransferAccounts
                         .map(
-                          (account) => DropdownMenuItem(
-                            value: account.id,
-                            child: Text(account.name),
-                          ),
+                          (account) => KgzSelectItem(account.id, account.name),
                         )
                         .toList(),
                     onChanged: (value) => setState(() => accountId = value),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: bankQr,
-                    decoration: const InputDecoration(labelText: '銀行轉帳 QR 內容'),
+                  FTextField(
+                    control: FTextFieldControl.managed(controller: bankQr),
+                    label: Text('銀行轉帳 QR 內容'),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: bankInfo,
+                  FTextField(
+                    control: FTextFieldControl.managed(controller: bankInfo),
+                    label: Text('銀行帳號與備註資訊'),
                     maxLines: 2,
-                    decoration: const InputDecoration(labelText: '銀行帳號與備註資訊'),
                   ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 await store.updateSettings(
                   current.copyWith(
                     defaultCollectionAccountId: accountId,
@@ -369,18 +383,22 @@ class OrdersPage extends ConsumerWidget {
   Future<void> _showImportDialog(BuildContext context, WidgetRef ref) async {
     final store = ref.read(appStoreProvider);
     if (!store.data.cards.any((card) => card.isCredit)) {
-      await showDialog<void>(
+      await showFDialog<void>(
+        useRootNavigator: true,
         context: context,
-        builder: (dialogContext) => KgzDialog(
+        builder: (dialogContext, _, _) => KgzDialog(
           title: const Text('請先建立信用卡'),
           content: const Text('Uber Eats 截圖匯入需要指定付款信用卡。'),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () {
                 Navigator.pop(dialogContext);
                 context.go('/cards');
               },
@@ -396,14 +414,16 @@ class OrdersPage extends ConsumerWidget {
       files = await pickImportImages();
     } on Object catch (error) {
       if (context.mounted) {
-        await showDialog<void>(
+        await showFDialog<void>(
+          useRootNavigator: true,
           context: context,
-          builder: (dialogContext) => KgzDialog(
+          builder: (dialogContext, _, _) => KgzDialog(
             title: const Text('無法開啟圖片選擇器'),
             content: Text('請用 Safari 直接開啟本網站，重新整理後再試。\n\n$error'),
             actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('知道了'),
               ),
             ],
@@ -417,17 +437,16 @@ class OrdersPage extends ConsumerWidget {
     final validationError = validateUberEatsImportFiles(selectedFiles);
     if (validationError != null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(validationError)));
+        showNotice(context, validationError, error: true);
       }
       return;
     }
     if (!context.mounted) return;
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
       barrierDismissible: false,
-      builder: (_) => _UberEatsImportDialog(
+      builder: (_, _, _) => _UberEatsImportDialog(
         images: [
           for (final file in selectedFiles)
             ImportImage(
@@ -702,16 +721,13 @@ class OrdersPage extends ConsumerWidget {
       error = null;
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showFDialog<bool>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
-          insetPadding: MediaQuery.sizeOf(context).width < 600
-              ? EdgeInsets.zero
-              : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-          shape: MediaQuery.sizeOf(context).width < 600
-              ? const RoundedRectangleBorder()
-              : null,
+          maxWidth: 780,
+          fullWidthOnPhone: true,
           title: Text(existing == null ? '新增代訂' : '編輯代訂'),
           content: SizedBox(
             width: MediaQuery.sizeOf(context).width < 600
@@ -726,26 +742,39 @@ class OrdersPage extends ConsumerWidget {
                   Row(
                     children: [
                       for (var index = 0; index < 2; index++) ...[
-                        CircleAvatar(
-                          radius: 14,
-                          backgroundColor: index <= editorStep
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                          foregroundColor: index <= editorStep
-                              ? Theme.of(context).colorScheme.onPrimary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                          child: Text(
-                            '${index + 1}',
-                            style: const TextStyle(fontSize: 12),
+                        FAvatar.raw(
+                          size: 28,
+                          style: FAvatarStyleDelta.delta(
+                            backgroundColor: index <= editorStep
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                            foregroundColor: index <= editorStep
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
+                          child: IconTheme.merge(
+                            data: IconThemeData(
+                              color: index <= editorStep
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                            ),
+                            child: Text(
+                              '${index + 1}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(const ['訂單資訊', '人員與分攤'][index]),
                         if (index < 1) ...[
                           const SizedBox(width: 8),
-                          const Expanded(child: Divider()),
+                          const Expanded(child: FDivider()),
                           const SizedBox(width: 8),
                         ],
                       ],
@@ -789,20 +818,20 @@ class OrdersPage extends ConsumerWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: name,
-                            decoration: const InputDecoration(
-                              labelText: '代訂名稱',
+                          child: FTextField(
+                            control: FTextFieldControl.managed(
+                              controller: name,
                             ),
+                            label: Text('代訂名稱'),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextField(
-                            controller: platform,
-                            decoration: const InputDecoration(
-                              labelText: '訂購平台',
+                          child: FTextField(
+                            control: FTextFieldControl.managed(
+                              controller: platform,
                             ),
+                            label: Text('訂購平台'),
                           ),
                         ),
                       ],
@@ -812,9 +841,11 @@ class OrdersPage extends ConsumerWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: InkWell(
+                          child: KgzValueField(
+                            label: '訂購日期',
+                            value: dateText(date),
                             onTap: () async {
-                              final value = await showDatePicker(
+                              final value = await showKgzDatePicker(
                                 context: context,
                                 initialDate: date,
                                 firstDate: DateTime(2000),
@@ -824,33 +855,22 @@ class OrdersPage extends ConsumerWidget {
                               );
                               if (value != null) setState(() => date = value);
                             },
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: '訂購日期',
-                              ),
-                              child: Text(dateText(date)),
-                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue:
+                          child: KgzSelect<String>(
+                            value:
                                 store.data.cards.any(
                                   (item) => item.id == cardId && item.isCredit,
                                 )
                                 ? cardId
                                 : null,
-                            decoration: const InputDecoration(
-                              labelText: '刷卡信用卡',
-                            ),
+                            label: Text('刷卡信用卡'),
                             items: store.data.cards
                                 .where((card) => card.isCredit)
                                 .map(
-                                  (card) => DropdownMenuItem(
-                                    value: card.id,
-                                    child: Text(card.name),
-                                  ),
+                                  (card) => KgzSelectItem(card.id, card.name),
                                 )
                                 .toList(),
                             onChanged: (value) =>
@@ -876,34 +896,24 @@ class OrdersPage extends ConsumerWidget {
                               !categories.any((item) => item.id == selected.id))
                             selected,
                         ];
-                        return DropdownButtonFormField<String>(
-                          initialValue:
+                        return KgzSelect<String>(
+                          value:
                               items.any(
                                 (item) => item.id == selfExpenseCategoryId,
                               )
                               ? selfExpenseCategoryId
                               : null,
-                          decoration: const InputDecoration(
-                            labelText: '本人消費分類',
-                          ),
+                          label: const Text('本人消費分類'),
                           items: [
                             for (final category in items)
-                              DropdownMenuItem(
-                                value: category.id,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 7,
-                                      backgroundColor:
-                                          bookkeepingCategoryVisual(
-                                            category,
-                                            context.colors,
-                                          ).color,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(category.name),
-                                  ],
+                              KgzSelectItem(
+                                category.id,
+                                category.name,
+                                prefix: CategoryDot(
+                                  color: bookkeepingCategoryVisual(
+                                    category,
+                                    context.colors,
+                                  ).color,
                                 ),
                               ),
                           ],
@@ -914,13 +924,15 @@ class OrdersPage extends ConsumerWidget {
                     ),
                   if (editorStep == 0) const SizedBox(height: 12),
                   if (editorStep == 0)
-                    TextField(
-                      controller: total,
+                    FTextField(
+                      control: FTextFieldControl.managed(
+                        controller: total,
+                        onChange: (_) => setState(() {}),
+                      ),
+                      label: Text('總刷卡金額'),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(labelText: '總刷卡金額'),
-                      onChanged: (_) => setState(() {}),
                     ),
                   if (editorStep == 0)
                     Builder(
@@ -953,8 +965,10 @@ class OrdersPage extends ConsumerWidget {
                                 ),
                               ),
                             ),
-                            TextButton(
-                              onPressed: calculated <= 0
+                            FButton(
+                              variant: FButtonVariant.ghost,
+                              mainAxisSize: MainAxisSize.min,
+                              onPress: calculated <= 0
                                   ? null
                                   : () => setState(() {
                                       total.text = (calculated / 100)
@@ -988,10 +1002,9 @@ class OrdersPage extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              InkWell(
+                              FTappable(
                                 key: const ValueKey('order-other-fees'),
-                                borderRadius: BorderRadius.circular(14),
-                                onTap: () => setState(
+                                onPress: () => setState(
                                   () => showOtherFees = !showOtherFees,
                                 ),
                                 child: Padding(
@@ -1048,20 +1061,20 @@ class OrdersPage extends ConsumerWidget {
                                       ) ...[
                                         if (index > 0) const SizedBox(width: 8),
                                         Expanded(
-                                          child: TextField(
-                                            controller: fees[index].$2,
+                                          child: FTextField(
+                                            control: FTextFieldControl.managed(
+                                              controller: fees[index].$2,
+                                              onChange: (_) => setState(() {
+                                                if (fees[index].$1 == '折扣') {
+                                                  syncDiscounts();
+                                                }
+                                              }),
+                                            ),
+                                            label: Text(fees[index].$1),
                                             keyboardType:
                                                 const TextInputType.numberWithOptions(
                                                   decimal: true,
                                                 ),
-                                            decoration: InputDecoration(
-                                              labelText: fees[index].$1,
-                                            ),
-                                            onChanged: (_) => setState(() {
-                                              if (fees[index].$1 == '折扣') {
-                                                syncDiscounts();
-                                              }
-                                            }),
                                           ),
                                         ),
                                       ],
@@ -1211,8 +1224,10 @@ class OrdersPage extends ConsumerWidget {
                       padding: const EdgeInsets.only(top: 10),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: () => setState(
+                        child: FButton(
+                          variant: FButtonVariant.ghost,
+                          mainAxisSize: MainAxisSize.min,
+                          onPress: () => setState(
                             () => drafts.add(
                               _ParticipantDraft.empty(
                                 collectionMethod: defaultCollectionMethod,
@@ -1220,8 +1235,8 @@ class OrdersPage extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          icon: const Icon(Icons.person_add_alt),
-                          label: const Text('新增人員'),
+                          prefix: const Icon(Icons.person_add_alt),
+                          child: const Text('新增人員'),
                         ),
                       ),
                     ),
@@ -1257,29 +1272,34 @@ class OrdersPage extends ConsumerWidget {
                     ),
                   if (editorStep == 1) const SizedBox(height: 12),
                   if (editorStep == 1)
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
+                    FTextField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('備註'),
                     ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
             if (editorStep > 0)
-              OutlinedButton(
-                onPressed: () => setState(() {
+              FButton(
+                variant: FButtonVariant.outline,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => setState(() {
                   editorStep -= 1;
                   error = null;
                 }),
                 child: const Text('上一步'),
               ),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 if (editorStep == 0) {
                   if (name.text.trim().isEmpty ||
                       cardId == null ||
@@ -1485,7 +1505,7 @@ class _OrderEditorLauncherState extends ConsumerState<OrderEditorLauncher> {
 
   @override
   Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
+      const FScaffold(child: Center(child: FCircularProgress()));
 }
 
 @visibleForTesting
@@ -1872,21 +1892,25 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     ];
     if (issues.isNotEmpty) {
       final proceed =
-          await showDialog<bool>(
+          await showFDialog<bool>(
+            useRootNavigator: true,
             context: context,
-            builder: (context) => KgzDialog(
+            builder: (context, _, _) => KgzDialog(
               title: const Text('仍有資料需要確認'),
               content: Text(
                 '${issues.map((issue) => '• $issue').join('\n')}\n\n'
                 '已對照原圖並確認仍要匯入嗎？',
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                FButton(
+                  variant: FButtonVariant.ghost,
+                  mainAxisSize: MainAxisSize.min,
+                  onPress: () => Navigator.pop(context, false),
                   child: const Text('返回修正'),
                 ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
+                FButton(
+                  mainAxisSize: MainAxisSize.min,
+                  onPress: () => Navigator.pop(context, true),
                   child: const Text('仍要匯入'),
                 ),
               ],
@@ -2044,17 +2068,14 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
     return messages.join('・');
   }
 
-  InputDecoration _ocrDecoration(String label, {required bool lowConfidence}) =>
-      InputDecoration(
-        labelText: lowConfidence ? '$label・待確認' : label,
-        filled: lowConfidence,
-        fillColor: lowConfidence ? context.colors.warnPale : null,
-        enabledBorder: lowConfidence
-            ? OutlineInputBorder(
-                borderSide: BorderSide(color: context.colors.warn),
-              )
-            : null,
-      );
+  /// Field label for OCR-imported values; low-confidence ones are flagged
+  /// in the warn color so they get checked before saving.
+  Widget _ocrLabel(String label, {required bool lowConfidence}) => Text(
+    lowConfidence ? '$label・待確認' : label,
+    style: lowConfidence
+        ? TextStyle(color: context.colors.warn, fontWeight: FontWeight.w700)
+        : null,
+  );
 
   Widget _responsivePair({
     required bool compact,
@@ -2115,25 +2136,33 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 ],
               ),
             ),
-            const ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Text('首次辨識與模型下載'),
-              childrenPadding: EdgeInsets.only(bottom: 8),
+            FAccordion(
               children: [
-                Text(
-                  '首次使用需下載 OCR 模型；iPhone 約 5 MB、其他行動裝置約 '
-                  '22 MB，電腦最高約 100 MB。建議連接 Wi‑Fi 並保持此頁開啟，'
-                  '下載後會保存在此裝置。',
+                FAccordionItem(
+                  title: Text('首次辨識與模型下載'),
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '首次使用需下載 OCR 模型；iPhone 約 5 MB、其他行動裝置約 '
+                          '22 MB，電腦最高約 100 MB。建議連接 Wi‑Fi 並保持此頁開啟，'
+                          '下載後會保存在此裝置。',
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
             if (_loading) ...[
               const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: (_ocrProgress?.progress ?? 0) > 0
-                    ? (_ocrProgress!.progress).clamp(0, 1)
-                    : null,
-              ),
+              (_ocrProgress?.progress ?? 0) > 0
+                  ? FDeterminateProgress(
+                      value: _ocrProgress!.progress.clamp(0, 1).toDouble(),
+                    )
+                  : const FProgress(),
               const SizedBox(height: 8),
               Text(
                 _ocrProgress?.message ??
@@ -2163,163 +2192,200 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 ),
             ],
             for (var i = 0; i < _images.length; i++)
-              Card(
-                margin: const EdgeInsets.only(top: 8),
-                child: ListTile(
-                  leading: SizedBox(
-                    width: 52,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.memory(
-                            _images[i].bytes,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Align(
-                          alignment: Alignment.topLeft,
-                          child: CircleAvatar(
-                            radius: 10,
-                            child: Text(
-                              '${i + 1}',
-                              style: const TextStyle(fontSize: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: KgzCard(
+                  child: FItem(
+                    prefix: SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(
+                              _images[i].bytes,
+                              fit: BoxFit.cover,
                             ),
                           ),
-                        ),
-                      ],
+                          Align(
+                            alignment: Alignment.topLeft,
+                            child: FAvatar.raw(
+                              size: 20,
+                              child: Text(
+                                '${i + 1}',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    title: Text(_images[i].name),
+                    subtitle: compact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${(_images[i].bytes.length / 1024).round()} KB',
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  FTooltip(
+                                    tipBuilder: (context, _) => Text('往前移'),
+                                    child: FButton.icon(
+                                      variant: FButtonVariant.ghost,
+                                      onPress: i == 0
+                                          ? null
+                                          : () => setState(() {
+                                              final image = _images.removeAt(i);
+                                              _images.insert(i - 1, image);
+                                            }),
+                                      semanticsLabel: '往前移',
+                                      child: const Icon(Icons.arrow_upward),
+                                    ),
+                                  ),
+                                  FTooltip(
+                                    tipBuilder: (context, _) => Text('往後移'),
+                                    child: FButton.icon(
+                                      variant: FButtonVariant.ghost,
+                                      onPress: i == _images.length - 1
+                                          ? null
+                                          : () => setState(() {
+                                              final image = _images.removeAt(i);
+                                              _images.insert(i + 1, image);
+                                            }),
+                                      semanticsLabel: '往後移',
+                                      child: const Icon(Icons.arrow_downward),
+                                    ),
+                                  ),
+                                  FTooltip(
+                                    tipBuilder: (context, _) => Text('移除截圖'),
+                                    child: FButton.icon(
+                                      variant: FButtonVariant.ghost,
+                                      onPress: _images.length == 1
+                                          ? null
+                                          : () => setState(
+                                              () => _images.removeAt(i),
+                                            ),
+                                      semanticsLabel: '移除截圖',
+                                      child: const Icon(Icons.close),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Text(
+                            '${(_images[i].bytes.length / 1024).round()} KB',
+                          ),
+                    suffix: compact
+                        ? null
+                        : Wrap(
+                            children: [
+                              FButton.icon(
+                                variant: FButtonVariant.ghost,
+                                onPress: i == 0
+                                    ? null
+                                    : () => setState(() {
+                                        final image = _images.removeAt(i);
+                                        _images.insert(i - 1, image);
+                                      }),
+                                child: const Icon(Icons.arrow_upward),
+                              ),
+                              FButton.icon(
+                                variant: FButtonVariant.ghost,
+                                onPress: i == _images.length - 1
+                                    ? null
+                                    : () => setState(() {
+                                        final image = _images.removeAt(i);
+                                        _images.insert(i + 1, image);
+                                      }),
+                                child: const Icon(Icons.arrow_downward),
+                              ),
+                              FButton.icon(
+                                variant: FButtonVariant.ghost,
+                                onPress: _images.length == 1
+                                    ? null
+                                    : () => setState(() => _images.removeAt(i)),
+                                child: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
                   ),
-                  title: Text(_images[i].name),
-                  trailing: compact
-                      ? null
-                      : Wrap(
-                          children: [
-                            IconButton(
-                              onPressed: i == 0
-                                  ? null
-                                  : () => setState(() {
-                                      final image = _images.removeAt(i);
-                                      _images.insert(i - 1, image);
-                                    }),
-                              icon: const Icon(Icons.arrow_upward),
-                            ),
-                            IconButton(
-                              onPressed: i == _images.length - 1
-                                  ? null
-                                  : () => setState(() {
-                                      final image = _images.removeAt(i);
-                                      _images.insert(i + 1, image);
-                                    }),
-                              icon: const Icon(Icons.arrow_downward),
-                            ),
-                            IconButton(
-                              onPressed: _images.length == 1
-                                  ? null
-                                  : () => setState(() => _images.removeAt(i)),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                  subtitle: compact
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${(_images[i].bytes.length / 1024).round()} KB',
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                IconButton(
-                                  tooltip: '往前移',
-                                  onPressed: i == 0
-                                      ? null
-                                      : () => setState(() {
-                                          final image = _images.removeAt(i);
-                                          _images.insert(i - 1, image);
-                                        }),
-                                  icon: const Icon(Icons.arrow_upward),
-                                ),
-                                IconButton(
-                                  tooltip: '往後移',
-                                  onPressed: i == _images.length - 1
-                                      ? null
-                                      : () => setState(() {
-                                          final image = _images.removeAt(i);
-                                          _images.insert(i + 1, image);
-                                        }),
-                                  icon: const Icon(Icons.arrow_downward),
-                                ),
-                                IconButton(
-                                  tooltip: '移除截圖',
-                                  onPressed: _images.length == 1
-                                      ? null
-                                      : () =>
-                                            setState(() => _images.removeAt(i)),
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                          ],
-                        )
-                      : Text('${(_images[i].bytes.length / 1024).round()} KB'),
                 ),
               ),
           ] else ...[
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: const Text('查看原始截圖'),
-              subtitle: const Text('低信心欄位請對照原圖修正'),
+            FAccordion(
               children: [
-                SizedBox(
-                  height: 220,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _images.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) => ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        _images[index].bytes,
-                        fit: BoxFit.contain,
+                FAccordionItem(
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('查看原始截圖'),
+                      DefaultTextStyle.merge(
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: context.colors.textMuted,
+                        ),
+                        child: const Text('低信心欄位請對照原圖修正'),
                       ),
-                    ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: 220,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _images.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) => ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _images[index].bytes,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: '代訂名稱'),
+            FTextField(
+              control: FTextFieldControl.managed(controller: _name),
+              label: Text('代訂名稱'),
             ),
             const SizedBox(height: 8),
             _responsivePair(
               compact: compact,
-              first: TextField(
-                controller: _platform,
-                decoration: const InputDecoration(labelText: '平台'),
+              first: FTextField(
+                control: FTextFieldControl.managed(controller: _platform),
+                label: Text('平台'),
               ),
-              second: DropdownButtonFormField<String>(
-                initialValue: _cardId,
-                decoration: const InputDecoration(labelText: '付款信用卡'),
+              second: KgzSelect<String>(
+                value: _cardId,
+                label: Text('付款信用卡'),
                 items: [
                   for (final card in store.data.cards.where(
                     (card) => card.isCredit,
                   ))
-                    DropdownMenuItem(
-                      value: card.id,
-                      child: Text('${card.name} ••••${card.lastFour}'),
-                    ),
+                    KgzSelectItem(card.id, '${card.name} ••••${card.lastFour}'),
                 ],
                 onChanged: (value) => setState(() => _cardId = value),
               ),
             ),
             const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final selected = await showDatePicker(
+            FButton(
+              variant: FButtonVariant.outline,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
+                final selected = await showKgzDatePicker(
                   context: context,
                   initialDate: _date,
                   firstDate: DateTime(2020),
@@ -2337,8 +2403,8 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                   );
                 }
               },
-              icon: const Icon(Icons.calendar_today_outlined),
-              label: Text('訂購日期 ${dateText(_date)}'),
+              prefix: const Icon(Icons.calendar_today_outlined),
+              child: Text('訂購日期 ${dateText(_date)}'),
             ),
             if (_imported!.warnings.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -2366,17 +2432,15 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                     width: compact ? double.infinity : 165,
                     child: MoneyField(
                       controller: entry.$3,
-                      decoration:
-                          _ocrDecoration(
-                            '${entry.$1}（元）',
-                            lowConfidence:
-                                _imported!.isLowConfidence(entry.$2) &&
-                                !_confirmedOrderFields.contains(entry.$2),
-                          ).copyWith(
-                            helperText: entry.$2 == 'discount'
-                                ? '可直接修正；再於下方勾選「有折扣」的人員'
-                                : null,
-                          ),
+                      label: _ocrLabel(
+                        '${entry.$1}（元）',
+                        lowConfidence:
+                            _imported!.isLowConfidence(entry.$2) &&
+                            !_confirmedOrderFields.contains(entry.$2),
+                      ),
+                      description: entry.$2 == 'discount'
+                          ? const Text('可直接修正；再於下方勾選「有折扣」的人員')
+                          : null,
                       onChanged: (_) => setState(() {
                         _confirmedOrderFields.add(entry.$2);
                         if (entry.$2 == 'discount') {
@@ -2439,11 +2503,13 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                TextButton.icon(
+                FButton(
+                  variant: FButtonVariant.ghost,
+                  mainAxisSize: MainAxisSize.min,
                   key: const ValueKey('import-add-person'),
-                  onPressed: _addPerson,
-                  icon: const Icon(Icons.person_add_alt),
-                  label: const Text('新增人員'),
+                  onPress: _addPerson,
+                  prefix: const Icon(Icons.person_add_alt),
+                  child: const Text('新增人員'),
                 ),
               ],
             ),
@@ -2462,34 +2528,38 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                 child: Center(child: Text('目前沒有人員，請新增至少一位才能匯入。')),
               ),
             for (var i = 0; i < _people.length; i++)
-              Card(
+              KgzCard(
                 color: context.colors.subtle,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
                       _NameItemAmountRow(
-                        nameField: TextField(
-                          controller: _people[i].name,
-                          decoration: _ocrDecoration(
+                        nameField: FTextField(
+                          control: FTextFieldControl.managed(
+                            controller: _people[i].name,
+                            onChange: (_) =>
+                                setState(() => _people[i].nameConfidence = 1),
+                          ),
+                          label: _ocrLabel(
                             _people[i].isSelf ? '姓名（自己）' : '姓名',
                             lowConfidence: _people[i].nameConfidence < 0.75,
                           ),
-                          onChanged: (_) =>
-                              setState(() => _people[i].nameConfidence = 1),
                         ),
-                        itemField: TextField(
-                          controller: _people[i].item,
-                          decoration: _ocrDecoration(
+                        itemField: FTextField(
+                          control: FTextFieldControl.managed(
+                            controller: _people[i].item,
+                            onChange: (_) =>
+                                setState(() => _people[i].itemConfidence = 1),
+                          ),
+                          label: _ocrLabel(
                             '品項',
                             lowConfidence: _people[i].itemConfidence < 0.75,
                           ),
-                          onChanged: (_) =>
-                              setState(() => _people[i].itemConfidence = 1),
                         ),
                         amountField: MoneyField(
                           controller: _people[i].amount,
-                          decoration: _ocrDecoration(
+                          label: _ocrLabel(
                             '餐點（元）',
                             lowConfidence: _people[i].amountConfidence < 0.75,
                           ),
@@ -2499,11 +2569,18 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                             _syncFees();
                           }),
                         ),
-                        trailing: IconButton(
-                          key: ValueKey('import-remove-person-$i'),
-                          tooltip: _people[i].isSelf ? '移除本人' : '移除參與者',
-                          onPressed: () => _removePerson(i),
-                          icon: const Icon(Icons.close),
+                        trailing: FTooltip(
+                          tipBuilder: (context, _) =>
+                              Text(_people[i].isSelf ? '移除本人' : '移除參與者'),
+                          child: FButton.icon(
+                            variant: FButtonVariant.ghost,
+                            key: ValueKey('import-remove-person-$i'),
+                            onPress: () => _removePerson(i),
+                            semanticsLabel: _people[i].isSelf
+                                ? '移除本人'
+                                : '移除參與者',
+                            child: const Icon(Icons.close),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -2511,39 +2588,49 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
                         builder: (context) {
                           final checkbox = SizedBox(
                             width: 92,
-                            child: CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
+                            child: FItem(
+                              prefix: FCheckbox(
+                                value: _people[i].discountEligible == true,
+                                onChange: (value) => setState(() {
+                                  _people[i].discountEligible = value;
+                                  if (!_people[i].discountEligible) {
+                                    _people[i].discountIsFixed = false;
+                                    _people[i].discount.text = '0';
+                                  }
+                                  _syncDiscounts();
+                                }),
+                              ),
                               title: const Text('折扣'),
-                              value: _people[i].discountEligible,
-                              onChanged: (value) => setState(() {
-                                _people[i].discountEligible = value ?? false;
+                              onPress: () => ((value) => setState(() {
+                                _people[i].discountEligible = value;
                                 if (!_people[i].discountEligible) {
                                   _people[i].discountIsFixed = false;
                                   _people[i].discount.text = '0';
                                 }
                                 _syncDiscounts();
-                              }),
+                              }))(!(_people[i].discountEligible == true)),
                             ),
                           );
                           final discount = MoneyField(
                             controller: _people[i].discount,
                             enabled: _people[i].discountEligible,
-                            decoration: InputDecoration(
-                              labelText: _people[i].discountIsFixed
-                                  ? '折扣（固定）'
-                                  : '折扣（自動）',
-                              suffixIcon: _people[i].discountIsFixed
-                                  ? IconButton(
-                                      tooltip: '恢復自動',
-                                      onPressed: () => setState(() {
+                            label: Text(
+                              _people[i].discountIsFixed ? '折扣（固定）' : '折扣（自動）',
+                            ),
+                            suffix: _people[i].discountIsFixed
+                                ? FTooltip(
+                                    tipBuilder: (context, _) => Text('恢復自動'),
+                                    child: FButton.icon(
+                                      variant: FButtonVariant.ghost,
+                                      onPress: () => setState(() {
                                         _people[i].discountIsFixed = false;
                                         _syncDiscounts();
                                       }),
-                                      icon: const Icon(Icons.refresh),
-                                    )
-                                  : null,
-                            ),
+                                      semanticsLabel: '恢復自動',
+                                      child: const Icon(Icons.refresh),
+                                    ),
+                                  )
+                                : null,
                             onChanged: (_) => setState(() {
                               _people[i].discountIsFixed = true;
                               _syncDiscounts();
@@ -2635,20 +2722,20 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
       ),
     );
     final actions = <Widget>[
-      TextButton(
-        onPressed: _loading ? null : () => Navigator.pop(context),
+      FButton(
+        variant: FButtonVariant.ghost,
+        mainAxisSize: MainAxisSize.min,
+        onPress: _loading ? null : () => Navigator.pop(context),
         child: const Text('取消'),
       ),
       if (_imported == null)
-        FilledButton.icon(
-          onPressed: _loading ? null : _recognize,
-          icon: _loading
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+        FButton(
+          mainAxisSize: MainAxisSize.min,
+          onPress: _loading ? null : _recognize,
+          prefix: _loading
+              ? const SizedBox.square(dimension: 16, child: FCircularProgress())
               : const Icon(Icons.auto_awesome),
-          label: Text(
+          child: Text(
             _loading
                 ? '辨識中…'
                 : _recognitionAttempted
@@ -2657,40 +2744,50 @@ class _UberEatsImportDialogState extends ConsumerState<_UberEatsImportDialog> {
           ),
         )
       else
-        FilledButton(onPressed: _save, child: const Text('確認匯入')),
+        FButton(
+          mainAxisSize: MainAxisSize.min,
+          onPress: _save,
+          child: const Text('確認匯入'),
+        ),
     ];
     if (compact) {
-      return Dialog.fullscreen(
-        child: Scaffold(
-          appBar: AppBar(
+      return FScaffold(
+        childPad: false,
+        header: SafeArea(
+          bottom: false,
+          child: FHeader.nested(
             title: const Text('從 Uber Eats 截圖匯入'),
-            leading: IconButton(
-              tooltip: '取消',
-              onPressed: _loading ? null : () => Navigator.pop(context),
-              icon: const Icon(Icons.close),
-            ),
-          ),
-          body: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: content,
-            ),
-          ),
-          bottomNavigationBar: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (var index = 0; index < actions.length; index++) ...[
-                    if (index > 0) const SizedBox(width: 8),
-                    actions[index],
-                  ],
-                ],
+            prefixes: [
+              FTooltip(
+                tipBuilder: (context, _) => const Text('取消'),
+                child: FHeaderAction.x(
+                  semanticsLabel: '取消',
+                  onPress: _loading ? null : () => Navigator.pop(context),
+                ),
               ),
+            ],
+          ),
+        ),
+        footer: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                for (var index = 0; index < actions.length; index++) ...[
+                  if (index > 0) const SizedBox(width: 8),
+                  actions[index],
+                ],
+              ],
             ),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: content,
           ),
         ),
       );
@@ -2793,9 +2890,10 @@ class OrderDetailPage extends ConsumerWidget {
       children: [
         Row(
           children: [
-            IconButton(
-              onPressed: () => context.go('/orders'),
-              icon: const Icon(Icons.arrow_back),
+            FButton.icon(
+              variant: FButtonVariant.ghost,
+              onPress: () => context.go('/orders'),
+              child: const Icon(Icons.arrow_back),
             ),
             Expanded(
               child: PageHeader(
@@ -2872,7 +2970,7 @@ class OrderDetailPage extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 18),
-        Card(
+        KgzCard(
           child: Column(
             children: [
               for (
@@ -2884,8 +2982,7 @@ class OrderDetailPage extends ConsumerWidget {
                   order: order,
                   person: order.participants[index],
                 ),
-                if (index < order.participants.length - 1)
-                  const Divider(height: 1, indent: 72),
+                if (index < order.participants.length - 1) FDivider(),
               ],
             ],
           ),
@@ -2903,9 +3000,8 @@ class _ParticipantRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final store = ref.read(appStoreProvider);
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      leading: CircleAvatar(
+    return FItem(
+      prefix: FAvatar.raw(
         child: person.isSelf
             ? const Icon(Icons.person)
             : Text(person.name.characters.first),
@@ -2917,9 +3013,12 @@ class _ParticipantRow extends ConsumerWidget {
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           if (person.isSelf)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Chip(label: Text('自己')),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: FBadge(
+                variant: FBadgeVariant.secondary,
+                child: Text('自己'),
+              ),
             ),
         ],
       ),
@@ -2935,7 +3034,7 @@ class _ParticipantRow extends ConsumerWidget {
         '${person.status == CollectionStatus.paid && person.collectionAccountId != null ? '・已入帳 ${store.accountById(person.collectionAccountId)?.name ?? '指定帳戶'} '
                   '${moneyText(person.dueMinor)}' : ''}',
       ),
-      trailing: Row(
+      suffix: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Column(
@@ -2956,8 +3055,9 @@ class _ParticipantRow extends ConsumerWidget {
               (person.status == CollectionStatus.unpaid ||
                   person.status == CollectionStatus.pending)) ...[
             const SizedBox(width: 10),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 final saved = await store.confirmParticipantCollection(
                   order.id,
                   person.id,
@@ -3165,7 +3265,7 @@ class _AllocationSettingsCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          Divider(height: 1, color: scheme.outlineVariant),
+          FDivider(),
           const SizedBox(height: 16),
           Text(
             '折扣分配',
@@ -3249,7 +3349,7 @@ class _SelfFeeSwitch extends StatelessWidget {
             ],
           ),
         ),
-        Switch(key: switchKey, value: value, onChanged: onChanged),
+        FSwitch(key: switchKey, value: value, onChange: onChanged),
       ],
     ),
   );
@@ -3421,13 +3521,17 @@ class _UniformFeeAdjuster extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            key: const ValueKey('all-fees-minus'),
-            tooltip: '每人減少 1 元',
-            onPressed: peopleFees.isEmpty || peopleFees.every((fee) => fee <= 0)
-                ? null
-                : () => onDelta(-1),
-            icon: const Icon(Icons.remove_circle_outline),
+          FTooltip(
+            tipBuilder: (context, _) => Text('每人減少 1 元'),
+            child: FButton.icon(
+              variant: FButtonVariant.ghost,
+              key: const ValueKey('all-fees-minus'),
+              onPress: peopleFees.isEmpty || peopleFees.every((fee) => fee <= 0)
+                  ? null
+                  : () => onDelta(-1),
+              semanticsLabel: '每人減少 1 元',
+              child: const Icon(Icons.remove_circle_outline),
+            ),
           ),
           SizedBox(
             width: 72,
@@ -3437,11 +3541,15 @@ class _UniformFeeAdjuster extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
-          IconButton(
-            key: const ValueKey('all-fees-plus'),
-            tooltip: '每人增加 1 元',
-            onPressed: peopleFees.isEmpty ? null : () => onDelta(1),
-            icon: const Icon(Icons.add_circle_outline),
+          FTooltip(
+            tipBuilder: (context, _) => Text('每人增加 1 元'),
+            child: FButton.icon(
+              variant: FButtonVariant.ghost,
+              key: const ValueKey('all-fees-plus'),
+              onPress: peopleFees.isEmpty ? null : () => onDelta(1),
+              semanticsLabel: '每人增加 1 元',
+              child: const Icon(Icons.add_circle_outline),
+            ),
           ),
         ],
       ),
@@ -3486,13 +3594,18 @@ class _FeeStepper extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelMedium,
                 ),
               ),
-              IconButton(
-                key: ValueKey('fee-minus-$label'),
-                tooltip: '減少 1 元',
-                onPressed: (int.tryParse(controller.text) ?? 0) <= 0
-                    ? null
-                    : () => onDelta(-1),
-                icon: const Icon(Icons.remove_circle_outline),
+              FTooltip(
+                tipBuilder: (context, _) => Text('減少 1 元'),
+                child: FButton.icon(
+                  size: FButtonSizeVariant.sm,
+                  variant: FButtonVariant.ghost,
+                  key: ValueKey('fee-minus-$label'),
+                  onPress: (int.tryParse(controller.text) ?? 0) <= 0
+                      ? null
+                      : () => onDelta(-1),
+                  semanticsLabel: '減少 1 元',
+                  child: const Icon(Icons.remove_circle_outline),
+                ),
               ),
               SizedBox(
                 width: 36,
@@ -3505,11 +3618,16 @@ class _FeeStepper extends StatelessWidget {
                 ),
               ),
               const Text('元'),
-              IconButton(
-                key: ValueKey('fee-plus-$label'),
-                tooltip: '增加 1 元',
-                onPressed: () => onDelta(1),
-                icon: const Icon(Icons.add_circle_outline),
+              FTooltip(
+                tipBuilder: (context, _) => Text('增加 1 元'),
+                child: FButton.icon(
+                  size: FButtonSizeVariant.sm,
+                  variant: FButtonVariant.ghost,
+                  key: ValueKey('fee-plus-$label'),
+                  onPress: () => onDelta(1),
+                  semanticsLabel: '增加 1 元',
+                  child: const Icon(Icons.add_circle_outline),
+                ),
               ),
             ],
           ),
@@ -3517,14 +3635,18 @@ class _FeeStepper extends StatelessWidget {
       ),
       const SizedBox(width: 6),
       if (fixed)
-        IconButton(
-          tooltip: '已固定，點擊恢復自動',
-          onPressed: onReset,
-          icon: const Icon(Icons.lock_outline),
+        FTooltip(
+          tipBuilder: (context, _) => Text('已固定，點擊恢復自動'),
+          child: FButton.icon(
+            variant: FButtonVariant.ghost,
+            onPress: onReset,
+            semanticsLabel: '已固定，點擊恢復自動',
+            child: const Icon(Icons.lock_outline),
+          ),
         )
       else
-        const Tooltip(
-          message: '自動分配',
+        FTooltip(
+          tipBuilder: (context, _) => Text('自動分配'),
           child: Icon(Icons.auto_awesome, size: 20),
         ),
     ],
@@ -3581,7 +3703,12 @@ class _FeeRedistributionNotice extends StatelessWidget {
               icon: const Icon(Icons.sync),
               label: const Text('重套系統分配'),
             ),
-          TextButton(onPressed: onReset, child: const Text('全部恢復自動')),
+          FButton(
+            variant: FButtonVariant.ghost,
+            mainAxisSize: MainAxisSize.min,
+            onPress: onReset,
+            child: const Text('全部恢復自動'),
+          ),
         ],
       ),
     );
@@ -3730,13 +3857,15 @@ class _ParticipantEditor extends StatelessWidget {
       child: Column(
         children: [
           _NameItemAmountRow(
-            nameField: TextField(
-              controller: draft.name,
-              onChanged: (_) => onChanged(),
-              onSubmitted: (value) => onNameCommitted?.call(value),
-              decoration: InputDecoration(
-                labelText: draft.isSelf ? '姓名（自己）' : '姓名',
-                suffixIcon: draft.isSelf || onSaveMember == null
+            nameField: FTextField(
+              control: FTextFieldControl.managed(
+                controller: draft.name,
+                onChange: (_) => onChanged(),
+              ),
+              label: Text(draft.isSelf ? '姓名（自己）' : '姓名'),
+              suffixBuilder: (context, style, variants) => Padding(
+                padding: const EdgeInsetsDirectional.only(end: 4),
+                child: draft.isSelf || onSaveMember == null
                     ? null
                     : _SavedMemberControls(
                         currentName: draft.name.text,
@@ -3750,18 +3879,23 @@ class _ParticipantEditor extends StatelessWidget {
                         onRemove: onRemoveMember,
                       ),
               ),
+              onSubmit: (value) => onNameCommitted?.call(value),
             ),
-            itemField: TextField(
-              controller: draft.item,
-              decoration: const InputDecoration(labelText: '品項'),
+            itemField: FTextField(
+              control: FTextFieldControl.managed(controller: draft.item),
+              label: Text('品項'),
             ),
             amountField: MoneyField(
               controller: draft.amount,
-              decoration: const InputDecoration(labelText: '餐點金額'),
+              label: Text('餐點金額'),
               onChanged: (_) => onChanged(),
             ),
             trailing: canDelete && !draft.isSelf
-                ? IconButton(onPressed: onDelete, icon: const Icon(Icons.close))
+                ? FButton.icon(
+                    variant: FButtonVariant.ghost,
+                    onPress: onDelete,
+                    child: const Icon(Icons.close),
+                  )
                 : null,
           ),
           const SizedBox(height: 8),
@@ -3771,19 +3905,27 @@ class _ParticipantEditor extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: 92,
-                    child: CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
+                    child: FItem(
+                      prefix: FCheckbox(
+                        value: draft.discountEligible == true,
+                        onChange: (value) {
+                          draft.discountEligible = value;
+                          if (!draft.discountEligible) {
+                            draft.discountIsFixed = false;
+                            draft.discount.text = '0';
+                          }
+                          onChanged();
+                        },
+                      ),
                       title: const Text('折扣'),
-                      value: draft.discountEligible,
-                      onChanged: (value) {
-                        draft.discountEligible = value ?? false;
+                      onPress: () => ((value) {
+                        draft.discountEligible = value;
                         if (!draft.discountEligible) {
                           draft.discountIsFixed = false;
                           draft.discount.text = '0';
                         }
                         onChanged();
-                      },
+                      })(!(draft.discountEligible == true)),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3791,21 +3933,23 @@ class _ParticipantEditor extends StatelessWidget {
                     child: MoneyField(
                       controller: draft.discount,
                       enabled: draft.discountEligible,
-                      decoration: InputDecoration(
-                        labelText: draft.discountIsFixed
-                            ? '折扣金額（固定）'
-                            : '折扣金額（自動）',
-                        suffixIcon: draft.discountIsFixed
-                            ? IconButton(
-                                tooltip: '恢復自動',
-                                onPressed: () {
+                      label: Text(
+                        draft.discountIsFixed ? '折扣金額（固定）' : '折扣金額（自動）',
+                      ),
+                      suffix: draft.discountIsFixed
+                          ? FTooltip(
+                              tipBuilder: (context, _) => Text('恢復自動'),
+                              child: FButton.icon(
+                                variant: FButtonVariant.ghost,
+                                onPress: () {
                                   draft.discountIsFixed = false;
                                   onChanged();
                                 },
-                                icon: const Icon(Icons.refresh),
-                              )
-                            : null,
-                      ),
+                                semanticsLabel: '恢復自動',
+                                child: const Icon(Icons.refresh),
+                              ),
+                            )
+                          : null,
                       onChanged: (_) {
                         draft.discountIsFixed = true;
                         onChanged();
@@ -3849,29 +3993,26 @@ class _ParticipantEditor extends StatelessWidget {
           ),
           if (!draft.isSelf) ...[
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
+            KgzSelect<String>(
               // The value suffix forces this field to re-init (picking up
-              // draft.collectionMethod as its initialValue again) whenever
+              // draft.collectionMethod as its initial value again) whenever
               // the method is changed programmatically — e.g. auto-filled
               // from a participant's saved collection preference — since
-              // DropdownButtonFormField otherwise only reads initialValue
-              // once, at first build.
+              // KgzSelect otherwise only reads its value once, at first
+              // build.
               key: ValueKey(
                 'collection-method-${draft.id ?? draft.name.hashCode}-'
                 '${draft.collectionMethod}',
               ),
-              initialValue:
-                  supportedCollectionMethods.contains(draft.collectionMethod)
+              value: supportedCollectionMethods.contains(draft.collectionMethod)
                   ? draft.collectionMethod
                   : null,
-              decoration: const InputDecoration(labelText: '收款方式'),
-              hint: const Text('請選擇收款方式'),
-              items: supportedCollectionMethods
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(),
+              label: const Text('收款方式'),
+              hint: '請選擇收款方式',
+              items: [
+                for (final value in supportedCollectionMethods)
+                  KgzSelectItem(value, value),
+              ],
               onChanged: (value) {
                 draft.collectionMethod = value!;
                 draft.collectionAccountId = value == collectionMethodCash
@@ -3887,29 +4028,25 @@ class _ParticipantEditor extends StatelessWidget {
             ),
             if (draft.collectionMethod == collectionMethodBankTransfer) ...[
               const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
+              KgzSelect<String>(
                 // Same re-init trick as the method dropdown above, keyed to
                 // draft.collectionAccountId this time.
                 key: ValueKey(
                   'collection-account-${draft.id ?? draft.name.hashCode}-'
                   '${draft.collectionAccountId}',
                 ),
-                initialValue:
+                value:
                     accounts.any(
                       (account) => account.id == draft.collectionAccountId,
                     )
                     ? draft.collectionAccountId
                     : null,
-                decoration: const InputDecoration(labelText: '轉入帳戶'),
-                hint: const Text('請選擇 TWD 銀行帳戶'),
-                items: accounts
-                    .map(
-                      (account) => DropdownMenuItem(
-                        value: account.id,
-                        child: Text(account.name),
-                      ),
-                    )
-                    .toList(),
+                label: const Text('轉入帳戶'),
+                hint: '請選擇 TWD 銀行帳戶',
+                items: [
+                  for (final account in accounts)
+                    KgzSelectItem(account.id, account.name),
+                ],
                 onChanged: (value) {
                   draft.collectionAccountId = value;
                   onChanged();
@@ -4001,23 +4138,26 @@ class _SavedMemberControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (savedMembers.isNotEmpty)
-          PopupMenuButton<String>(
-            tooltip: '選擇近期成員',
+          KgzPopoverMenu<String>(
+            semanticsLabel: '選擇近期成員',
             icon: const Icon(Icons.expand_more),
-            onSelected: onPick,
-            itemBuilder: (context) => [
-              for (final member in savedMembers)
-                PopupMenuItem(value: member, child: Text(member)),
+            entries: [
+              for (final member in savedMembers) KgzMenuEntry(member, member),
             ],
+            onSelected: onPick,
           ),
-        IconButton(
-          tooltip: isSaved ? '從常用成員移除' : '儲存為常用成員',
-          icon: Icon(isSaved ? Icons.star : Icons.star_border),
-          onPressed: trimmed.isEmpty
-              ? null
-              : () => isSaved && onRemove != null
-                    ? onRemove!(trimmed)
-                    : onSave(trimmed),
+        FTooltip(
+          tipBuilder: (context, _) => Text(isSaved ? '從常用成員移除' : '儲存為常用成員'),
+          child: FButton.icon(
+            variant: FButtonVariant.ghost,
+            onPress: trimmed.isEmpty
+                ? null
+                : () => isSaved && onRemove != null
+                      ? onRemove!(trimmed)
+                      : onSave(trimmed),
+            semanticsLabel: isSaved ? '從常用成員移除' : '儲存為常用成員',
+            child: Icon(isSaved ? Icons.star : Icons.star_border),
+          ),
         ),
       ],
     );

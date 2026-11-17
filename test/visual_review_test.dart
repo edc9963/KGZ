@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,7 +118,7 @@ void main() {
               _ => null,
             };
             if (label != null) {
-              await tester.tap(find.widgetWithText(FilledButton, label).last);
+              await tester.tap(find.widgetWithText(FButton, label).last);
               await tester.pumpAndSettle();
               if (route == '/orders') {
                 await tester.tap(find.text('手動輸入'));

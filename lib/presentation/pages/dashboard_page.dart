@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -77,25 +78,30 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton.filledTonal(
-                tooltip: mask ? '顯示金額' : '隱藏金額',
-                onPressed: () => store.updateSettings(
-                  settings.copyWith(maskBalances: !mask),
-                ),
-                icon: Icon(
-                  mask
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+              FTooltip(
+                tipBuilder: (context, _) => Text(mask ? '顯示金額' : '隱藏金額'),
+                child: FButton.icon(
+                  variant: FButtonVariant.secondary,
+                  onPress: () => store.updateSettings(
+                    settings.copyWith(maskBalances: !mask),
+                  ),
+                  semanticsLabel: mask ? '顯示金額' : '隱藏金額',
+                  child: Icon(
+                    mask
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
                 ),
               ),
               if (desktop) ...[
                 const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: store.canWrite
+                FButton(
+                  mainAxisSize: MainAxisSize.min,
+                  onPress: store.canWrite
                       ? () => context.go('/expenses?create=expense')
                       : null,
-                  icon: const Icon(Icons.add),
-                  label: const Text('記一筆'),
+                  prefix: const Icon(Icons.add),
+                  child: const Text('記一筆'),
                 ),
               ],
             ],
@@ -244,97 +250,123 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         const SizedBox(height: 12),
         _SpendingCard(store: store, spending: monthSpending, mask: mask),
         const SizedBox(height: 12),
-        Card(
-          child: ExpansionTile(
-            initiallyExpanded: _otherExpanded!,
-            onExpansionChanged: (value) => _otherExpanded = value,
-            title: const Text(
-              '其他財務摘要',
-              style: TextStyle(fontWeight: FontWeight.w800),
+        KgzCard(
+          child: FAccordion(
+            control: FAccordionControl.managed(
+              onChange: (expanded) => _otherExpanded = expanded.isNotEmpty,
             ),
-            subtitle: const Text('存款、投資、代墊與代收結果'),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [
-              ResponsiveGrid(
-                minWidth: 180,
-                spacing: 12,
-                children: [
-                  SummaryCard(
-                    label: '存款合計',
-                    value: moneyText(
-                      depositTotal,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
+              FAccordionItem(
+                initiallyExpanded: _otherExpanded!,
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '其他財務摘要',
+                      style: TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    compactValue: compactMoneyText(
-                      depositTotal,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
+                    DefaultTextStyle.merge(
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: context.colors.textMuted,
+                      ),
+                      child: const Text('存款、投資、代墊與代收結果'),
                     ),
-                    icon: Icons.account_balance_wallet_outlined,
-                    tone: context.colors.asset,
-                    onTap: () => context.go('/accounts'),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ResponsiveGrid(
+                        minWidth: 180,
+                        spacing: 12,
+                        children: [
+                          SummaryCard(
+                            label: '存款合計',
+                            value: moneyText(
+                              depositTotal,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            compactValue: compactMoneyText(
+                              depositTotal,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            icon: Icons.account_balance_wallet_outlined,
+                            tone: context.colors.asset,
+                            onTap: () => context.go('/accounts'),
+                          ),
+                          SummaryCard(
+                            label: '投資現值',
+                            value: moneyText(
+                              investmentValue,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            compactValue: compactMoneyText(
+                              investmentValue,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            icon: Icons.trending_up_rounded,
+                            tone: context.colors.chartB,
+                            onTap: () => context.go('/investments'),
+                          ),
+                          SummaryCard(
+                            label: '代墊應收款',
+                            value: moneyText(
+                              receivables,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            compactValue: compactMoneyText(
+                              receivables,
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            icon: Icons.handshake_outlined,
+                            tone: context.colors.warn,
+                            onTap: () => context.go('/orders'),
+                          ),
+                          SummaryCard(
+                            label: collectionResult >= 0 ? '本月代收收益' : '本月代收損失',
+                            value: moneyText(
+                              collectionResult.abs(),
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            compactValue: compactMoneyText(
+                              collectionResult.abs(),
+                              currency: settings.defaultCurrency,
+                              mask: mask,
+                            ),
+                            icon: collectionResult >= 0
+                                ? Icons.trending_up
+                                : Icons.trending_down,
+                            tone: collectionResult >= 0
+                                ? context.colors.income
+                                : context.colors.expense,
+                            onTap: () => context.go('/orders'),
+                          ),
+                        ],
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FButton(
+                          variant: FButtonVariant.ghost,
+                          mainAxisSize: MainAxisSize.min,
+                          onPress: () => context.go('/reports'),
+                          prefix: const Icon(
+                            Icons.insert_chart_outlined_rounded,
+                          ),
+                          child: const Text('查看完整報表'),
+                        ),
+                      ),
+                    ],
                   ),
-                  SummaryCard(
-                    label: '投資現值',
-                    value: moneyText(
-                      investmentValue,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    compactValue: compactMoneyText(
-                      investmentValue,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    icon: Icons.trending_up_rounded,
-                    tone: context.colors.chartB,
-                    onTap: () => context.go('/investments'),
-                  ),
-                  SummaryCard(
-                    label: '代墊應收款',
-                    value: moneyText(
-                      receivables,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    compactValue: compactMoneyText(
-                      receivables,
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    icon: Icons.handshake_outlined,
-                    tone: context.colors.warn,
-                    onTap: () => context.go('/orders'),
-                  ),
-                  SummaryCard(
-                    label: collectionResult >= 0 ? '本月代收收益' : '本月代收損失',
-                    value: moneyText(
-                      collectionResult.abs(),
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    compactValue: compactMoneyText(
-                      collectionResult.abs(),
-                      currency: settings.defaultCurrency,
-                      mask: mask,
-                    ),
-                    icon: collectionResult >= 0
-                        ? Icons.trending_up
-                        : Icons.trending_down,
-                    tone: collectionResult >= 0
-                        ? context.colors.income
-                        : context.colors.expense,
-                    onTap: () => context.go('/orders'),
-                  ),
-                ],
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => context.go('/reports'),
-                  icon: const Icon(Icons.insert_chart_outlined_rounded),
-                  label: const Text('查看完整報表'),
                 ),
               ),
             ],
@@ -368,7 +400,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         ),
         if (store.data.accounts.isEmpty) ...[
           const SizedBox(height: 20),
-          Card(
+          KgzCard(
             color: context.colors.assetPale,
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -380,8 +412,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   ),
                   const SizedBox(width: 14),
                   const Expanded(child: Text('新增第一個帳戶，開始掌握收支與資產。')),
-                  FilledButton(
-                    onPressed: () => context.go('/accounts'),
+                  FButton(
+                    mainAxisSize: MainAxisSize.min,
+                    onPress: () => context.go('/accounts'),
                     child: const Text('新增帳戶'),
                   ),
                 ],
@@ -415,9 +448,8 @@ class _RecentActivityCard extends StatelessWidget {
           )
         else
           for (final record in records.take(5))
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CategoryAvatar(category: record.category),
+            FItem(
+              prefix: CategoryAvatar(category: record.category),
               title: Row(
                 children: [
                   Flexible(child: Text(record.item)),
@@ -426,7 +458,7 @@ class _RecentActivityCard extends StatelessWidget {
                 ],
               ),
               subtitle: Text(dateText(record.date)),
-              trailing: Text(
+              suffix: Text(
                 '${record.isIncome ? '+' : '-'}${moneyText(record.amountMinor, currency: record.currency, mask: mask)}',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
@@ -467,64 +499,68 @@ class _ReminderCard extends StatelessWidget {
           )
         else
           for (final reminder in reminders)
-            Card(
-              margin: const EdgeInsets.only(bottom: 10),
-              elevation: 0,
-              color: reminder.isWarning
-                  ? context.colors.warnPale
-                  : context.colors.accentPale,
-              clipBehavior: Clip.antiAlias,
-              child: Semantics(
-                button: true,
-                label: '前往處理${reminder.title}',
-                child: InkWell(
-                  onTap: () => context.go(switch (reminder.destination) {
-                    ReminderDestination.cards => '/cards',
-                    ReminderDestination.expenses => '/expenses',
-                  }),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        Icon(
-                          reminder.isWarning
-                              ? Icons.warning_amber_rounded
-                              : Icons.notifications_none,
-                          color: reminder.isWarning
-                              ? context.colors.warn
-                              : context.colors.accent,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                reminder.title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(reminder.subtitle),
-                              if (reminder.isWarning)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: KgzCard(
+                color: reminder.isWarning
+                    ? context.colors.warnPale
+                    : context.colors.accentPale,
+                child: Semantics(
+                  button: true,
+                  label: '前往處理${reminder.title}',
+                  child: FTappable(
+                    onPress: () => context.go(switch (reminder.destination) {
+                      ReminderDestination.cards => '/cards',
+                      ReminderDestination.expenses => '/expenses',
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          Icon(
+                            reminder.isWarning
+                                ? Icons.warning_amber_rounded
+                                : Icons.notifications_none,
+                            color: reminder.isWarning
+                                ? context.colors.warn
+                                : context.colors.accent,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  '扣款帳戶餘額可能不足',
-                                  style: TextStyle(
-                                    color: context.colors.warn,
-                                    fontSize: 12,
+                                  reminder.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                            ],
+                                Text(reminder.subtitle),
+                                if (reminder.isWarning)
+                                  Text(
+                                    '扣款帳戶餘額可能不足',
+                                    style: TextStyle(
+                                      color: context.colors.warn,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                        if (reminder.billId != null && onAcknowledge != null)
-                          IconButton(
-                            tooltip: '已確認，這筆帳單不用再提醒',
-                            icon: const Icon(Icons.check_circle_outline),
-                            onPressed: () => onAcknowledge!(reminder.billId!),
-                          ),
-                        const Icon(Icons.chevron_right),
-                      ],
+                          if (reminder.billId != null && onAcknowledge != null)
+                            FTooltip(
+                              tipBuilder: (context, _) => Text('已確認，這筆帳單不用再提醒'),
+                              child: FButton.icon(
+                                variant: FButtonVariant.ghost,
+                                onPress: () => onAcknowledge!(reminder.billId!),
+                                semanticsLabel: '已確認，這筆帳單不用再提醒',
+                                child: const Icon(Icons.check_circle_outline),
+                              ),
+                            ),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -659,17 +695,13 @@ class _SpendingCard extends StatelessWidget {
                                 ),
                               ),
                               Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: LinearProgressIndicator(
-                                    value: slice.amountMinor / largest,
-                                    minHeight: 8,
-                                    color: expenseSliceColor(
-                                      store,
-                                      slice.label,
-                                      colors,
-                                    ),
-                                    backgroundColor: colors.subtle,
+                                child: KgzProgressBar(
+                                  value: slice.amountMinor / largest,
+                                  height: 8,
+                                  color: expenseSliceColor(
+                                    store,
+                                    slice.label,
+                                    colors,
                                   ),
                                 ),
                               ),

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:go_router/go_router.dart';
@@ -30,7 +30,7 @@ import 'presentation/pages/orders_page.dart';
 import 'presentation/pages/reconciliation_page.dart';
 import 'presentation/pages/reports_page.dart';
 import 'presentation/pages/settings_page.dart';
-import 'presentation/design_tokens.dart';
+import 'presentation/forui_theme.dart';
 import 'presentation/theme.dart';
 import 'presentation/widgets/brand_icon.dart';
 
@@ -76,20 +76,16 @@ class _SplashApp extends StatelessWidget {
     theme: buildAppTheme(Brightness.light),
     darkTheme: buildAppTheme(Brightness.dark),
     themeMode: themeMode,
+    builder: kgzForuiBuilder,
     home: Builder(
-      builder: (context) => Scaffold(
-        backgroundColor: context.colors.mobileBackground,
-        body: const Center(
+      builder: (context) => const FScaffold(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               BrandIcon(size: 72, borderRadius: 18),
               SizedBox(height: 24),
-              SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              ),
+              SizedBox(width: 26, height: 26, child: FCircularProgress()),
             ],
           ),
         ),
@@ -361,27 +357,39 @@ class _QuickLedgerAppState extends State<QuickLedgerApp> {
       themeMode: widget.themeModeController.mode,
       locale: const Locale('zh', 'TW'),
       supportedLocales: const [Locale('zh', 'TW')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      builder: (context, child) => Column(
-        children: [
-          if (_showStartupAuthNotice && widget.startupAuthNotice != null)
-            MaterialBanner(
-              content: Text(widget.startupAuthNotice!),
-              leading: const Icon(Icons.open_in_browser),
-              actions: [
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _showStartupAuthNotice = false),
-                  child: const Text('知道了'),
+      localizationsDelegates: FLocalizations.localizationsDelegates,
+      builder: (context, child) => kgzForuiBuilder(
+        context,
+        Column(
+          children: [
+            if (_showStartupAuthNotice && widget.startupAuthNotice != null)
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: FAlert(
+                          icon: const Icon(FLucideIcons.externalLink),
+                          title: Text(widget.startupAuthNotice!),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FButton(
+                        variant: FButtonVariant.ghost,
+                        mainAxisSize: MainAxisSize.min,
+                        onPress: () =>
+                            setState(() => _showStartupAuthNotice = false),
+                        child: const Text('知道了'),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          Expanded(child: child ?? const SizedBox.shrink()),
-        ],
+              ),
+            Expanded(child: child ?? const SizedBox.shrink()),
+          ],
+        ),
       ),
       routerConfig: _router,
     ),

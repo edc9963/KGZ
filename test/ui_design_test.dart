@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quick_ledger/presentation/design_tokens.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 void main() {
@@ -50,6 +52,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildAppTheme(Brightness.light),
+        builder: kgzForuiBuilder,
         home: const Row(
           children: [
             CategoryAvatar(category: '餐飲'),
@@ -59,9 +62,16 @@ void main() {
       ),
     );
 
-    final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
+    final avatar = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(FAvatar),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
     expect(
-      avatar.backgroundColor,
+      (avatar.decoration! as BoxDecoration).color,
       categoryVisual('餐飲', AppSemanticColors.light).pale,
     );
     expect(find.text('餐飲'), findsOneWidget);
@@ -75,6 +85,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildAppTheme(Brightness.light),
+        builder: kgzForuiBuilder,
         home: Center(
           child: SizedBox(
             width: 240,
@@ -92,6 +103,8 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('查看淨資產')), findsOneWidget);
     await tester.tap(find.text('淨資產'));
     expect(taps, 1);
+    // Let forui's 100 ms press animation finish before teardown.
+    await tester.pump(const Duration(milliseconds: 200));
     semantics.dispose();
   });
 
@@ -102,6 +115,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: const Center(
             child: SizedBox(
               width: 120,
@@ -133,6 +147,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildAppTheme(Brightness.light),
+        builder: kgzForuiBuilder,
         home: const Center(
           child: SizedBox(
             width: 173,
@@ -163,6 +178,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(Brightness.light),
+          builder: kgzForuiBuilder,
           home: Center(
             child: SizedBox(
               width: width,
@@ -206,6 +222,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildAppTheme(Brightness.light),
+        builder: kgzForuiBuilder,
         home: const MediaQuery(
           data: MediaQueryData(textScaler: TextScaler.linear(1.3)),
           child: Center(
