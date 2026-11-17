@@ -120,6 +120,16 @@ const _defaultExpenseCategories = <(String, String, String, String)>[
   ('expense-other', '其他', 'other', 'slate'),
 ];
 
+/// Money moved into investments stays the user's, so an expense filed under
+/// this category is left out of spending totals, charts and the income
+/// statement. It still leaves the paying account, so balances and cash flow
+/// keep counting it. Matched by name, like every other expense-to-category
+/// link; a renamed 投資 category counts as ordinary spending again.
+const investmentExpenseCategory = '投資';
+
+bool isSpendingCategory(String category) =>
+    category != investmentExpenseCategory;
+
 const _defaultIncomeCategories = <(String, String, String, String)>[
   ('income-salary', '薪資', 'work', 'teal'),
   ('income-bonus', '獎金', 'award', 'blue'),

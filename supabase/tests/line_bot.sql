@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(27);
+select plan(29);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password,
@@ -97,6 +97,19 @@ select is(
   (public.line_finance_summary('U-line-one')->>'monthExpenseMinor')::bigint,
   12000::bigint,
   'summary is scoped to linked owner'
+);
+select is(
+  (public.line_confirm_expense(
+    'U-line-one', '10000000-0000-4000-8000-0000000000a1',
+    30000, 'ETF', '投資', 'cash', null, null, now()
+  )->>'status'),
+  'saved',
+  'investment expense saves'
+);
+select is(
+  (public.line_finance_summary('U-line-one')->>'monthExpenseMinor')::bigint,
+  12000::bigint,
+  'summary leaves investments out of month expense'
 );
 select is(
   public.line_finance_summary('U-line-two')->>'status',

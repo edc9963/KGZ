@@ -36,6 +36,8 @@ select set_eq(
     'load_finance_data()',
     'save_finance_data(bigint,jsonb)',
     'clear_finance_data(bigint)',
+    'capture_web_status()',
+    'capture_web_issue_token()',
     'load_public_collection(text)',
     'mark_public_collection_pending(text)'
   ],

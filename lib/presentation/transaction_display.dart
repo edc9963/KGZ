@@ -1,5 +1,26 @@
+import 'dart:ui' show Color;
+
 import '../application/app_store.dart';
+import '../domain/financial_reports.dart';
 import '../domain/models.dart';
+import 'design_tokens.dart';
+
+/// The color of an expense chart slice, shared by every chart so a category
+/// reads the same everywhere: the user's pick in 設定 → 分類 (kept in sync with
+/// the palette picker there), falling back to the name-based [categoryVisual]
+/// heuristic for a label that no longer matches any category (e.g. from
+/// old/imported data).
+Color expenseSliceColor(
+  AppStore store,
+  String label,
+  AppSemanticColors colors,
+) {
+  final lead = expenseGroupLead(label);
+  final category = store.categoryByName(lead, BookkeepingCategoryKind.expense);
+  return category != null
+      ? bookkeepingCategoryVisual(category, colors).color
+      : categoryVisual(lead, colors).color;
+}
 
 class TransactionDisplayRecord {
   const TransactionDisplayRecord({

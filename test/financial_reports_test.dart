@@ -487,6 +487,107 @@ void main() {
         unorderedEquals(['lunch', 'bus']),
       );
     });
+
+    test('expense pie rolls categories up into groups, keeping details', () {
+      Expense expense(String id, int amount, String category) => Expense(
+        id: id,
+        userId: 'u',
+        date: DateTime(2026, 1, 12),
+        amountMinor: amount,
+        paymentMethod: PaymentMethod.cash,
+        item: id,
+        category: category,
+        accountId: 'bank',
+        merchant: '',
+        note: '',
+        isNecessary: true,
+      );
+      final data = AppData(
+        accounts: [_account(opening: 100000)],
+        expenses: [
+          expense('rent', 8000, '房租'),
+          expense('power', 1000, '水電瓦斯'),
+          expense('lunch', 3000, '餐飲'),
+        ],
+      );
+
+      final report = FinancialReportService(data).build(
+        ReportPeriod(start: DateTime(2026, 1, 1), end: DateTime(2026, 1, 31)),
+      );
+
+      expect(
+        [
+          for (final slice in report.expenseAllocation)
+            (slice.label, slice.amountMinor),
+        ],
+        [('居住', 9000), ('餐飲', 3000)],
+      );
+      expect(
+        report.expenseDetails['居住']!.map((detail) => detail.item),
+        unorderedEquals(['rent（房租）', 'power（水電瓦斯）']),
+      );
+      expect(report.expenseDetails['餐飲']!.single.item, 'lunch');
+    });
+
+    test('investments leave spending but still leave the account', () {
+      Expense expense(String id, int amount, String category) => Expense(
+        id: id,
+        userId: 'u',
+        date: DateTime(2026, 1, 12),
+        amountMinor: amount,
+        paymentMethod: PaymentMethod.cash,
+        item: id,
+        category: category,
+        accountId: 'bank',
+        merchant: '',
+        note: '',
+        isNecessary: true,
+      );
+      final data = AppData(
+        accounts: [_account(opening: 100000)],
+        expenses: [
+          expense('lunch', 3000, '餐飲'),
+          expense('etf', 20000, investmentExpenseCategory),
+        ],
+      );
+
+      final report = FinancialReportService(data).build(
+        ReportPeriod(start: DateTime(2026, 1, 1), end: DateTime(2026, 1, 31)),
+      );
+
+      expect(report.totalExpenses, 3000);
+      expect(report.expenseAllocation.map((slice) => slice.label), ['餐飲']);
+      expect(report.paymentAllocation.single.amountMinor, 3000);
+      expect(report.monthlyTrend.last.expenseMinor, 3000);
+      // Opening balance 100000, less both the lunch and the investment.
+      expect(report.cashChange, 77000);
+    });
+
+    test('expenseGroupSlices always adds up to the whole amount', () {
+      final slices = expenseGroupSlices({
+        '投資': 9999,
+        '學習': 800,
+        '餐飲': 700,
+        '娛樂': 600,
+        '購物': 500,
+        '交通': 400,
+        '其他': 300,
+        '醫療': 200,
+        '房租': 100,
+        '收回': 0,
+      });
+
+      expect(slices.map((slice) => slice.label), [
+        '學習',
+        '餐飲',
+        '娛樂',
+        '購物',
+        '交通',
+        '其他',
+      ]);
+      expect(slices.last.amountMinor, 600);
+      expect(slices.fold(0, (sum, slice) => sum + slice.amountMinor), 3600);
+    });
   });
 }
 

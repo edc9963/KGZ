@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quick_ledger/presentation/theme.dart';
+import 'package:quick_ledger/presentation/forui_theme.dart';
 import 'package:quick_ledger/presentation/widgets/common.dart';
 
 Widget _host(
@@ -10,6 +11,7 @@ Widget _host(
   ValueChanged<String>? onChanged,
 }) => MaterialApp(
   theme: buildAppTheme(Brightness.light),
+  builder: kgzForuiBuilder,
   home: Scaffold(
     body: MoneyField(controller: controller, onChanged: onChanged),
   ),
@@ -38,7 +40,7 @@ void main() {
     final controller = TextEditingController();
     await tester.pumpWidget(_host(controller));
 
-    await tester.tap(find.byIcon(Icons.calculate_outlined));
+    await tester.tap(find.bySemanticsLabel('小算盤'));
     await tester.pumpAndSettle();
     expect(find.text('小算盤'), findsOneWidget);
     debugDefaultTargetPlatformOverride = null;

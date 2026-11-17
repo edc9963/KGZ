@@ -23,6 +23,7 @@ dependencies:
   supabase_flutter: ^2.16.0
   uuid: ^4.5.1
   web: ^1.1.1
+  forui: ^0.25.0
 
 dev_dependencies:
   flutter_test:
@@ -36,3 +37,5 @@ flutter:
   # ship a second ~160MB copy under assets/web/.
   assets:
     - web/icons/icon-192.png
+    # Copied from 設定 → 同步 → 自動記帳 with the URL and token filled in.
+    - tool/line-pay-gmail-forwarder.gs

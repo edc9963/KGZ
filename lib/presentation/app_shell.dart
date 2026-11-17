@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -92,35 +93,40 @@ class _AppShellState extends ConsumerState<AppShell> {
         Column(
           children: [
             if (message != null)
-              Material(
+              ColoredBox(
                 color: isConnectivityStatus
-                    ? Theme.of(context).colorScheme.errorContainer
-                    : Theme.of(context).colorScheme.secondaryContainer,
+                    ? context.colors.expensePale
+                    : context.colors.accentPale,
                 child: SafeArea(
                   bottom: false,
-                  child: ListTile(
-                    dense: true,
-                    leading: Icon(
+                  child: FItem(
+                    prefix: Icon(
                       store.isOffline ? Icons.cloud_off : Icons.info_outline,
                     ),
                     title: Text(message),
-                    trailing: isConnectivityStatus
-                        ? TextButton(
-                            onPressed: store.reloadCloud,
+                    suffix: isConnectivityStatus
+                        ? FButton(
+                            variant: FButtonVariant.ghost,
+                            mainAxisSize: MainAxisSize.min,
+                            onPress: store.reloadCloud,
                             child: const Text('重新載入'),
                           )
-                        : IconButton(
-                            icon: const Icon(Icons.close, size: 18),
-                            tooltip: '關閉',
-                            onPressed: () {
-                              store.lastSyncError = null;
-                              store.notify();
-                            },
+                        : FTooltip(
+                            tipBuilder: (context, _) => Text('關閉'),
+                            child: FButton.icon(
+                              variant: FButtonVariant.ghost,
+                              onPress: () {
+                                store.lastSyncError = null;
+                                store.notify();
+                              },
+                              semanticsLabel: '關閉',
+                              child: const Icon(Icons.close, size: 18),
+                            ),
                           ),
                   ),
                 ),
               ),
-            if (store.isSaving) const LinearProgressIndicator(minHeight: 2),
+            if (store.isSaving) FProgress(),
             Expanded(child: content),
           ],
         ),
@@ -191,62 +197,58 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
 
     if (desktop) {
-      return Scaffold(
-        body: _withSyncState(
-          context,
-          store,
-          Row(
-            children: [
-              _DesktopSidebar(
-                selectedIndex: selected,
-                store: store,
-                onSelected: (index) {
-                  HapticFeedback.selectionClick();
-                  context.go(_destinations[index].path);
-                },
-              ),
-              Expanded(child: content),
-            ],
-          ),
+      return FScaffold(
+        childPad: false,
+        sidebar: _DesktopSidebar(
+          selectedIndex: selected,
+          store: store,
+          onSelected: (index) {
+            HapticFeedback.selectionClick();
+            context.go(_destinations[index].path);
+          },
         ),
+        child: _withSyncState(context, store, content),
       );
     }
 
     if (tablet) {
-      return Scaffold(
-        body: _withSyncState(
+      return FScaffold(
+        childPad: false,
+        child: _withSyncState(
           context,
           store,
-          Row(
+          Stack(
             children: [
-              NavigationRail(
-                selectedIndex: selected,
-                labelType: NavigationRailLabelType.all,
-                onDestinationSelected: (index) {
-                  HapticFeedback.selectionClick();
-                  context.go(_destinations[index].path);
-                },
-                leading: const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: BrandIcon(size: 40, borderRadius: 10),
-                ),
-                destinations: [
-                  for (final destination in _destinations)
-                    NavigationRailDestination(
-                      icon: Icon(destination.icon),
-                      label: Text(destination.label),
-                    ),
+              Row(
+                children: [
+                  _TabletRail(
+                    selectedIndex: selected,
+                    onSelected: (index) {
+                      HapticFeedback.selectionClick();
+                      context.go(_destinations[index].path);
+                    },
+                  ),
+                  const FDivider(axis: Axis.vertical),
+                  Expanded(child: content),
                 ],
               ),
-              const VerticalDivider(width: 1),
-              Expanded(child: content),
+              Positioned(
+                right: 24,
+                bottom: 24,
+                child: SafeArea(
+                  child: FButton(
+                    size: FButtonSizeVariant.lg,
+                    mainAxisSize: MainAxisSize.min,
+                    onPress: store.canWrite
+                        ? () => showQuickEntry(context)
+                        : null,
+                    prefix: const Icon(FLucideIcons.plus),
+                    child: const Text('快速新增'),
+                  ),
+                ),
+              ),
             ],
           ),
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: store.canWrite ? () => showQuickEntry(context) : null,
-          icon: const Icon(Icons.add),
-          label: const Text('快速新增'),
         ),
       );
     }
@@ -257,55 +259,59 @@ class _AppShellState extends ConsumerState<AppShell> {
     // each page shows its own sub-tabs, so a hamburger menu only duplicated
     // them. The one thing it added — the balance mask — lives in the bar.
     final mask = store.data.settings.maskBalances;
-    return Scaffold(
-      backgroundColor: context.colors.mobileBackground,
-      appBar: AppBar(
-        toolbarHeight: 44,
-        automaticallyImplyLeading: false,
-        backgroundColor: context.colors.mobileBackground,
-        titleSpacing: 16,
-        title: const Row(
-          children: [
-            BrandIcon(size: 28, borderRadius: 8),
-            SizedBox(width: 10),
-            Text('快記帳', style: TextStyle(fontWeight: FontWeight.w900)),
+    return FScaffold(
+      childPad: false,
+      header: SafeArea(
+        bottom: false,
+        child: FHeader(
+          title: const Row(
+            children: [
+              BrandIcon(size: 28, borderRadius: 8),
+              SizedBox(width: 10),
+              Text(
+                '快記帳',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          suffixes: [
+            FTooltip(
+              tipBuilder: (context, _) => Text(mask ? '顯示金額' : '隱藏金額'),
+              child: FHeaderAction(
+                icon: Icon(
+                  mask ? FLucideIcons.eyeOff : FLucideIcons.eye,
+                  semanticLabel: mask ? '顯示金額' : '隱藏金額',
+                ),
+                onPress: store.canWrite
+                    ? () => store.updateSettings(
+                        store.data.settings.copyWith(maskBalances: !mask),
+                      )
+                    : null,
+              ),
+            ),
+            FTooltip(
+              tipBuilder: (context, _) => Text(_syncLabel(store)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(_syncIcon(store), size: 20),
+              ),
+            ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: mask ? '顯示金額' : '隱藏金額',
-            icon: Icon(
-              mask ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              size: 20,
-            ),
-            onPressed: store.canWrite
-                ? () => store.updateSettings(
-                    store.data.settings.copyWith(maskBalances: !mask),
-                  )
-                : null,
-          ),
-          Tooltip(
-            message: _syncLabel(store),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Icon(_syncIcon(store), size: 20),
-            ),
-          ),
-        ],
       ),
-      body: _withSyncState(context, store, content),
-      bottomNavigationBar: ValueListenableBuilder<Map<String, Widget?>>(
+      footer: ValueListenableBuilder<Map<String, Widget?>>(
         valueListenable: _mobileActions,
         builder: (context, actions, _) {
           final action =
               actions[path] ??
               (path == '/dashboard'
-                  ? FilledButton.icon(
-                      onPressed: store.canWrite
+                  ? FButton(
+                      mainAxisSize: MainAxisSize.min,
+                      onPress: store.canWrite
                           ? () => showQuickEntry(context)
                           : null,
-                      icon: const Icon(Icons.add),
-                      label: const Text('快速記帳'),
+                      prefix: const Icon(FLucideIcons.plus),
+                      child: const Text('快速記帳'),
                     )
                   : null);
           final children = action is Wrap
@@ -324,7 +330,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                     children: [
                       for (var i = 0; i < children.length; i++) ...[
                         if (i > 0) const SizedBox(width: 8),
-                        if (children[i] is ButtonStyleButton)
+                        if (children[i] is FButton)
                           Expanded(child: children[i])
                         else
                           children[i],
@@ -332,17 +338,18 @@ class _AppShellState extends ConsumerState<AppShell> {
                     ],
                   ),
                 ),
-              NavigationBar(
-                selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
-                onDestinationSelected: (index) {
+              FBottomNavigationBar(
+                safeAreaBottom: true,
+                index: mobileIndex < 0 ? 0 : mobileIndex,
+                onChange: (index) {
                   HapticFeedback.selectionClick();
                   context.go(_destinations[mobileDestinations[index]].path);
                 },
-                destinations: [
+                children: [
                   for (final index in mobileDestinations)
-                    NavigationDestination(
+                    FBottomNavigationBarItem(
                       icon: Icon(_destinations[index].icon),
-                      label: _destinations[index].label,
+                      label: Text(_destinations[index].label),
                     ),
                 ],
               ),
@@ -350,6 +357,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           );
         },
       ),
+      child: _withSyncState(context, store, content),
     );
   }
 }
@@ -406,100 +414,157 @@ class _DesktopSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Material(
-      color: colors.background,
-      shape: Border(right: BorderSide(color: colors.border)),
-      child: SizedBox(
-        width: 236,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 20, 20),
-                child: Row(
-                  children: [
-                    const BrandIcon(size: 40, borderRadius: 10),
-                    const SizedBox(width: 12),
-                    Text(
-                      '快記帳',
-                      style: TextStyle(
-                        color: colors.text,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
+    final mask = store.data.settings.maskBalances;
+    return SizedBox(
+      width: 236,
+      child: FSidebar(
+        header: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+            child: Row(
+              children: [
+                const BrandIcon(size: 40, borderRadius: 10),
+                const SizedBox(width: 12),
+                Text(
+                  '快記帳',
+                  style: TextStyle(
+                    color: colors.text,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-                      child: Text(
-                        '工作區',
-                        style: TextStyle(
-                          color: colors.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: .6,
+              ],
+            ),
+          ),
+        ),
+        footer: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    children: [
+                      Icon(_syncIcon(store), size: 16, color: colors.textMuted),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _syncLabel(store),
+                          style: TextStyle(
+                            color: colors.textMuted,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
-                    for (var index = 0; index < _destinations.length; index++)
-                      _SidebarItem(
-                        destination: _destinations[index],
-                        selected: selectedIndex == index,
-                        onTap: () => onSelected(index),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const Divider(indent: 20, endIndent: 20),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Row(
-                  children: [
-                    Icon(_syncIcon(store), size: 16, color: colors.textMuted),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _syncLabel(store),
-                        style: TextStyle(color: colors.textMuted, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
-                child: ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  leading: Icon(
-                    store.data.settings.maskBalances
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: colors.textMuted,
-                  ),
-                  title: Text(
-                    store.data.settings.maskBalances ? '顯示金額' : '隱藏金額',
-                    style: TextStyle(color: colors.text),
-                  ),
-                  onTap: store.canWrite
+                FSidebarItem(
+                  icon: Icon(mask ? FLucideIcons.eyeOff : FLucideIcons.eye),
+                  label: Text(mask ? '顯示金額' : '隱藏金額'),
+                  onPress: store.canWrite
                       ? () => store.updateSettings(
-                          store.data.settings.copyWith(
-                            maskBalances: !store.data.settings.maskBalances,
-                          ),
+                          store.data.settings.copyWith(maskBalances: !mask),
                         )
                       : null,
                 ),
-              ),
+              ],
+            ),
+          ),
+        ),
+        children: [
+          FSidebarGroup(
+            label: const Text('工作區'),
+            children: [
+              for (var index = 0; index < _destinations.length; index++)
+                FSidebarItem(
+                  icon: Icon(_destinations[index].icon),
+                  label: Text(_destinations[index].label),
+                  selected: selectedIndex == index,
+                  onPress: () => onSelected(index),
+                ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact icon-over-label rail for tablets (600–1024 px), in the spirit of
+/// Material's NavigationRail but drawn with forui's [FTappable].
+class _TabletRail extends StatelessWidget {
+  const _TabletRail({required this.selectedIndex, required this.onSelected});
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      key: const ValueKey('tablet-rail'),
+      width: 88,
+      child: SafeArea(
+        right: false,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(0, 16, 0, 12),
+              child: BrandIcon(size: 40, borderRadius: 10),
+            ),
+            for (var index = 0; index < _destinations.length; index++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: FTappable(
+                  selected: selectedIndex == index,
+                  semanticsLabel: _destinations[index].label,
+                  onPress: () => onSelected(index),
+                  builder: (context, variants, child) => DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: selectedIndex == index
+                          ? colors.accentPale
+                          : variants.contains(FTappableVariant.hovered)
+                          ? colors.subtle
+                          : null,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: child,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Column(
+                      children: [
+                        Icon(
+                          _destinations[index].icon,
+                          color: selectedIndex == index
+                              ? colors.accent
+                              : colors.textMuted,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _destinations[index].label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: selectedIndex == index
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: selectedIndex == index
+                                ? colors.text
+                                : colors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -527,40 +592,6 @@ String _syncLabel(AppStore store) {
   return '已同步・${updated.toLocal().hour.toString().padLeft(2, '0')}:${updated.toLocal().minute.toString().padLeft(2, '0')}';
 }
 
-class _SidebarItem extends StatelessWidget {
-  const _SidebarItem({
-    required this.destination,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final _Destination destination;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: ListTile(
-      dense: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tileColor: selected ? context.colors.accentPale : Colors.transparent,
-      leading: Icon(
-        destination.icon,
-        color: selected ? context.colors.accent : context.colors.textMuted,
-      ),
-      title: Text(
-        destination.label,
-        style: TextStyle(
-          color: selected ? context.colors.text : context.colors.textMuted,
-          fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-        ),
-      ),
-      onTap: onTap,
-    ),
-  );
-}
-
 class _MigrationCard extends StatelessWidget {
   const _MigrationCard({required this.store});
   final AppStore store;
@@ -573,118 +604,119 @@ class _MigrationCard extends StatelessWidget {
     final bothExist = store.cloudExists && cloudCount > 0;
     return PopScope(
       canPop: false,
-      child: Card(
-        margin: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  bothExist ? '選擇資料合併方式' : '上傳本機資料',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  bothExist
-                      ? '本機有 $localCount 筆、雲端有 $cloudCount 筆資料。'
-                      : '這個瀏覽器有 $localCount 筆既有資料，可以安全地上傳到你的雲端帳號。',
-                ),
-                if (bothExist) ...[
-                  const SizedBox(height: 8),
-                  const Text('合併時，相同 ID 會保留雲端版本，本機獨有資料會加入。'),
-                ],
-                if (store.isSaving) ...[
-                  const SizedBox(height: 20),
-                  Semantics(
-                    liveRegion: true,
-                    child: const Row(
-                      children: [
-                        SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2.5),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(child: Text('正在處理資料，請稍候…')),
-                      ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: KgzCard(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    bothExist ? '選擇資料合併方式' : '上傳本機資料',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ],
-                if (store.lastSyncError case final message?) ...[
-                  const SizedBox(height: 16),
-                  Semantics(
-                    liveRegion: true,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 12),
+                  Text(
+                    bothExist
+                        ? '本機有 $localCount 筆、雲端有 $cloudCount 筆資料。'
+                        : '這個瀏覽器有 $localCount 筆既有資料，可以安全地上傳到你的雲端帳號。',
+                  ),
+                  if (bothExist) ...[
+                    const SizedBox(height: 8),
+                    const Text('合併時，相同 ID 會保留雲端版本，本機獨有資料會加入。'),
+                  ],
+                  if (store.isSaving) ...[
+                    const SizedBox(height: 20),
+                    Semantics(
+                      liveRegion: true,
+                      child: const Row(
                         children: [
-                          Icon(
-                            Icons.error_outline,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onErrorContainer,
+                          SizedBox.square(
+                            dimension: 20,
+                            child: FCircularProgress(),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              message,
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onErrorContainer,
-                              ),
-                            ),
-                          ),
+                          SizedBox(width: 12),
+                          Expanded(child: Text('正在處理資料，請稍候…')),
                         ],
                       ),
                     ),
+                  ],
+                  if (store.lastSyncError case final message?) ...[
+                    const SizedBox(height: 16),
+                    Semantics(
+                      liveRegion: true,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.colors.expensePale,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: context.colors.expense,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                message,
+                                style: TextStyle(color: context.colors.expense),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FButton(
+                        mainAxisSize: MainAxisSize.min,
+                        onPress: store.isSaving
+                            ? null
+                            : () => store.resolveInitialMigration(
+                                bothExist
+                                    ? InitialMigrationAction.merge
+                                    : InitialMigrationAction.uploadLocal,
+                              ),
+                        prefix: const Icon(Icons.cloud_upload_outlined),
+                        child: Text(bothExist ? '安全合併' : '上傳資料'),
+                      ),
+                      FButton(
+                        variant: FButtonVariant.outline,
+                        mainAxisSize: MainAxisSize.min,
+                        onPress: store.isSaving
+                            ? null
+                            : () => store.resolveInitialMigration(
+                                InitialMigrationAction.useCloud,
+                              ),
+                        child: Text(bothExist ? '使用雲端' : '略過本機資料'),
+                      ),
+                      if (bothExist)
+                        FButton(
+                          variant: FButtonVariant.ghost,
+                          mainAxisSize: MainAxisSize.min,
+                          onPress: store.isSaving
+                              ? null
+                              : () => _confirmReplace(context),
+                          child: const Text('以本機取代雲端'),
+                        ),
+                    ],
                   ),
                 ],
-                const SizedBox(height: 24),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: store.isSaving
-                          ? null
-                          : () => store.resolveInitialMigration(
-                              bothExist
-                                  ? InitialMigrationAction.merge
-                                  : InitialMigrationAction.uploadLocal,
-                            ),
-                      icon: const Icon(Icons.cloud_upload_outlined),
-                      label: Text(bothExist ? '安全合併' : '上傳資料'),
-                    ),
-                    OutlinedButton(
-                      onPressed: store.isSaving
-                          ? null
-                          : () => store.resolveInitialMigration(
-                              InitialMigrationAction.useCloud,
-                            ),
-                      child: Text(bothExist ? '使用雲端' : '略過本機資料'),
-                    ),
-                    if (bothExist)
-                      TextButton(
-                        onPressed: store.isSaving
-                            ? null
-                            : () => _confirmReplace(context),
-                        child: const Text('以本機取代雲端'),
-                      ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -693,18 +725,23 @@ class _MigrationCard extends StatelessWidget {
   }
 
   Future<void> _confirmReplace(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showFDialog<bool>(
+      useRootNavigator: true,
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context, _, _) => KgzDialog(
         title: const Text('取代雲端資料？'),
         content: const Text('雲端現有資料會被本機版本取代。這個動作無法自動復原。'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          FButton(
+            variant: FButtonVariant.ghost,
+            mainAxisSize: MainAxisSize.min,
+            onPress: () => Navigator.pop(context, false),
             child: const Text('取消'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+          FButton(
+            mainAxisSize: MainAxisSize.min,
+            variant: FButtonVariant.destructive,
+            onPress: () => Navigator.pop(context, true),
             child: const Text('確認取代'),
           ),
         ],

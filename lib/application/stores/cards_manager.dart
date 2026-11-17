@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../domain/models.dart';
 import '../app_store.dart';
 import 'first_or_null.dart';
@@ -92,11 +94,28 @@ class CardsManager {
   /// [reconciliationDate] is given, this save is a 對帳 check against the
   /// real statement: a [ReconciliationRecord] comparing the calculated
   /// charge total to the statement amount is appended in the same commit.
-  Future<void> upsertBill(CardBill bill, {DateTime? reconciliationDate}) async {
+  ///
+  /// Returns whether the bill was accepted and committed. A [quiet] save
+  /// (the background auto-generation pass) only logs a rejected bill instead
+  /// of raising it as the app-wide banner: the user never asked for that
+  /// save and has nothing to act on from wherever they happen to be.
+  Future<bool> upsertBill(
+    CardBill bill, {
+    DateTime? reconciliationDate,
+    bool quiet = false,
+  }) async {
+    bool reject(String message) {
+      if (quiet) {
+        debugPrint('Skipped automatic bill update for ${bill.month}: $message');
+      } else {
+        _store.lastSyncError = message;
+        _store.notify();
+      }
+      return false;
+    }
+
     if (_store.ledger.cardById(bill.cardId)?.isCredit != true) {
-      _store.lastSyncError = '金融卡消費直接扣款，不會產生信用卡帳單';
-      _store.notify();
-      return;
+      return reject('金融卡消費直接扣款，不會產生信用卡帳單');
     }
     // `ensureBillsGenerated()` may have already auto-created a placeholder
     // bill for this card+month (e.g. at app startup, from charges that were
@@ -139,7 +158,7 @@ class CardsManager {
       // commit() already reported the failure via lastSyncError/notify; bail
       // out rather than continue against data that still has the
       // placeholder in it.
-      if (_store.lastSyncError != null) return;
+      if (_store.lastSyncError != null) return false;
     }
     final chargeIds = bill.chargeIds.toSet().toList();
     final invalid = chargeIds.where(
@@ -150,14 +169,10 @@ class CardsManager {
       ),
     );
     if (invalid.isNotEmpty) {
-      _store.lastSyncError = '有刷卡紀錄已屬於其他帳單，請重新確認明細';
-      _store.notify();
-      return;
+      return reject('有刷卡紀錄已屬於其他帳單，請重新確認明細');
     }
     if (!RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(bill.month)) {
-      _store.lastSyncError = '帳單月份格式必須為 YYYY-MM';
-      _store.notify();
-      return;
+      return reject('帳單月份格式必須為 YYYY-MM');
     }
     if (_data.bills.any(
       (item) =>
@@ -165,9 +180,7 @@ class CardsManager {
           item.cardId == bill.cardId &&
           item.month == bill.month,
     )) {
-      _store.lastSyncError = '同一張卡已有此月份帳單';
-      _store.notify();
-      return;
+      return reject('同一張卡已有此月份帳單');
     }
     final statementAmount =
         bill.statementAmountMinor ??
@@ -176,25 +189,19 @@ class CardsManager {
             .toInt();
     final paid = _store.ledger.paidBillMinor(bill);
     if (statementAmount < paid) {
-      _store.lastSyncError = '實際帳單總額不得低於已繳金額';
-      _store.notify();
-      return;
+      return reject('實際帳單總額不得低於已繳金額');
     }
     final difference =
         statementAmount - _store.ledger.calculatedBillAmount(bill);
     if (difference != 0 &&
         bill.reconciliationReason == CardBillReconciliationReason.none) {
-      _store.lastSyncError = '帳單有差額時請選擇差異原因';
-      _store.notify();
-      return;
+      return reject('帳單有差額時請選擇差異原因');
     }
     if (difference != 0 &&
         bill.reconciliationReason ==
             CardBillReconciliationReason.missingOrOther &&
         bill.reconciliationNote.trim().isEmpty) {
-      _store.lastSyncError = '選擇漏登／其他時請填寫差異說明';
-      _store.notify();
-      return;
+      return reject('選擇漏登／其他時請填寫差異說明');
     }
     final normalized = CardBill(
       id: bill.id,
@@ -279,6 +286,7 @@ class CardsManager {
         reconciliations: reconciliations,
       ),
     );
+    return _store.lastSyncError == null;
   }
 
   Future<void> payBill(String id) async {
@@ -564,6 +572,7 @@ class CardsManager {
               reminderDismissed: bill.reminderDismissed,
               origin: bill.origin,
             ),
+            quiet: true,
           );
         }
         return;
@@ -574,7 +583,7 @@ class CardsManager {
         cursor = previous;
         continue;
       }
-      await upsertBill(
+      final created = await upsertBill(
         CardBill(
           id: _store.newId(),
           userId: card.userId,
@@ -587,8 +596,9 @@ class CardsManager {
           autoDebitDate: dates.autoDebitDate,
           note: '',
         ),
+        quiet: true,
       );
-      if (_store.lastSyncError != null) return;
+      if (!created) return;
       cursor = previous;
     }
   }

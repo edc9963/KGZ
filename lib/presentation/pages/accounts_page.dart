@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
@@ -32,17 +33,20 @@ class AccountsPage extends ConsumerWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              OutlinedButton.icon(
-                onPressed: canTransfer
+              FButton(
+                variant: FButtonVariant.outline,
+                mainAxisSize: MainAxisSize.min,
+                onPress: canTransfer
                     ? () => _showTransferDialog(context, ref)
                     : null,
-                icon: const Icon(Icons.swap_horiz),
-                label: const Text('轉帳'),
+                prefix: const Icon(Icons.swap_horiz),
+                child: const Text('轉帳'),
               ),
-              FilledButton.icon(
-                onPressed: () => _showAccountDialog(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('新增帳戶'),
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => _showAccountDialog(context, ref),
+                prefix: const Icon(Icons.add),
+                child: const Text('新增帳戶'),
               ),
             ],
           ),
@@ -120,8 +124,9 @@ class AccountsPage extends ConsumerWidget {
             icon: Icons.account_balance_wallet_outlined,
             title: '還沒有帳戶',
             message: '新增第一個帳戶，首頁就會開始計算資產。',
-            action: FilledButton(
-              onPressed: () => _showAccountDialog(context, ref),
+            action: FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => _showAccountDialog(context, ref),
               child: const Text('新增帳戶'),
             ),
           )
@@ -167,12 +172,19 @@ class AccountsPage extends ConsumerWidget {
             ],
           ),
         const SizedBox(height: 18),
-        const ExpansionTile(
-          title: Text('餘額計算方式', style: TextStyle(fontSize: 13)),
+        FAccordion(
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text('期初餘額加上收支、投資、繳款與調整；編輯來源紀錄後自動重算。'),
+            FAccordionItem(
+              title: Text('餘額計算方式', style: TextStyle(fontSize: 13)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text('期初餘額加上收支、投資、繳款與調整；編輯來源紀錄後自動重算。'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -185,9 +197,10 @@ class AccountsPage extends ConsumerWidget {
     WidgetRef ref,
     Account originalAccount,
   ) async {
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => Consumer(
+      builder: (dialogContext, _, _) => Consumer(
         builder: (context, dialogRef, _) {
           final store = dialogRef.watch(appStoreProvider);
           final account =
@@ -198,10 +211,14 @@ class AccountsPage extends ConsumerWidget {
             title: Row(
               children: [
                 Expanded(child: Text('${account.name} 扣／入帳明細')),
-                IconButton(
-                  tooltip: '關閉',
-                  onPressed: () => Navigator.pop(dialogContext),
-                  icon: const Icon(Icons.close),
+                FTooltip(
+                  tipBuilder: (context, _) => Text('關閉'),
+                  child: FButton.icon(
+                    variant: FButtonVariant.ghost,
+                    onPress: () => Navigator.pop(dialogContext),
+                    semanticsLabel: '關閉',
+                    child: const Icon(Icons.close),
+                  ),
                 ),
               ],
             ),
@@ -247,22 +264,20 @@ class AccountsPage extends ConsumerWidget {
                       child: ListView.separated(
                         key: const ValueKey('account-ledger-list'),
                         itemCount: entries.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, __) => FDivider(),
                         itemBuilder: (context, index) {
                           final entry = entries[index];
                           final positive = entry.amountMinor >= 0;
-                          return ListTile(
+                          return FItem(
                             key: ValueKey(
                               'ledger-${entry.sourceType}-${entry.sourceId}',
                             ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 4,
-                            ),
-                            leading: CircleAvatar(
-                              backgroundColor: positive
-                                  ? context.colors.incomePale
-                                  : context.colors.expensePale,
+                            prefix: FAvatar.raw(
+                              style: FAvatarStyleDelta.delta(
+                                backgroundColor: positive
+                                    ? context.colors.incomePale
+                                    : context.colors.expensePale,
+                              ),
                               child: Icon(
                                 positive ? Icons.south_west : Icons.north_east,
                                 color: positive
@@ -270,7 +285,6 @@ class AccountsPage extends ConsumerWidget {
                                     : context.colors.expense,
                               ),
                             ),
-                            isThreeLine: true,
                             title: Text(
                               entry.label.isEmpty
                                   ? _sourceLabel(entry.sourceType)
@@ -297,8 +311,19 @@ class AccountsPage extends ConsumerWidget {
                                 ),
                               ],
                             ),
-                            trailing: PopupMenuButton<String>(
-                              tooltip: '明細操作',
+                            suffix: KgzPopoverMenu<String>(
+                              semanticsLabel: '明細操作',
+                              entries: [
+                                KgzMenuEntry('edit', '編輯'),
+                                if (entry.sourceType != 'openingBalance')
+                                  KgzMenuEntry(
+                                    'delete',
+                                    entry.sourceType == 'collection'
+                                        ? '取消入帳'
+                                        : '刪除',
+                                    destructive: true,
+                                  ),
+                              ],
                               onSelected: (value) async {
                                 if (value == 'edit') {
                                   await _editLedgerEntry(
@@ -315,21 +340,6 @@ class AccountsPage extends ConsumerWidget {
                                   );
                                 }
                               },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('編輯'),
-                                ),
-                                if (entry.sourceType != 'openingBalance')
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text(
-                                      entry.sourceType == 'collection'
-                                          ? '取消入帳'
-                                          : '刪除',
-                                    ),
-                                  ),
-                              ],
                             ),
                           );
                         },
@@ -455,18 +465,22 @@ class AccountsPage extends ConsumerWidget {
   ).push<void>(MaterialPageRoute(builder: (_) => _EditorHost(child: page)));
 
   Future<bool> _confirmCancelCollection(BuildContext context) async =>
-      await showDialog<bool>(
+      await showFDialog<bool>(
+        useRootNavigator: true,
         context: context,
-        builder: (context) => KgzDialog(
+        builder: (context, _, _) => KgzDialog(
           title: const Text('取消入帳？'),
           content: const Text('這位參與者將恢復為未收款，代訂本身不會被刪除。'),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(context, false),
               child: const Text('返回'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(context, true),
               child: const Text('取消入帳'),
             ),
           ],
@@ -504,9 +518,10 @@ class AccountsPage extends ConsumerWidget {
     var currency = existing?.currency ?? 'TWD';
     var active = existing?.isActive ?? true;
     final formKey = GlobalKey<FormState>();
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: Text(existing == null ? '新增帳戶' : '編輯帳戶'),
           content: SizedBox(
@@ -517,56 +532,48 @@ class AccountsPage extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextFormField(
-                      controller: name,
-                      decoration: const InputDecoration(labelText: '帳戶名稱'),
+                    FTextFormField(
+                      control: FTextFieldControl.managed(controller: name),
+                      label: Text('帳戶名稱'),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
                           ? '請輸入帳戶名稱'
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      controller: institution,
-                      decoration: const InputDecoration(labelText: '銀行／機構'),
+                    FTextFormField(
+                      control: FTextFieldControl.managed(
+                        controller: institution,
+                      ),
+                      label: Text('銀行／機構'),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: type,
-                      decoration: const InputDecoration(labelText: '帳戶類型'),
-                      items:
-                          const [
-                                '銀行帳戶',
-                                '現金',
-                                '證券交割戶',
-                                '外幣帳戶',
-                                'LINE Pay / iPASS MONEY',
-                                '其他電子支付',
-                              ]
-                              .map(
-                                (item) => DropdownMenuItem(
-                                  value: item,
-                                  child: Text(item),
-                                ),
-                              )
-                              .toList(),
+                    KgzSelect<String>(
+                      value: type,
+                      label: Text('帳戶類型'),
+                      items: const [
+                        '銀行帳戶',
+                        '現金',
+                        '證券交割戶',
+                        '外幣帳戶',
+                        'LINE Pay / iPASS MONEY',
+                        '其他電子支付',
+                      ].map((item) => KgzSelectItem(item, item)).toList(),
                       onChanged: (value) => setState(() => type = value!),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: currency,
-                            decoration: const InputDecoration(labelText: '幣別'),
-                            items: const ['TWD', 'USD', 'JPY', 'EUR']
-                                .map(
-                                  (item) => DropdownMenuItem(
-                                    value: item,
-                                    child: Text(item),
-                                  ),
-                                )
-                                .toList(),
+                          child: KgzSelect<String>(
+                            value: currency,
+                            label: Text('幣別'),
+                            items: const [
+                              'TWD',
+                              'USD',
+                              'JPY',
+                              'EUR',
+                            ].map((item) => KgzSelectItem(item, item)).toList(),
                             onChanged: (value) =>
                                 setState(() => currency = value!),
                           ),
@@ -575,23 +582,25 @@ class AccountsPage extends ConsumerWidget {
                         Expanded(
                           child: MoneyField(
                             controller: balance,
-                            decoration: const InputDecoration(
-                              labelText: '期初餘額',
-                            ),
+                            label: Text('期初餘額'),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '備註'),
+                    FTextFormField(
+                      control: FTextFieldControl.managed(controller: note),
+                      label: Text('備註'),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
+                    FItem(
                       title: const Text('啟用帳戶'),
-                      value: active,
-                      onChanged: (value) => setState(() => active = value),
+                      suffix: FSwitch(
+                        value: active,
+                        onChange: (value) => setState(() => active = value),
+                      ),
+                      onPress: () =>
+                          ((value) =>
+                              setState(() => active = value))(!(active)),
                     ),
                   ],
                 ),
@@ -599,12 +608,15 @@ class AccountsPage extends ConsumerWidget {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 if (!formKey.currentState!.validate()) return;
                 final now = DateTime.now();
                 await store.upsertAccount(
@@ -646,9 +658,10 @@ class AccountsPage extends ConsumerWidget {
     final reason = TextEditingController(text: existing?.reason ?? '餘額盤點調整');
     var date = existing?.date ?? DateTime.now();
     var mode = 'difference';
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => KgzDialog(
+      builder: (dialogContext, _, _) => KgzDialog(
         title: Text(existing == null ? '調整 ${account.name}' : '編輯餘額調整'),
         content: StatefulBuilder(
           builder: (context, setState) => SizedBox(
@@ -660,39 +673,29 @@ class AccountsPage extends ConsumerWidget {
                   '目前餘額：${moneyText(store.accountBalance(account.id), currency: account.currency)}',
                 ),
                 const SizedBox(height: 16),
-                SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: 'difference',
-                      label: Text('增加／減少'),
-                      icon: Icon(Icons.exposure),
-                    ),
-                    ButtonSegment(
-                      value: 'total',
-                      label: Text('直接改總額'),
-                      icon: Icon(Icons.account_balance_wallet_outlined),
-                    ),
+                KgzTabBar<String>(
+                  tabs: const [
+                    ('difference', '增加／減少', Icons.exposure),
+                    ('total', '直接改總額', Icons.account_balance_wallet_outlined),
                   ],
-                  selected: {mode},
-                  onSelectionChanged: (value) =>
-                      setState(() => mode = value.single),
+                  selected: mode,
+                  onSelected: (value) => setState(() => mode = value),
                 ),
                 const SizedBox(height: 16),
                 MoneyField(
                   controller: amount,
                   autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: mode == 'difference' ? '調整金額' : '調整後總額',
-                    helperText: mode == 'difference'
-                        ? '增加填正數，減少填負數'
-                        : '輸入希望這個帳戶顯示的總餘額',
+                  label: Text(mode == 'difference' ? '調整金額' : '調整後總額'),
+                  description: Text(
+                    mode == 'difference' ? '增加填正數，減少填負數' : '輸入希望這個帳戶顯示的總餘額',
                   ),
                 ),
                 const SizedBox(height: 12),
-                InkWell(
+                KgzValueField(
+                  label: '調整日期',
+                  value: dateText(date),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showKgzDatePicker(
                       context: context,
                       initialDate: date,
                       firstDate: DateTime(2000),
@@ -700,34 +703,31 @@ class AccountsPage extends ConsumerWidget {
                     );
                     if (picked != null) setState(() => date = picked);
                   },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: '調整日期'),
-                    child: Text(dateText(date)),
-                  ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: reason,
-                  decoration: const InputDecoration(labelText: '原因'),
+                FTextField(
+                  control: FTextFieldControl.managed(controller: reason),
+                  label: Text('原因'),
                 ),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+          FButton(
+            variant: FButtonVariant.ghost,
+            mainAxisSize: MainAxisSize.min,
+            onPress: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
-          FilledButton(
-            onPressed: () async {
+          FButton(
+            mainAxisSize: MainAxisSize.min,
+            onPress: () async {
               final parsed = double.tryParse(
                 amount.text.trim().replaceAll(',', ''),
               );
               if (parsed == null) {
-                ScaffoldMessenger.of(
-                  dialogContext,
-                ).showSnackBar(const SnackBar(content: Text('請輸入正確金額')));
+                showNotice(dialogContext, '請輸入正確金額', error: true);
                 return;
               }
               final entered = (parsed * 100).round();
@@ -774,9 +774,10 @@ class AccountsPage extends ConsumerWidget {
         .toList();
     if (targets.isEmpty) return;
     var targetId = targets.first.id;
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) => KgzDialog(
           title: Text('合併 ${source.name}'),
           content: SizedBox(
@@ -787,16 +788,14 @@ class AccountsPage extends ConsumerWidget {
               children: [
                 const Text('選擇要保留的帳戶：'),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: targetId,
-                  decoration: const InputDecoration(labelText: '保留帳戶'),
+                KgzSelect<String>(
+                  value: targetId,
+                  label: Text('保留帳戶'),
                   items: [
                     for (final account in targets)
-                      DropdownMenuItem(
-                        value: account.id,
-                        child: Text(
-                          '${account.name}・${account.institution}・${account.currency}',
-                        ),
+                      KgzSelectItem(
+                        account.id,
+                        '${account.name}・${account.institution}・${account.currency}',
                       ),
                   ],
                   onChanged: (value) =>
@@ -812,12 +811,15 @@ class AccountsPage extends ConsumerWidget {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            FButton(
+              variant: FButtonVariant.ghost,
+              mainAxisSize: MainAxisSize.min,
+              onPress: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
+            FButton(
+              mainAxisSize: MainAxisSize.min,
+              onPress: () async {
                 await store.mergeAccounts(
                   sourceAccountId: source.id,
                   targetAccountId: targetId,
@@ -869,9 +871,10 @@ class AccountsPage extends ConsumerWidget {
     var date = existing?.date ?? DateTime.now();
     final formKey = GlobalKey<FormState>();
 
-    await showDialog<void>(
+    await showFDialog<void>(
+      useRootNavigator: true,
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, _, _) => StatefulBuilder(
         builder: (context, setState) {
           final from = store.accountById(fromId)!;
           final compatibleTargets = accounts
@@ -896,22 +899,16 @@ class AccountsPage extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      DropdownButtonFormField<String>(
+                      KgzSelect<String>(
                         key: ValueKey('transfer-from-$fromId'),
-                        initialValue: fromId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '從哪個帳戶轉出',
-                          prefixIcon: Icon(Icons.north_east),
-                        ),
+                        value: fromId,
+                        label: const Text('從哪個帳戶轉出'),
+                        prefixIcon: const Icon(FLucideIcons.arrowUpRight),
                         items: [
                           for (final account in accounts)
-                            DropdownMenuItem(
-                              value: account.id,
-                              child: Text(
-                                '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            KgzSelectItem(
+                              account.id,
+                              '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
                             ),
                         ],
                         onChanged: (value) => setState(() {
@@ -922,35 +919,33 @@ class AccountsPage extends ConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Center(
-                          child: IconButton.filledTonal(
-                            tooltip: '交換轉出與轉入帳戶',
-                            onPressed: to == null
-                                ? null
-                                : () => setState(() {
-                                    final previousFrom = fromId;
-                                    fromId = to.id;
-                                    toId = previousFrom;
-                                  }),
-                            icon: const Icon(Icons.swap_vert),
+                          child: FTooltip(
+                            tipBuilder: (context, _) => Text('交換轉出與轉入帳戶'),
+                            child: FButton.icon(
+                              variant: FButtonVariant.secondary,
+                              onPress: to == null
+                                  ? null
+                                  : () => setState(() {
+                                      final previousFrom = fromId;
+                                      fromId = to.id;
+                                      toId = previousFrom;
+                                    }),
+                              semanticsLabel: '交換轉出與轉入帳戶',
+                              child: const Icon(Icons.swap_vert),
+                            ),
                           ),
                         ),
                       ),
-                      DropdownButtonFormField<String>(
+                      KgzSelect<String>(
                         key: ValueKey('transfer-to-$fromId-$toId'),
-                        initialValue: toId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '轉入哪個帳戶',
-                          prefixIcon: Icon(Icons.south_west),
-                        ),
+                        value: toId,
+                        label: const Text('轉入哪個帳戶'),
+                        prefixIcon: const Icon(FLucideIcons.arrowDownLeft),
                         items: [
                           for (final account in compatibleTargets)
-                            DropdownMenuItem(
-                              value: account.id,
-                              child: Text(
-                                '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            KgzSelectItem(
+                              account.id,
+                              '${account.name}・${moneyText(store.accountBalance(account.id), currency: account.currency)}',
                             ),
                         ],
                         validator: (value) =>
@@ -961,12 +956,12 @@ class AccountsPage extends ConsumerWidget {
                       MoneyField(
                         controller: amount,
                         autofocus: true,
-                        style: Theme.of(context).textTheme.headlineSmall
+                        contentTextStyle: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
                             ?.copyWith(fontWeight: FontWeight.w900),
-                        decoration: InputDecoration(
-                          labelText: '轉帳金額',
-                          prefixText: '${from.currency} ',
-                        ),
+                        label: Text('轉帳金額'),
+                        prefixText: '${from.currency} ',
                         validator: (value) =>
                             parseMoney(value ?? '') <= 0 ? '請輸入大於 0 的金額' : null,
                         onChanged: (_) => setState(() {}),
@@ -1004,9 +999,12 @@ class AccountsPage extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      InkWell(
+                      KgzValueField(
+                        label: '轉帳日期',
+                        value: dateText(date),
+                        prefixIcon: Icon(Icons.calendar_today_outlined),
                         onTap: () async {
-                          final picked = await showDatePicker(
+                          final picked = await showKgzDatePicker(
                             context: context,
                             initialDate: date,
                             firstDate: DateTime(2000),
@@ -1016,18 +1014,11 @@ class AccountsPage extends ConsumerWidget {
                           );
                           if (picked != null) setState(() => date = picked);
                         },
-                        child: InputDecorator(
-                          decoration: const InputDecoration(
-                            labelText: '轉帳日期',
-                            prefixIcon: Icon(Icons.calendar_today_outlined),
-                          ),
-                          child: Text(dateText(date)),
-                        ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: note,
-                        decoration: const InputDecoration(labelText: '備註（選填）'),
+                      FTextField(
+                        control: FTextFieldControl.managed(controller: note),
+                        label: Text('備註（選填）'),
                       ),
                     ],
                   ),
@@ -1035,12 +1026,15 @@ class AccountsPage extends ConsumerWidget {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+              FButton(
+                variant: FButtonVariant.ghost,
+                mainAxisSize: MainAxisSize.min,
+                onPress: () => Navigator.pop(dialogContext),
                 child: const Text('取消'),
               ),
-              FilledButton.icon(
-                onPressed: to == null
+              FButton(
+                mainAxisSize: MainAxisSize.min,
+                onPress: to == null
                     ? null
                     : () async {
                         if (!formKey.currentState!.validate()) return;
@@ -1057,8 +1051,8 @@ class AccountsPage extends ConsumerWidget {
                           Navigator.pop(dialogContext);
                         }
                       },
-                icon: const Icon(Icons.swap_horiz),
-                label: Text(existing == null ? '確認轉帳' : '儲存轉帳'),
+                prefix: const Icon(Icons.swap_horiz),
+                child: Text(existing == null ? '確認轉帳' : '儲存轉帳'),
               ),
             ],
           );
@@ -1128,94 +1122,92 @@ class _AccountRow extends StatelessWidget {
   final VoidCallback? onDelete;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-    child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      onTap: onTap,
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: account.isActive
-              ? context.colors.accentPale
-              : context.colors.subtle,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(
-          color: context.colors.accent,
-          account.type == '現金'
-              ? Icons.payments_outlined
-              : Icons.account_balance_outlined,
-        ),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              account.name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: KgzCard(
+      child: FItem(
+        prefix: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: account.isActive
+                ? context.colors.accentPale
+                : context.colors.subtle,
+            borderRadius: BorderRadius.circular(12),
           ),
-          if (!account.isActive)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: StatusPill('停用'),
-            ),
-          if (account.id == systemCashAccountId)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: StatusPill('系統'),
-            ),
-        ],
-      ),
-      subtitle: Text(
-        [
-          account.institution,
-          account.type,
-          account.currency,
-        ].where((value) => value.isNotEmpty).join(' · '),
-        style: TextStyle(fontSize: 11.5, color: context.colors.textMuted),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 112),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
+          child: Icon(
+            color: context.colors.accent,
+            account.type == '現金'
+                ? Icons.payments_outlined
+                : Icons.account_balance_outlined,
+          ),
+        ),
+        title: Row(
+          children: [
+            Flexible(
               child: Text(
-                moneyText(balance, currency: account.currency, mask: mask),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
+                account.name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (!account.isActive)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: StatusPill('停用'),
+              ),
+            if (account.id == systemCashAccountId)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: StatusPill('系統'),
+              ),
+          ],
+        ),
+        subtitle: Text(
+          [
+            account.institution,
+            account.type,
+            account.currency,
+          ].where((value) => value.isNotEmpty).join(' · '),
+          style: TextStyle(fontSize: 11.5, color: context.colors.textMuted),
+        ),
+        suffix: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 112),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  moneyText(balance, currency: account.currency, mask: mask),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'edit') onEdit?.call();
-              if (value == 'adjust') onAdjust();
-              if (value == 'transfer') onTransfer?.call();
-              if (value == 'merge') onMerge?.call();
-              if (value == 'delete') onDelete?.call();
-            },
-            itemBuilder: (context) => [
-              if (onEdit != null)
-                const PopupMenuItem(value: 'edit', child: Text('編輯')),
-              const PopupMenuItem(value: 'adjust', child: Text('餘額調整')),
-              if (onTransfer != null)
-                const PopupMenuItem(value: 'transfer', child: Text('從這個帳戶轉出')),
-              if (onMerge != null)
-                const PopupMenuItem(value: 'merge', child: Text('合併至其他帳戶')),
-              if (onDelete != null)
-                const PopupMenuItem(value: 'delete', child: Text('刪除')),
-            ],
-          ),
-        ],
+            KgzPopoverMenu<String>(
+              semanticsLabel: '更多操作',
+              entries: [
+                if (onEdit != null) KgzMenuEntry('edit', '編輯'),
+                KgzMenuEntry('adjust', '餘額調整'),
+                if (onTransfer != null) KgzMenuEntry('transfer', '從這個帳戶轉出'),
+                if (onMerge != null) KgzMenuEntry('merge', '合併至其他帳戶'),
+                if (onDelete != null)
+                  KgzMenuEntry('delete', '刪除', destructive: true),
+              ],
+              onSelected: (value) {
+                if (value == 'edit') onEdit?.call();
+                if (value == 'adjust') onAdjust();
+                if (value == 'transfer') onTransfer?.call();
+                if (value == 'merge') onMerge?.call();
+                if (value == 'delete') onDelete?.call();
+              },
+            ),
+          ],
+        ),
+        onPress: onTap,
       ),
     ),
   );
@@ -1227,9 +1219,22 @@ class _EditorHost extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('編輯原始資料')),
-    body: SafeArea(
+  Widget build(BuildContext context) => FScaffold(
+    childPad: false,
+    header: SafeArea(
+      bottom: false,
+      child: FHeader.nested(
+        title: const Text('編輯原始資料'),
+        prefixes: [
+          FHeaderAction.back(
+            semanticsLabel: '返回',
+            onPress: () => Navigator.maybePop(context),
+          ),
+        ],
+      ),
+    ),
+    child: SafeArea(
+      top: false,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: child,

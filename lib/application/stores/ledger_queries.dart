@@ -821,7 +821,10 @@ class LedgerQueries {
     final now = DateTime.now();
     final expenses = _data.expenses
         .where(
-          (item) => item.date.year == now.year && item.date.month == now.month,
+          (item) =>
+              item.date.year == now.year &&
+              item.date.month == now.month &&
+              isSpendingCategory(item.category),
         )
         .fold(0, (sum, item) => sum + item.amountMinor);
     final orders = _data.orders

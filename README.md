@@ -88,6 +88,22 @@ select vault.create_secret(
 排程會在週一至週五台北時間 18:30 更新；登入後開啟 App 時，若共用
 報價超過 24 小時未成功更新也會補抓。密鑰不可提交到 Git 或放進 Flutter。
 
+### 信用卡帳單 LINE 提醒
+
+`202611160001_cron_http_timeouts.sql` 建立 `quick-ledger-card-bill-reminders`
+排程，每日台北時間 08:00 呼叫 `card-bill-reminders`（兩個 HTTP 排程都等候
+30 秒，避免冷啟動逾時）。沿用上方的 `project_url`，另設一組密鑰：
+
+```powershell
+$reminderCronSecret = '<產生一組高熵隨機字串>'
+npx supabase secrets set CARD_REMINDER_CRON_SECRET=$reminderCronSecret
+npx supabase functions deploy card-bill-reminders --no-verify-jwt
+```
+
+```sql
+select vault.create_secret('<同一組高熵隨機字串>', 'card_reminder_cron_secret');
+```
+
 截圖辨識不需要 `OPENAI_API_KEY`。固定版本的 Tesseract.js、WASM、
 繁體中文與英文模型都鎖定在 `web` 並隨網站部署；截圖只在瀏覽器內
 分區辨識，不會上傳到 OCR API 或外部 CDN。
@@ -151,9 +167,12 @@ npx supabase functions deploy apple-pay-ingest --no-verify-jwt
 npx supabase functions deploy line-webhook --no-verify-jwt
 ```
 
-不需要新的 Secret（沿用 `LINE_CHANNEL_ACCESS_TOKEN`）。在官方帳號輸入
+不需要新的 Secret（沿用 `LINE_CHANNEL_ACCESS_TOKEN`）。在網頁「設定 → 同步 →
+自動記帳」（`capture_web_status`／`capture_web_issue_token`）或官方帳號輸入
 「捷徑設定」→「產生金鑰」取得網址與金鑰；金鑰只存 SHA-256，重新產生後舊金鑰
-立即失效。「待確認」可重新開啟沒處理到的消費。每筆 Apple Pay 會用掉 1 則
+立即失效。網頁版會列出各種來源的設定步驟與複製按鈕，並可複製已填好網址與金鑰的
+Gmail Apps Script（執行一次 `kgzSetup` 即完成）；iOS 的「交易」「訊息」自動化
+本身仍須在「捷徑」App 手動新增。「待確認」可重新開啟沒處理到的消費。每筆 Apple Pay 會用掉 1 則
 LINE push 訊息額度。
 
 ### LINE Pay 自動記帳（刷卡通知信 → 待確認收件匣 → LINE 確認）
@@ -208,6 +227,20 @@ iPhone 也不讓捷徑讀別的 App 的推播。LINE Pay 官方帳號聊天室�
 帳單晚一個月才出，所以可匯入 120 天內的消費；同一列以「時間到秒＋金額」辨識，同價格、
 相隔一分鐘的多筆購買會分開記。日期、時間、金額欄位數對不起來時整張不收（請截完整的表格），
 「小計」與負數（退款）不算。
+
+### 電信代收簡訊自動記帳（捷徑「訊息」自動化 → LINE 確認）
+
+遠傳的「Apple商店交易成功通知」簡訊（`您本次代收金額160元…(訂單編號…)`）一收到就能自動記錄，
+不用等帳單：
+
+1. 「捷徑」→「自動化」→「＋」→「訊息」：「寄件者」選 `+886 936-000-816`（或「訊息包含」填
+   `交易成功通知`），勾「立即執行」並關掉「執行時通知」。
+2. 動作：「取得 URL 內容」，POST 到 `line-pay-screenshot-ingest`，標頭 `x-capture-token`，
+   JSON 本文 `text` ＝「捷徑輸入」（訊息內文）。
+
+簡訊沒有交易時間，所以以收到的時間記帳，存成 `telecomBill`；同一個訂單編號只收一次。下個月截
+帳單的代收服務明細時，同金額、時間落在簡訊前 30 分鐘到後 1 分鐘內的那一列會視為同一筆，不會重複
+建立（同價格的多筆依序一對一配對）。手動貼舊簡訊進來會用現在的時間，請改到網頁修正日期。
 
 ```powershell
 npx supabase db push

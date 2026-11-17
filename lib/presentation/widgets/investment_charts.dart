@@ -106,7 +106,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
     final mask = store.data.settings.maskBalances;
     final positions = _pricedPositions(store);
     if (positions.isEmpty) {
-      return Card(
+      return KgzCard(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           child: Row(
@@ -264,7 +264,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
         ],
       ),
     );
-    return Card(
+    return KgzCard(
       key: const ValueKey('investment-allocation-chart'),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -319,7 +319,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
     final padding = spread == 0 ? 100.0 : spread * .15;
     final totalProfit = sorted.fold(0, (sum, item) => sum + item.profitMinor);
     final barWidth = (220 / sorted.length).clamp(8, 28).toDouble();
-    return Card(
+    return KgzCard(
       key: const ValueKey('investment-profit-chart'),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -488,7 +488,7 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
         Text(label, style: TextStyle(color: context.colors.textMuted)),
       ],
     );
-    return Card(
+    return KgzCard(
       key: const ValueKey('investment-trend-chart'),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -502,16 +502,14 @@ class _InvestmentChartsState extends ConsumerState<InvestmentCharts> {
               alignment: WrapAlignment.spaceBetween,
               children: [
                 _title('投資總值與成本'),
-                SegmentedButton<int>(
-                  key: const ValueKey('investment-trend-range'),
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 6, label: Text('6 個月')),
-                    ButtonSegment(value: 12, label: Text('12 個月')),
-                  ],
-                  selected: {_trendMonths},
-                  onSelectionChanged: (value) =>
-                      setState(() => _trendMonths = value.first),
+                SizedBox(
+                  width: 220,
+                  child: KgzTabBar<int>(
+                    key: const ValueKey('investment-trend-range'),
+                    tabs: const [(6, '6 個月', null), (12, '12 個月', null)],
+                    selected: _trendMonths,
+                    onSelected: (value) => setState(() => _trendMonths = value),
+                  ),
                 ),
               ],
             ),
